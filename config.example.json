@@ -1,0 +1,28 @@
+{
+  "profiles": {
+    "astra-medium": {
+      "model": "gpt-6-astra",
+      "reasoning": "medium",
+      "maxOutputTokens": 8192,
+      "inputMicrousdPerMillion": 10000000,
+      "outputMicrousdPerMillion": 50000000,
+      "priceVersion": "openai-standard-2026-11-12"
+    },
+    "luna-test": {
+      "model": "gpt-6-luna",
+      "reasoning": "medium",
+      "maxOutputTokens": 2048,
+      "inputMicrousdPerMillion": 100000,
+      "outputMicrousdPerMillion": 500000,
+      "priceVersion": "openai-standard-2026-11-12"
+    }
+  },
+  "limits": {
+    "dailyMicrousd": 6660000,
+    "monthlyMicrousd": 200000000,
+    "requestMicrousd": 6660000,
+    "maxConcurrent": 1,
+    "dailyRequests": 100
+  },
+  "hostname": "localhost"
+}
