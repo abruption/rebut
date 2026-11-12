@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   chmod,
@@ -20,7 +21,11 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 
 const roots: string[] = [];
 async function fixture(source?: string) {
-  const base = "/Volumes/Kingston NV/tmp";
+  const base = process.cwd().startsWith("/Volumes/Kingston NV/")
+    ? "/Volumes/Kingston NV/tmp"
+    : process.cwd().startsWith("/Volumes/Samsung T5/")
+      ? "/Volumes/Samsung T5/tmp"
+      : tmpdir();
   await mkdir(base, { recursive: true });
   const root = await mkdtemp(join(base, "codex-rebut-setup-"));
   await chmod(root, 0o700);
