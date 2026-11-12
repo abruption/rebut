@@ -1,0 +1,53 @@
+# Installation and input collection
+
+[한국어](../ko/installation.md) · **English** · [简体中文](../zh-CN/installation.md) · [日本語](../ja/installation.md)
+
+[Rebut](../../../README.en.md) · [User guide](../en.md)
+
+## Requirements and local validation
+
+Use Node.js **24 or later**, npm, a Cloudflare account with Workers/D1 permissions, and your own OpenAI key with Responses API access. Install from a source checkout; no npm package release or public repository is required by these instructions.
+
+```sh
+npm ci
+npm run typecheck
+npm run build
+npm test
+```
+
+Tests use synthetic inputs, mocked provider responses, real SQLite statements, and a local Workers/D1 runtime. `npm test` requires the Worker bundle from `npm run build`. No automated test makes a paid model call. See the [validation record](validation.md) for the separate Luna smoke test.
+
+## Freeze a review input
+
+Use an explicit source-file allowlist; do not collect an entire repository automatically. Run commands from the Rebut checkout.
+
+```sh
+umask 077
+npm run --silent collect -- /path/to/project request-001 'Check that the supplied function preserves its input' src/example.ts > /protected/path/request-001.bundle.json
+```
+
+The collector rejects symlinks, FIFOs, secret filenames, binary files, and oversize material. It removes common recognizable secret patterns while preserving line numbers. Pattern redaction is incomplete: inspect the resulting bundle before sending. Files may also be supplied as numbered snippets, or a unified diff may be provided directly. The canonical hash and limits are explained under [configuration](configuration.md).
+
+## Deploy privately
+
+1. Copy `wrangler.jsonc` to `wrangler.private.json` (ignored by Git). Set your account ID, an available Worker name, actual D1 ID, and `workers_dev:true` or your own route. Create a dedicated D1 database with `npx wrangler d1 create rebut-ledger`; set its ID in the private config.
+2. Apply `npx wrangler d1 migrations apply rebut-ledger --remote --config wrangler.private.json`.
+3. Deploy with `npx wrangler deploy --config wrangler.private.json`. An unconfigured Worker returns 503 and cannot call the provider.
+4. Store three Workers Secrets: `OPENAI_API_KEY`, `REBUT_CONFIG`, and `AUTH_TOKENS`. Use Wrangler's interactive secret prompt or `secret bulk` via protected stdin; never put secret values in arguments or tracked files. `REBUT_CONFIG` uses the structure in [`config.example.json`](../../../config.example.json); change `hostname` to your exact endpoint hostname. `AUTH_TOKENS` is a JSON object mapping stable principal IDs to SHA-256 digests of independently generated random 256-bit bearer tokens. Store original tokens in your password manager. Clients with the same token share a principal; distinct tokens isolate request/status access.
+5. Connect a bearer-header-capable MCP client to `https://YOUR_HOST/mcp`, and verify `tools/list`. Host and browser Origin validation apply before tool execution. This bearer setup does not implement OAuth for clients that require OAuth discovery.
+
+## Run the client
+
+The included client accepts `list`, `status REQUEST_ID`, or `review` with a JSON bundle on stdin. Supply `REBUT_ENDPOINT` and `REBUT_TOKEN` through a secure environment. Never paste token values into commands or tracked files.
+
+```sh
+npm run client -- list
+npm run client -- review < /protected/path/request-001.bundle.json
+npm run client -- status request-001
+```
+
+The optional [Vaultwarden wrapper and reviewer workflow](reviewer-integration.md) retrieve the bearer token in memory. The client never needs the OpenAI provider key. Save the initial response locally with restrictive permissions; the server stores only metadata and cannot replay the review body. Set your MCP client deadline above 60 seconds; the provider-call timeout is 45 seconds.
+
+## Upgrade or remove
+
+Use the [operations guide](operations.md) to preserve the D1 ledger and reconcile pending executions before upgrading or removing a deployment. Source publication and a private paid deployment are separate actions.

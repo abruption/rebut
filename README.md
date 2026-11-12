@@ -1,12 +1,20 @@
+<div align="center">
+
 # Rebut
 
-An authenticated Cloudflare Worker MCP for independent, evidence-grounded reviews through the OpenAI Responses API. MIT licensed; deploy with your own Cloudflare account and OpenAI key.
+**OpenAI Responses API를 통한 독립적이고 근거에 기반한 검토.**
 
-Rebut reviews only the frozen material you explicitly submit. It cannot clone repositories, fetch arbitrary URLs, run commands or tests, change files, or create pull requests. It is an **opt-in reviewer**: it does not replace an existing Claude/Gemini review workflow.
+**한국어** · [English](README.en.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
-## Develop
+**명시적으로 제공한 고정 자료를 검토하는 인증 기반 Cloudflare Worker MCP.**
 
-Node 24 is recommended (tests use `node:sqlite`).
+</div>
+
+Rebut은 **명시적으로 선택하여 사용하는 검토 도구**입니다. 기존 Claude/Gemini 작업 흐름을 대체하거나 검토자 세 명을 자동으로 호출하지 않습니다. MIT 라이선스로 제공되며, 자신의 Cloudflare 계정과 OpenAI 키로 배포합니다. 소스 공개와 개인 유료 배포는 별개의 작업입니다.
+
+## 빠른 시작
+
+**Node.js 24 이상**이 필요합니다. 소스 체크아웃에서 실행합니다.
 
 ```sh
 npm ci
@@ -15,40 +23,28 @@ npm run build
 npm test
 ```
 
-Tests use synthetic inputs, mocked provider responses, real SQLite statements, and a local Workers/D1 runtime. `npm test` requires the Worker bundle from `npm run build`. No test makes a paid model call.
+자동화 테스트는 공급자를 모의 처리하며 유료 모델을 호출하지 않습니다. 실제 API 테스트에는 **gpt-6-luna**를 사용하고, 운영 예시는 **gpt-6-astra / medium**을 사용합니다. Luna 결과로 Astra의 사용 가능 여부나 동등한 검토 품질을 입증할 수는 없습니다.
 
-## Freeze a review input
+다음으로 [설치 및 비공개 배포](docs/guide/ko/installation.md)를 따르세요. Worker에는 D1과 세 가지 시크릿 `OPENAI_API_KEY`, `REBUT_CONFIG`, `AUTH_TOKENS`가 필요합니다. Bearer 헤더를 지원하는 MCP 클라이언트를 `https://YOUR_HOST/mcp`에 연결합니다. npm 패키지가 배포되어 있다고 가정하지 않습니다.
 
-Use an explicit source-file allowlist; do not collect an entire repository automatically.
+## 주요 기능
 
-```sh
-umask 077
-npm run --silent collect -- /path/to/project request-001 'Check that the supplied function preserves its input' src/example.ts > /protected/path/request-001.bundle.json
-```
+- 명시적으로 허용한 텍스트 소스를 수집하고, 흔한 비밀정보 패턴을 제거한 뒤 고정한 증거 자료의 해시를 계산합니다. 전송 전에 마스킹 결과를 확인하세요.
+- 인증, 허용 목록의 프로필, 중복 요청 ID, 배포 전체의 원자적 예산 예약을 확인한 뒤 한도가 설정된 Responses 호출을 한 번 수행합니다.
+- 제공한 파일·행 근거, 모델 식별 정보, 토큰 사용량, 예상 비용을 포함한 구조화된 지적 사항을 반환합니다.
+- `review`와 메타데이터만 제공하는 `review_status`를 노출합니다. 시간 초과 또는 unknown 이후에도 같은 요청 ID를 유지하세요. 서버는 대체 유료 호출을 자동으로 만들지 않습니다.
 
-The collector rejects symlinks, secret filenames, binary files, and oversize material; it removes common recognizable secret patterns while preserving line numbers. Pattern redaction is incomplete: inspect the resulting bundle before sending. The SHA-256 covers canonical `{schema_version,task_kind,requirements,files,diff}` after redaction, with file key order `{path,start_line,content}`. Request IDs and profile names are separate from the frozen evidence hash. Files may also be supplied as numbered snippets, or a unified diff may be provided directly. Limits: 128,000 UTF-8 JSON bytes, 40 files, 100,000 diff characters, 16,000 requirement characters, and a 160,000-byte transport envelope.
+예시 한도는 **UTC 기준 하루 $6.66**, **UTC 기준 한 달 $200**, 동시 pending/unknown 요청 한 개, 하루 신규 검토 요청 100개입니다. 원장은 Rebut 사용량을 추적하며 계정 전체의 크레딧 잔액을 추적하지 않습니다. 실행 결과를 알 수 없으면 예약을 유지합니다. 검토 본문은 다시 조회할 수 없으므로 최초 응답을 로컬에 저장하세요.
 
-## Deploy privately
+검토자는 저장소 복제, 임의 URL 가져오기, 명령·테스트 실행, 파일 수정, 풀 리퀘스트 생성을 할 수 없습니다. 소스, 검토 본문, 키는 D1이나 Worker 로그에 저장하지 않습니다. `store:false`는 공급자의 보관 기간이 0임을 보장하지 않습니다.
 
-1. Copy `wrangler.jsonc` to `wrangler.private.json` (ignored by Git). Set your account ID, an available Worker name, actual D1 ID, and `workers_dev:true` or your own route. Create a dedicated D1 database with `npx wrangler d1 create rebut-ledger`; set its ID in the private config.
-2. Apply `npx wrangler d1 migrations apply rebut-ledger --remote --config wrangler.private.json`.
-3. Deploy with `npx wrangler deploy --config wrangler.private.json`. An unconfigured Worker returns 503 and cannot call the provider.
-4. Store three Workers Secrets: `OPENAI_API_KEY`, `REBUT_CONFIG`, and `AUTH_TOKENS`. Use Wrangler's interactive secret prompt or `secret bulk` via protected stdin; never put secret values in arguments or tracked files. `REBUT_CONFIG` uses the structure in `config.example.json`; change `hostname` to your exact endpoint hostname. `AUTH_TOKENS` is a JSON object mapping stable principal IDs to SHA-256 digests of independently generated random 256-bit bearer tokens. Store original tokens in your password manager. Clients with the same token share a principal; distinct tokens isolate request/status access.
-5. Connect a bearer-header-capable MCP client to `https://YOUR_HOST/mcp`, and verify `tools/list`. Host and browser Origin validation apply before tool execution. This bearer setup does not implement OAuth for clients that require OAuth discovery.
+## 문서
 
-The example profile is `astra-medium`: `gpt-6-astra`, medium reasoning, 8,192 maximum output tokens (including reasoning). Its dated price table uses Standard input $10/M and output $50/M, with no cached-token discount in estimates. The `luna-test` profile is reserved for tests: `gpt-6-luna`, medium reasoning, 2,048 output tokens, Standard input $0.10/M and output $0.50/M. Actual smoke tests use Luna; Astra runtime availability is not inferred from Luna results. Verify the [official model](https://developers.openai.com/api/docs/models/gpt-6-astra) and [pricing](https://developers.openai.com/api/docs/pricing) before deployment. Requests pin `service_tier:default` and `prompt_cache_options.mode:explicit` with no breakpoints, disabling prompt caching for these profiles; no tools are supplied. Estimates are not invoices and do not account for other services sharing the key or project.
-
-The configuration sets UTC calendar-day $6.66, UTC calendar-month $200, request $6.66, one concurrent pending/unknown request, and 100 new requests/day. These are deployment-wide aggregate limits across principals. Reserve before calling: serialized request bytes plus framing padding count as input tokens, and the maximum output budget is reserved. Validated usage settles conservatively at uncached Standard rates. Unknown usage keeps the full reservation. A new UTC day/month resets that period's spend window; unresolved executions continue occupying concurrency. This application ledger cannot enforce an OpenAI account-wide limit across other consumers. Confirm your account/organization's credit eligibility separately.
-
-## MCP tools
-
-- `review`: input is `ReviewInputSchema` in `src/contracts.ts`; choose an allowlisted profile ID. Returns status, validated findings, provider model/IDs, hash, usage and estimated microUSD. Only `completed` is a successful review. Refusal, incomplete generation, invalid output, and unknown execution remain distinct. Every finding must reference supplied file lines or supplied new-side diff lines. An empty findings array with a nonempty summary is valid; an empty or malformed response is not.
-- `review_status`: `{request_id}` returns only metadata for the caller's principal. It cannot replay the review body.
-
-The Worker times out the provider call after 45 seconds; set your MCP client deadline above 60 seconds. If a client times out, query **the same request ID**. Repeating it never creates another provider execution. Reusing an ID with a changed input hash or profile returns `conflict`. A completed duplicate returns metadata, not the review body: clients must save their initial response locally.
-
-The metadata-only D1 ledger retains request IDs, hashes, profile, status, reservation, sanitized provider IDs and usage. It never stores source or review text. Worker observability is disabled in the example. The OpenAI request uses `store:false`; this does **not** promise zero provider retention or replace your organization's data policy. See [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data).
-
-## Operations and recovery
-
-See [operations](docs/operations.md), [reviewer integration](docs/reviewer-integration.md), and [architecture](docs/architecture.md). The repository contains no deployed account identifiers or credentials. A private deployment is separate from publication of this source.
+- [사용자 가이드](docs/guide/ko.md)
+- [설치 및 입력 수집](docs/guide/ko/installation.md)
+- [설정, 예산 및 MCP 계약](docs/guide/ko/configuration.md)
+- [운영 및 복구](docs/guide/ko/operations.md)
+- [선택적 검토자 연동](docs/guide/ko/reviewer-integration.md)
+- [아키텍처](docs/guide/ko/architecture.md)
+- [검증 및 결과의 한계](docs/guide/ko/validation.md)
+- [MIT 라이선스](LICENSE)
