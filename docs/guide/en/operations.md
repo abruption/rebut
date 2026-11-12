@@ -6,6 +6,8 @@
 
 Back up the metadata-only D1 ledger using Cloudflare's supported export/Time Travel mechanisms. Do not delete the ledger to clear an inconvenient pending request: doing so loses spend and duplicate protection. Retain request rows for the lifetime of IDs clients may reuse; pruning permits old IDs to execute again.
 
+Use `rebut status REQUEST_ID` for a free metadata lookup under the original principal. `rebut doctor` checks sanitized local configuration and credential availability; `rebut doctor --connect` performs a free remote `tools/list` check. None of these commands starts a paid review. Preserve the request ID and reservation after any uncertain result.
+
 ## Timeout, disconnect, or unknown
 
 `reserved` means an execution was reserved and may still be running or may have been interrupted; it is not proof of an unbilled failure. `unknown` means the outcome or usage could not be verified. Neither status is automatically retried, expired, or refunded. Both occupy concurrency indefinitely until reviewed. This intentionally stops further spending when execution cannot be reconciled.

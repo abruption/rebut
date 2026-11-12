@@ -14,7 +14,22 @@ Rebut is an **opt-in reviewer**. It does not replace an existing Claude/Gemini w
 
 ## Quick start
 
-Requires **Node.js 24 or later**. From a source checkout:
+Requires **Node.js 24 or later**. Install the npm CLI and configure your own deployed Worker:
+
+```sh
+npm install -g rebut-mcp
+rebut set endpoint https://YOUR_HOST/mcp
+rebut set token
+rebut setup --client codex
+rebut doctor
+rebut doctor --connect
+```
+
+On macOS, `rebut set token` uses a hidden interactive prompt and stores the bearer in Keychain by default. Never pass a token as an argument. See [installation](docs/guide/en/installation.md) for explicit Vaultwarden/env backends and Codex migration options.
+
+`rebut-mcp` (initial CLI version `0.1.0`, executable `rebut`) is a client and stdio bridge for a **self-hosted Worker**. Deploy Worker/D1 from a GitHub source checkout with your own Cloudflare account and OpenAI key. Public source or the npm package grants no access to a personal Worker or credits. The package contains no real endpoint, private config, bearer, provider key, or reviews. These instructions target CLI `0.1.0`.
+
+Keep developer validation in the source checkout:
 
 ```sh
 npm ci
@@ -23,9 +38,7 @@ npm run build
 npm test
 ```
 
-Automated tests mock the provider and make no paid model calls. Actual API tests use **gpt-6-luna**; the production example uses **gpt-6-astra / medium**. Luna results do not establish Astra availability or equivalent review quality.
-
-Next, follow [installation and private deployment](docs/guide/en/installation.md). The Worker needs D1 and three secrets: `OPENAI_API_KEY`, `REBUT_CONFIG`, and `AUTH_TOKENS`. Connect a bearer-header-capable MCP client to `https://YOUR_HOST/mcp`. No npm package release is assumed.
+Automated tests mock the provider and make no paid model calls. Actual API tests use **gpt-6-luna**; production uses **gpt-6-astra / medium**. Luna results do not establish Astra availability or equivalent review quality. Worker deployment requires D1 and the secrets `OPENAI_API_KEY`, `REBUT_CONFIG`, and `AUTH_TOKENS`; follow [installation and private deployment](docs/guide/en/installation.md).
 
 ## What it does
 

@@ -4,9 +4,53 @@
 
 [Rebut](../../../README.en.md) · [User guide](../en.md)
 
-## Requirements and local validation
+## npm CLI installation
 
-Use Node.js **24 or later**, npm, a Cloudflare account with Workers/D1 permissions, and your own OpenAI key with Responses API access. Install from a source checkout; no npm package release or public repository is required by these instructions.
+Use Node.js **24 or later** and npm. Install the client/stdio bridge for your self-hosted Worker with:
+
+```sh
+npm install -g rebut-mcp
+```
+
+## Configure the client
+
+Set your own endpoint, then store your bearer token. On macOS the default is Keychain; `rebut set token` prompts with hidden input. `rebut set token --stdin` explicitly accepts a protected pipe. Never supply token values as arguments or in tracked files.
+
+```sh
+rebut set endpoint https://YOUR_HOST/mcp
+rebut set token
+```
+
+For an existing Vaultwarden installation, select the backend explicitly. It uses `bw-get` and the default item `Rebut — MCP Access Token`; customize the item name if needed:
+
+```sh
+rebut set secret-store vaultwarden
+rebut set vaultwarden-item NAME
+```
+
+On non-macOS, explicitly select `env` and supply `REBUT_TOKEN` through a secure execution environment. Do not write it to tracked files or command arguments. Backends never fall back automatically. The client needs no OpenAI provider key.
+
+For the `env` backend, Codex setup stores only `env_vars = ['REBUT_TOKEN']` (the variable name), never its value. Supply the token in the secure execution environment of the actual Codex host; setting it only for the setup command does not make it available to later Codex sessions.
+
+```sh
+rebut set secret-store env
+```
+
+## Connect Codex and check configuration
+
+```sh
+rebut setup --client codex
+rebut doctor
+rebut doctor --connect
+```
+
+Setup uses `CODEX_HOME` or `~/.codex`; use `--codex-home PATH` for an explicit destination. It registers `rebut mcp` as the stdio server, preserves other MCP entries, and requires `--replace` to migrate an existing private `rebut` bridge.
+
+`rebut doctor` reports sanitized local configuration and credential availability. `rebut doctor --connect` makes a free remote `tools/list` check; neither command starts a paid review.
+
+## Source checkout and developer validation
+
+The npm package is a client, not a hosted review service. Deploy Worker/D1 from a GitHub source checkout using your own Cloudflare account with Workers/D1 permissions and your own OpenAI Responses API key. Public source/npm grants no access to a personal Worker or credits. The package includes no real endpoint, private config, bearer, provider key, or reviews. These instructions target CLI `0.1.0`.
 
 ```sh
 npm ci
@@ -19,11 +63,11 @@ Tests use synthetic inputs, mocked provider responses, real SQLite statements, a
 
 ## Freeze a review input
 
-Use an explicit source-file allowlist; do not collect an entire repository automatically. Run commands from the Rebut checkout.
+Use an explicit source-file allowlist; do not collect an entire repository automatically. The collector emits frozen JSON on stdout. Default profile: `astra-medium`; real API tests must explicitly use `luna-test`.
 
 ```sh
 umask 077
-npm run --silent collect -- /path/to/project request-001 'Check that the supplied function preserves its input' src/example.ts > /protected/path/request-001.bundle.json
+rebut collect --root /path/to/project --request-id request-001 --requirements 'Check that the supplied function preserves its input' --profile astra-medium -- src/example.ts > /protected/path/request-001.bundle.json
 ```
 
 The collector rejects symlinks, FIFOs, secret filenames, binary files, and oversize material. It removes common recognizable secret patterns while preserving line numbers. Pattern redaction is incomplete: inspect the resulting bundle before sending. Files may also be supplied as numbered snippets, or a unified diff may be provided directly. The canonical hash and limits are explained under [configuration](configuration.md).
@@ -38,15 +82,14 @@ The collector rejects symlinks, FIFOs, secret filenames, binary files, and overs
 
 ## Run the client
 
-The included client accepts `list`, `status REQUEST_ID`, or `review` with a JSON bundle on stdin. Supply `REBUT_ENDPOINT` and `REBUT_TOKEN` through a secure environment. Never paste token values into commands or tracked files.
+`rebut review` reads a JSON bundle from stdin and starts a paid review only when explicitly selected by the user. `rebut status REQUEST_ID` is a free metadata query.
 
 ```sh
-npm run client -- list
-npm run client -- review < /protected/path/request-001.bundle.json
-npm run client -- status request-001
+rebut review < /protected/path/request-001.bundle.json
+rebut status request-001
 ```
 
-The optional [Vaultwarden wrapper and reviewer workflow](reviewer-integration.md) retrieve the bearer token in memory. The client never needs the OpenAI provider key. Save the initial response locally with restrictive permissions; the server stores only metadata and cannot replay the review body. Set your MCP client deadline above 60 seconds; the provider-call timeout is 45 seconds.
+Save the initial response locally with restrictive permissions; the server stores only metadata and cannot replay review bodies. Keep the same request ID after timeout or uncertainty. Set the MCP client deadline above 60 seconds; the provider timeout is 45 seconds. See the [opt-in reviewer workflow](reviewer-integration.md).
 
 ## Upgrade or remove
 

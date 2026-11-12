@@ -14,7 +14,22 @@ Rebut은 **명시적으로 선택하여 사용하는 검토 도구**입니다. �
 
 ## 빠른 시작
 
-**Node.js 24 이상**이 필요합니다. 소스 체크아웃에서 실행합니다.
+**Node.js 24 이상**이 필요합니다. npm CLI를 설치하고 직접 배포한 Worker를 설정합니다.
+
+```sh
+npm install -g rebut-mcp
+rebut set endpoint https://YOUR_HOST/mcp
+rebut set token
+rebut setup --client codex
+rebut doctor
+rebut doctor --connect
+```
+
+macOS에서 `rebut set token`은 입력을 숨기는 대화형 프롬프트로 bearer를 받아 기본 Keychain에 저장합니다. 토큰을 인자로 전달하지 마세요. 명시적인 Vaultwarden/env 백엔드와 Codex 마이그레이션 옵션은 [설치 안내](docs/guide/ko/installation.md)를 참고하세요.
+
+`rebut-mcp`(초기 CLI 버전 `0.1.0`, 실행 명령 `rebut`)는 **직접 호스팅한 Worker**의 클라이언트이자 stdio 브리지입니다. Worker/D1은 GitHub 소스 체크아웃에서 자신의 Cloudflare 계정과 OpenAI 키로 배포합니다. 공개 소스나 npm 패키지는 개인 Worker 또는 크레딧 접근 권한을 주지 않습니다. 패키지에는 실제 엔드포인트, 비공개 설정, bearer, 공급자 키, 검토 본문이 포함되지 않습니다. 이 안내는 CLI `0.1.0`을 대상으로 합니다.
+
+개발자 검증은 소스 체크아웃에서 수행합니다.
 
 ```sh
 npm ci
@@ -23,9 +38,7 @@ npm run build
 npm test
 ```
 
-자동화 테스트는 공급자를 모의 처리하며 유료 모델을 호출하지 않습니다. 실제 API 테스트에는 **gpt-6-luna**를 사용하고, 운영 예시는 **gpt-6-astra / medium**을 사용합니다. Luna 결과로 Astra의 사용 가능 여부나 동등한 검토 품질을 입증할 수는 없습니다.
-
-다음으로 [설치 및 비공개 배포](docs/guide/ko/installation.md)를 따르세요. Worker에는 D1과 세 가지 시크릿 `OPENAI_API_KEY`, `REBUT_CONFIG`, `AUTH_TOKENS`가 필요합니다. Bearer 헤더를 지원하는 MCP 클라이언트를 `https://YOUR_HOST/mcp`에 연결합니다. npm 패키지가 배포되어 있다고 가정하지 않습니다.
+자동화 테스트는 공급자를 모의 처리하며 유료 모델을 호출하지 않습니다. 실제 API 테스트에는 **gpt-6-luna**, 운영에는 **gpt-6-astra / medium**을 사용합니다. Luna 결과로 Astra의 사용 가능 여부나 동등한 검토 품질을 입증할 수는 없습니다. Worker 배포에는 D1과 `OPENAI_API_KEY`, `REBUT_CONFIG`, `AUTH_TOKENS` 시크릿이 필요합니다. [설치 및 비공개 배포](docs/guide/ko/installation.md)를 따르세요.
 
 ## 주요 기능
 

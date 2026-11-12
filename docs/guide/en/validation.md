@@ -19,3 +19,7 @@ Remote unauthenticated requests returned 401; cross-origin requests returned 403
 ## Final-answer parsing regression
 
 Seven additional synthetic tests reproduce and cover commentary followed by a structured final answer, JSON-looking commentary, legacy phases, missing or ambiguous final output, and bounded validation reasons. The complete Worker suite passes 30 tests. No new paid API request was made to validate this fix. A user-authorized Astra review returned model/usage metadata but was rejected as `invalid_output`; its discarded body does not establish which validation branch failed. A successfully validated Astra review and quality parity remain unverified.
+
+## CLI validation scope
+
+The initial 23-test record above and the 30-test parser regression suite describe historical Worker validation, not npm CLI coverage. CLI validation separately covers argument/configuration handling, credential-backend selection without automatic fallback, Codex setup preserving other MCP entries, frozen collector output, sanitized diagnostics, and mocked client/stdio transport. Run `npm run typecheck`, `npm run build`, then `npm test` in a source checkout; record the actual CLI results separately. These instructions do not establish npm publication, additional device compatibility, a successful Astra review, or a new paid API test. Use `luna-test` for any explicitly authorized real API test; automated tests must mock the provider.

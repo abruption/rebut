@@ -4,9 +4,53 @@
 
 [Rebut](../../../README.zh-CN.md) · [用户指南](../zh-CN.md)
 
-## 环境要求与本地验证
+## 安装 npm CLI
 
-使用 Node.js **24 或更高版本**、npm、具有 Workers/D1 权限的 Cloudflare 账户，以及您自己具有 Responses API 访问权限的 OpenAI 密钥。从源代码检出目录安装；这些说明不要求已发布 npm 包或存在公开仓库。
+使用 Node.js **24 或更高版本**和 npm。安装自托管 Worker 的客户端及 stdio 桥接程序：
+
+```sh
+npm install -g rebut-mcp
+```
+
+## 配置客户端
+
+设置自己的端点后保存 Bearer 令牌。macOS 默认使用 Keychain；`rebut set token` 使用隐藏输入的提示。`rebut set token --stdin` 明确接受受保护的管道输入。绝不要将令牌值放入参数或受版本控制的文件。
+
+```sh
+rebut set endpoint https://YOUR_HOST/mcp
+rebut set token
+```
+
+使用现有 Vaultwarden 安装时，请明确选择后端。它使用 `bw-get` 和默认条目 `Rebut — MCP Access Token`；需要时可自定义条目名称：
+
+```sh
+rebut set secret-store vaultwarden
+rebut set vaultwarden-item NAME
+```
+
+非 macOS 环境请明确选择 `env`，通过安全执行环境提供 `REBUT_TOKEN`，不要写入受版本控制的文件或命令参数。后端不会自动回退。客户端无需 OpenAI 提供商密钥。
+
+使用 `env` 后端时，Codex 设置仅保存变量名 `env_vars = ['REBUT_TOKEN']`，绝不保存其值。令牌必须通过实际运行 Codex 的宿主的安全执行环境提供；仅为设置命令提供该变量，不会使其在后续 Codex 会话中可用。
+
+```sh
+rebut set secret-store env
+```
+
+## 连接 Codex 并检查配置
+
+```sh
+rebut setup --client codex
+rebut doctor
+rebut doctor --connect
+```
+
+设置使用 `CODEX_HOME` 或 `~/.codex`；可通过 `--codex-home PATH` 指定目标。它将 `rebut mcp` 注册为 stdio 服务器，保留其他 MCP 条目。迁移现有私有 `rebut` 桥接配置需要 `--replace`。
+
+`rebut doctor` 显示已清理敏感值的本地配置及凭据可用性。`rebut doctor --connect` 免费检查远程 `tools/list`；两者都不会启动付费审查。
+
+## 源代码检出与开发者验证
+
+npm 包是客户端，并非托管审查服务。Worker/D1 仍从 GitHub 源代码检出目录使用具有 Workers/D1 权限的自己的 Cloudflare 账户和 OpenAI Responses API 密钥部署。公开源代码/npm 不授予个人 Worker 或额度的访问权限。包中不包含真实端点、私有配置、Bearer 令牌、提供商密钥或审查正文。这些说明适用于 CLI `0.1.0`。
 
 ```sh
 npm ci
@@ -19,11 +63,11 @@ npm test
 
 ## 冻结审查输入
 
-使用明确的源文件允许列表；不要自动收集整个仓库。请在 Rebut 检出目录中运行命令。
+使用明确的源文件允许列表；不要自动收集整个仓库。收集器将冻结的 JSON 输出到标准输出。默认配置方案为 `astra-medium`；真实 API 测试必须明确使用 `luna-test`。
 
 ```sh
 umask 077
-npm run --silent collect -- /path/to/project request-001 'Check that the supplied function preserves its input' src/example.ts > /protected/path/request-001.bundle.json
+rebut collect --root /path/to/project --request-id request-001 --requirements 'Check that the supplied function preserves its input' --profile astra-medium -- src/example.ts > /protected/path/request-001.bundle.json
 ```
 
 收集器会拒绝符号链接、FIFO、秘密信息文件名、二进制文件及超出大小限制的材料。它会移除可识别的常见秘密信息模式，并保留行号。基于模式的脱敏并不完整：发送前请检查生成的输入包。也可以将文件作为带行号的片段提供，或直接提供 unified diff。规范化哈希和限制见[配置](configuration.md)。
@@ -38,15 +82,14 @@ npm run --silent collect -- /path/to/project request-001 'Check that the supplie
 
 ## 运行客户端
 
-随附的客户端接受 `list`、`status REQUEST_ID`，或通过标准输入接收 JSON 输入包的 `review`。通过安全的环境提供 `REBUT_ENDPOINT` 和 `REBUT_TOKEN`。绝不要将令牌值粘贴到命令或受版本控制的文件中。
+`rebut review` 从标准输入读取 JSON 输入包，仅在用户明确选择时启动付费审查。`rebut status REQUEST_ID` 是免费的元数据查询。
 
 ```sh
-npm run client -- list
-npm run client -- review < /protected/path/request-001.bundle.json
-npm run client -- status request-001
+rebut review < /protected/path/request-001.bundle.json
+rebut status request-001
 ```
 
-可选的 [Vaultwarden 包装脚本与审查器工作流](reviewer-integration.md)在内存中获取 Bearer 令牌。客户端从不需要 OpenAI 提供商密钥。请以严格权限将首次响应保存在本地；服务器仅存储元数据，无法重放审查正文。请将 MCP 客户端截止时间设置为超过 60 秒；提供商调用的超时时间为 45 秒。
+服务器仅存储元数据，无法重放审查正文，请以严格权限在本地保存首次响应。超时或结果不确定后保留同一请求 ID。MCP 客户端期限应超过 60 秒；提供商超时为 45 秒。参见[按需审查工作流](reviewer-integration.md)。
 
 ## 升级或移除
 

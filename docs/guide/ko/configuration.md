@@ -4,6 +4,14 @@
 
 [Rebut](../../../README.md) · [사용자 가이드](../ko.md)
 
+## 로컬 CLI 설정
+
+`npm install -g rebut-mcp`로 설치하고 `rebut set endpoint https://YOUR_HOST/mcp`로 Worker를 설정합니다. macOS 기본값은 Keychain입니다. `rebut set token`은 입력을 숨기는 대화형 프롬프트, `rebut set token --stdin`은 명시적인 보호된 파이프 입력을 사용합니다. bearer 값을 인자나 추적되는 파일에 넣지 마세요. 기존 Vaultwarden 작업 흐름은 `rebut set secret-store vaultwarden`으로 선택합니다. 기본 항목은 `Rebut — MCP Access Token`이며 `rebut set vaultwarden-item NAME`으로 변경합니다. macOS 외 환경은 `rebut set secret-store env`를 명시하고 안전한 실행 환경으로 `REBUT_TOKEN`을 제공합니다. 백엔드 자동 대체는 없습니다.
+
+`env` 백엔드에서 Codex 설정은 값 없이 변수명만 `env_vars = ['REBUT_TOKEN']`로 저장합니다. 토큰은 실제 Codex 호스트의 안전한 실행 환경에 제공해야 합니다. 설정 명령에만 제공한 환경 변수는 이후 Codex 세션에 전달되지 않습니다.
+
+`rebut setup --client codex`는 `CODEX_HOME` 또는 `~/.codex`를 사용하며 `--codex-home PATH`로 경로를 지정합니다. `rebut mcp`를 등록하고 다른 MCP 항목을 보존합니다. 기존 비공개 `rebut` 브리지 이전에는 `--replace`가 필요합니다. `rebut doctor`는 민감한 값을 제거한 로컬 설정과 자격증명 사용 가능 여부를, `rebut doctor --connect`는 무료 원격 `tools/list`를 확인합니다. 유료 검토는 수행하지 않습니다. [설치](installation.md)를 참고하세요.
+
 ## 서버 설정
 
 [`config.example.json`](../../../config.example.json)은 `REBUT_CONFIG` 시크릿의 구조를 정의합니다. `hostname`을 정확한 엔드포인트 호스트명으로 지정하고, 서버 측 프로필 ID와 배포 전체의 한도를 설정합니다. 클라이언트는 프로필 ID를 선택하며 모델명이나 공급자 URL을 재정의할 수 없습니다. 예시는 설정을 보여 주며 계정 수준의 모델 접근 권한을 보장하지 않습니다.

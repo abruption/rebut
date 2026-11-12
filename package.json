@@ -1,34 +1,62 @@
 {
   "name": "rebut-mcp",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "license": "MIT",
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "dev": "wrangler dev",
-    "build": "wrangler deploy --dry-run --outdir dist",
+    "build": "npm run build:cli && npm run build:worker",
     "collect": "tsx scripts/collect.ts",
-    "client": "tsx scripts/client.ts"
+    "client": "tsx scripts/client.ts",
+    "build:worker": "wrangler deploy --dry-run --outdir dist",
+    "build:cli": "node scripts/build-cli.mjs",
+    "prepack": "npm run build:cli"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/server": "2.4.0",
-    "agents": "0.33.0",
+    "smol-toml": "1.9.1",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261112.1",
-    "@modelcontextprotocol/client": "2.4.0",
     "@types/node": "26.6.6",
+    "agents": "0.33.0",
+    "esbuild": "0.28.2",
     "miniflare": "5.20261110.1-beta",
     "prettier": "3.10.0",
     "tsx": "4.23.15",
     "typescript": "7.0.2",
     "vitest": "5.1.0",
     "wrangler": "4.160.1"
+  },
+  "description": "Authenticated MCP client for independent, evidence-grounded reviews through your self-hosted Rebut Worker",
+  "bin": {
+    "rebut": "bin/rebut.mjs"
+  },
+  "files": [
+    "bin/rebut.mjs",
+    "lib/cli.mjs",
+    "README*.md",
+    "LICENSE",
+    "docs/guide",
+    "config.example.json",
+    "src/contracts.ts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abruption/rebut-mcp.git"
+  },
+  "homepage": "https://github.com/abruption/rebut-mcp",
+  "bugs": {
+    "url": "https://github.com/abruption/rebut-mcp/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

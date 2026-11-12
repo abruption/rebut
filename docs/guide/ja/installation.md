@@ -4,9 +4,53 @@
 
 [Rebut](../../../README.ja.md) · [ユーザーガイド](../ja.md)
 
-## 要件とローカル検証
+## npm CLI のインストール
 
-Node.js **24 以降**、npm、Workers/D1 権限のある Cloudflare アカウント、Responses API にアクセスできる自分の OpenAI キーを使用します。ソースのチェックアウトからインストールします。この手順は npm パッケージのリリースや公開リポジトリを必要としません。
+Node.js **24 以降**と npm を使用します。セルフホストした Worker のクライアントと stdio ブリッジをインストールします。
+
+```sh
+npm install -g rebut-mcp
+```
+
+## クライアントの設定
+
+自分のエンドポイントを設定してから Bearer トークンを保存します。macOS の既定は Keychain で、`rebut set token` は入力を隠すプロンプトを使います。`rebut set token --stdin` は保護されたパイプ入力を明示的に受け付けます。トークン値を引数や追跡対象ファイルに入れないでください。
+
+```sh
+rebut set endpoint https://YOUR_HOST/mcp
+rebut set token
+```
+
+既存の Vaultwarden を使う場合はバックエンドを明示的に選択します。`bw-get` と既定の項目 `Rebut — MCP Access Token` を使用し、必要に応じて項目名を変更できます。
+
+```sh
+rebut set secret-store vaultwarden
+rebut set vaultwarden-item NAME
+```
+
+macOS 以外では `env` を明示的に選び、安全な実行環境で `REBUT_TOKEN` を渡します。追跡対象ファイルやコマンド引数に書かないでください。バックエンドは自動で代替されません。クライアントに OpenAI プロバイダーキーは不要です。
+
+`env` バックエンドの場合、Codex 設定は値を保存せず、変数名だけを `env_vars = ['REBUT_TOKEN']` として保存します。トークンは実際に Codex を実行するホストの安全な実行環境で渡してください。設定コマンドにだけ渡した環境変数は、後の Codex セッションでは利用できません。
+
+```sh
+rebut set secret-store env
+```
+
+## Codex の接続と設定確認
+
+```sh
+rebut setup --client codex
+rebut doctor
+rebut doctor --connect
+```
+
+設定は `CODEX_HOME` または `~/.codex` を使い、`--codex-home PATH` で保存先を指定できます。`rebut mcp` を stdio サーバーとして登録し、他の MCP エントリを保持します。既存の非公開 `rebut` ブリッジの移行には `--replace` が必要です。
+
+`rebut doctor` は機密値を除いたローカル設定と認証情報の利用可否を表示します。`rebut doctor --connect` は無料でリモートの `tools/list` を確認します。どちらも有料レビューを開始しません。
+
+## ソースチェックアウトと開発者向け検証
+
+npm パッケージはクライアントであり、ホストされたレビューサービスではありません。Worker/D1 は GitHub のソースチェックアウトから、Workers/D1 権限のある自分の Cloudflare アカウントと OpenAI Responses API キーでデプロイします。公開ソース/npm は個人の Worker やクレジットへのアクセスを付与しません。実際のエンドポイント、非公開設定、Bearer、プロバイダーキー、レビュー本文はパッケージに含まれません。この手順は CLI `0.1.0` を対象としています。
 
 ```sh
 npm ci
@@ -19,11 +63,11 @@ npm test
 
 ## レビュー入力の確定
 
-ソースファイルを明示的な許可リストで指定し、リポジトリ全体を自動収集しないでください。コマンドは Rebut のチェックアウトから実行します。
+ソースファイルを明示的な許可リストで指定し、リポジトリ全体を自動収集しないでください。コレクターは確定済み JSON を標準出力に出力します。既定のプロファイルは `astra-medium` で、実際の API テストには `luna-test` を明示します。
 
 ```sh
 umask 077
-npm run --silent collect -- /path/to/project request-001 'Check that the supplied function preserves its input' src/example.ts > /protected/path/request-001.bundle.json
+rebut collect --root /path/to/project --request-id request-001 --requirements 'Check that the supplied function preserves its input' --profile astra-medium -- src/example.ts > /protected/path/request-001.bundle.json
 ```
 
 コレクターはシンボリックリンク、FIFO、シークレットを示すファイル名、バイナリファイル、サイズ上限を超える資料を拒否します。行番号を保持しながら、認識可能な一般的なシークレットのパターンを除去します。パターンによるマスキングは完全ではないため、送信前に生成されたバンドルを確認してください。ファイルを行番号付きの抜粋として提供したり、unified diff を直接提供したりすることもできます。正規化ハッシュと上限については[設定](configuration.md)で説明しています。
@@ -38,15 +82,14 @@ npm run --silent collect -- /path/to/project request-001 'Check that the supplie
 
 ## クライアントの実行
 
-付属のクライアントは、`list`、`status REQUEST_ID`、または標準入力から JSON バンドルを受け取る `review` に対応しています。`REBUT_ENDPOINT` と `REBUT_TOKEN` は安全な環境変数として渡します。トークン値をコマンドや追跡対象ファイルに貼り付けないでください。
+`rebut review` は標準入力から JSON バンドルを読み取り、ユーザーが明示的に選んだ場合のみ有料レビューを開始します。`rebut status REQUEST_ID` は無料のメタデータ照会です。
 
 ```sh
-npm run client -- list
-npm run client -- review < /protected/path/request-001.bundle.json
-npm run client -- status request-001
+rebut review < /protected/path/request-001.bundle.json
+rebut status request-001
 ```
 
-任意で利用できる [Vaultwarden ラッパーとレビュアーのワークフロー](reviewer-integration.md)は、Bearer トークンをメモリ内で取得します。クライアントに OpenAI プロバイダーキーは不要です。最初のレスポンスはアクセス権限を制限してローカルに保存してください。サーバーはメタデータのみを保存し、レビュー本文を再取得できません。MCP クライアントの期限は 60 秒より長く設定してください。プロバイダー呼び出しのタイムアウトは 45 秒です。
+サーバーはメタデータのみを保持し、レビュー本文は再取得できません。最初のレスポンスを権限を制限してローカルに保存してください。タイムアウトや不確かな結果の後も同じ ID を使います。MCP クライアントの期限は 60 秒より長く設定します。プロバイダーのタイムアウトは 45 秒です。[明示的なレビューワークフロー](reviewer-integration.md)を参照してください。
 
 ## アップグレードと削除
 

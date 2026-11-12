@@ -4,9 +4,53 @@
 
 [Rebut](../../../README.md) · [사용자 가이드](../ko.md)
 
-## 요구 사항 및 로컬 검증
+## npm CLI 설치
 
-Node.js **24 이상**, npm, Workers/D1 권한이 있는 Cloudflare 계정, Responses API 접근 권한이 있는 자신의 OpenAI 키를 사용합니다. 소스 체크아웃에서 설치하며, 이 안내는 npm 패키지 배포나 공개 저장소를 요구하지 않습니다.
+Node.js **24 이상**과 npm을 사용합니다. 직접 호스팅한 Worker의 클라이언트·stdio 브리지를 설치합니다.
+
+```sh
+npm install -g rebut-mcp
+```
+
+## 클라이언트 설정
+
+자신의 엔드포인트를 설정한 뒤 bearer 토큰을 저장합니다. macOS 기본값은 Keychain이며 `rebut set token`은 입력을 숨기는 프롬프트를 사용합니다. `rebut set token --stdin`은 보호된 파이프 입력을 명시적으로 받습니다. 토큰 값을 인자나 추적되는 파일에 넣지 마세요.
+
+```sh
+rebut set endpoint https://YOUR_HOST/mcp
+rebut set token
+```
+
+기존 Vaultwarden 설치를 사용하려면 백엔드를 명시적으로 선택합니다. `bw-get`과 기본 항목 `Rebut — MCP Access Token`을 사용하며 필요하면 항목명을 변경합니다.
+
+```sh
+rebut set secret-store vaultwarden
+rebut set vaultwarden-item NAME
+```
+
+macOS 외 환경에서는 `env`를 명시적으로 선택하고 안전한 실행 환경으로 `REBUT_TOKEN`을 제공합니다. 추적되는 파일이나 명령 인자에 쓰지 마세요. 백엔드는 자동으로 대체되지 않습니다. 클라이언트에는 OpenAI 공급자 키가 필요하지 않습니다.
+
+`env` 백엔드에서 Codex 설정은 값 없이 변수명만 `env_vars = ['REBUT_TOKEN']`로 저장합니다. 토큰은 실제 Codex 호스트의 안전한 실행 환경에 제공해야 합니다. 설정 명령에만 제공한 환경 변수는 이후 Codex 세션에 전달되지 않습니다.
+
+```sh
+rebut set secret-store env
+```
+
+## Codex 연결 및 설정 확인
+
+```sh
+rebut setup --client codex
+rebut doctor
+rebut doctor --connect
+```
+
+설정은 `CODEX_HOME` 또는 `~/.codex`를 사용하며 `--codex-home PATH`로 경로를 명시할 수 있습니다. `rebut mcp`를 stdio 서버로 등록하고 다른 MCP 항목을 보존합니다. 기존 비공개 `rebut` 브리지를 이전하려면 `--replace`가 필요합니다.
+
+`rebut doctor`는 민감한 값을 제거한 로컬 설정과 자격증명 사용 가능 여부를 표시합니다. `rebut doctor --connect`는 무료 원격 `tools/list` 확인을 수행합니다. 두 명령 모두 유료 검토를 시작하지 않습니다.
+
+## 소스 체크아웃 및 개발자 검증
+
+npm 패키지는 호스팅된 검토 서비스가 아닌 클라이언트입니다. Worker/D1은 GitHub 소스 체크아웃에서 Workers/D1 권한이 있는 자신의 Cloudflare 계정과 OpenAI Responses API 키로 배포합니다. 공개 소스/npm은 개인 Worker나 크레딧 접근 권한을 주지 않습니다. 패키지에는 실제 엔드포인트, 비공개 설정, bearer, 공급자 키, 검토 본문이 포함되지 않습니다. 이 안내는 CLI `0.1.0`을 대상으로 합니다.
 
 ```sh
 npm ci
@@ -19,11 +63,11 @@ npm test
 
 ## 검토 입력 고정
 
-소스 파일을 명시적인 허용 목록으로 지정하세요. 전체 저장소를 자동 수집하지 마세요. Rebut 체크아웃에서 명령을 실행합니다.
+소스 파일을 명시적인 허용 목록으로 지정하고 전체 저장소를 자동 수집하지 마세요. 수집기는 고정 JSON을 표준 출력으로 내보냅니다. 기본 프로필은 `astra-medium`이며 실제 API 테스트에는 `luna-test`를 명시해야 합니다.
 
 ```sh
 umask 077
-npm run --silent collect -- /path/to/project request-001 'Check that the supplied function preserves its input' src/example.ts > /protected/path/request-001.bundle.json
+rebut collect --root /path/to/project --request-id request-001 --requirements 'Check that the supplied function preserves its input' --profile astra-medium -- src/example.ts > /protected/path/request-001.bundle.json
 ```
 
 수집기는 심볼릭 링크, FIFO, 비밀정보 파일명, 바이너리 파일, 크기 한도를 넘는 자료를 거부합니다. 흔히 식별할 수 있는 비밀정보 패턴을 제거하면서 행 번호를 보존합니다. 패턴 기반 마스킹은 불완전하므로 전송 전에 생성된 번들을 확인하세요. 파일을 행 번호가 있는 코드 조각으로 제공하거나 unified diff를 직접 제공할 수도 있습니다. 정규화 해시와 한도는 [설정](configuration.md)에서 설명합니다.
@@ -38,15 +82,14 @@ npm run --silent collect -- /path/to/project request-001 'Check that the supplie
 
 ## 클라이언트 실행
 
-포함된 클라이언트는 `list`, `status REQUEST_ID`, 또는 표준 입력으로 JSON 번들을 받는 `review`를 지원합니다. `REBUT_ENDPOINT`와 `REBUT_TOKEN`은 안전한 환경을 통해 제공합니다. 토큰 값을 명령이나 추적되는 파일에 붙여 넣지 마세요.
+`rebut review`는 표준 입력으로 JSON 번들을 받아 사용자가 명시적으로 선택한 경우에만 유료 검토를 시작합니다. `rebut status REQUEST_ID`는 무료 메타데이터 조회입니다.
 
 ```sh
-npm run client -- list
-npm run client -- review < /protected/path/request-001.bundle.json
-npm run client -- status request-001
+rebut review < /protected/path/request-001.bundle.json
+rebut status request-001
 ```
 
-선택 사항인 [Vaultwarden 래퍼 및 검토자 작업 흐름](reviewer-integration.md)은 bearer 토큰을 메모리에서 가져옵니다. 클라이언트에는 OpenAI 공급자 키가 필요하지 않습니다. 최초 응답을 제한적인 권한으로 로컬에 저장하세요. 서버는 메타데이터만 저장하므로 검토 본문을 다시 제공할 수 없습니다. MCP 클라이언트 제한 시간은 60초보다 길게 설정하세요. 공급자 호출의 제한 시간은 45초입니다.
+서버는 메타데이터만 저장하므로 최초 응답을 제한적인 권한으로 로컬에 보존하세요. 시간 초과나 불확실한 결과 뒤에는 같은 요청 ID를 유지합니다. MCP 클라이언트 제한 시간은 60초보다 길게 설정하며 공급자 제한 시간은 45초입니다. [선택적 검토 작업 흐름](reviewer-integration.md)을 참고하세요.
 
 ## 업그레이드 또는 제거
 

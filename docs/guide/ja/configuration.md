@@ -4,6 +4,14 @@
 
 [Rebut](../../../README.ja.md) · [ユーザーガイド](../ja.md)
 
+## ローカル CLI 設定
+
+`npm install -g rebut-mcp` でインストールし、`rebut set endpoint https://YOUR_HOST/mcp` で Worker を設定します。macOS の既定は Keychain です。`rebut set token` は入力を隠す対話型プロンプトを使い、`rebut set token --stdin` は保護されたパイプ入力を明示的に受け付けます。Bearer 値を引数や追跡対象ファイルに入れないでください。既存の Vaultwarden ワークフローは `rebut set secret-store vaultwarden` で明示的に選びます。既定の項目は `Rebut — MCP Access Token` で、`rebut set vaultwarden-item NAME` で変更できます。macOS 以外では `rebut set secret-store env` を明示し、安全な実行環境から `REBUT_TOKEN` を渡します。バックエンドは自動で代替されません。
+
+`env` バックエンドの場合、Codex 設定は値を保存せず、変数名だけを `env_vars = ['REBUT_TOKEN']` として保存します。トークンは実際に Codex を実行するホストの安全な実行環境で渡してください。設定コマンドにだけ渡した環境変数は、後の Codex セッションでは利用できません。
+
+`rebut setup --client codex` は `CODEX_HOME` または `~/.codex` を使用し、`--codex-home PATH` で別の保存先を指定します。`rebut mcp` を登録し、他の MCP エントリを保持します。既存の非公開 `rebut` ブリッジの移行には `--replace` が必要です。`rebut doctor` は機密値を除いたローカル設定と認証情報の利用可否を表示し、`rebut doctor --connect` は無料でリモートの `tools/list` を確認します。いずれも有料レビューは実行しません。[インストール](installation.md)を参照してください。
+
 ## サーバー設定
 
 [`config.example.json`](../../../config.example.json) は `REBUT_CONFIG` シークレットの構造を定義しています。`hostname` をエンドポイントの正確なホスト名に設定し、サーバー側のプロファイル ID とデプロイ全体の上限を設定します。クライアントはプロファイル ID を選択しますが、モデル名やプロバイダー URL を上書きすることはできません。この例は設定を示すものであり、アカウントでのモデルアクセスを保証するものではありません。

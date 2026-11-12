@@ -4,6 +4,14 @@
 
 [Rebut](../../../README.zh-CN.md) · [用户指南](../zh-CN.md)
 
+## 本地 CLI 配置
+
+使用 `npm install -g rebut-mcp` 安装，通过 `rebut set endpoint https://YOUR_HOST/mcp` 配置 Worker。macOS 默认使用 Keychain：`rebut set token` 使用隐藏输入的交互式提示；`rebut set token --stdin` 明确接受受保护的管道输入。不要将 Bearer 值放入参数或受版本控制的文件。现有 Vaultwarden 工作流使用 `rebut set secret-store vaultwarden` 明确选择；默认条目为 `Rebut — MCP Access Token`，可用 `rebut set vaultwarden-item NAME` 修改。非 macOS 环境须明确使用 `rebut set secret-store env`，并通过安全执行环境提供 `REBUT_TOKEN`。后端不会自动回退。
+
+使用 `env` 后端时，Codex 设置仅保存变量名 `env_vars = ['REBUT_TOKEN']`，绝不保存其值。令牌必须通过实际运行 Codex 的宿主的安全执行环境提供；仅为设置命令提供该变量，不会使其在后续 Codex 会话中可用。
+
+`rebut setup --client codex` 使用 `CODEX_HOME` 或 `~/.codex`；`--codex-home PATH` 指定其他目录。它注册 `rebut mcp` 并保留其他 MCP 条目；迁移现有私有 `rebut` 桥接配置需要 `--replace`。`rebut doctor` 显示已清理敏感值的本地配置及凭据可用性；`rebut doctor --connect` 免费检查远程 `tools/list`。两者均不进行付费审查。参见[安装](installation.md)。
+
 ## 服务器配置
 
 [`config.example.json`](../../../config.example.json) 定义了 `REBUT_CONFIG` Secret 的结构。将 `hostname` 设为端点的准确主机名，配置服务器端的配置方案 ID，并设置部署范围内的限制。客户端选择配置方案 ID，不能覆盖模型名称或提供商 URL。示例只是配置，不承诺账户级模型访问权限。

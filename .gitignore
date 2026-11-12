@@ -7,3 +7,5 @@ dist/
 *.review.json
 *.bundle.json
 .worktree/
+lib/
+*.tgz

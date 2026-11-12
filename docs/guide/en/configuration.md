@@ -4,6 +4,14 @@
 
 [Rebut](../../../README.en.md) · [User guide](../en.md)
 
+## Local CLI configuration
+
+Install with `npm install -g rebut-mcp`; set the Worker with `rebut set endpoint https://YOUR_HOST/mcp`. macOS defaults to Keychain: `rebut set token` uses hidden interactive input; `rebut set token --stdin` explicitly accepts a protected pipe. Never pass bearer values in argv or tracked files. Select an existing Vaultwarden workflow with `rebut set secret-store vaultwarden`; its default item is `Rebut — MCP Access Token`, configurable with `rebut set vaultwarden-item NAME`. On non-macOS, explicitly use `rebut set secret-store env` and supply `REBUT_TOKEN` via a secure execution environment. There is no automatic backend fallback.
+
+For the `env` backend, Codex setup stores only `env_vars = ['REBUT_TOKEN']` (the variable name), never its value. Supply the token in the secure execution environment of the actual Codex host; setting it only for the setup command does not make it available to later Codex sessions.
+
+`rebut setup --client codex` uses `CODEX_HOME` or `~/.codex`; `--codex-home PATH` selects another home. It registers `rebut mcp`, preserves other MCP entries, and requires `--replace` to migrate an existing private `rebut` bridge. `rebut doctor` shows sanitized local configuration/credential availability; `rebut doctor --connect` checks remote `tools/list` for free. Neither performs a paid review. See [installation](installation.md).
+
 ## Server configuration
 
 [`config.example.json`](../../../config.example.json) defines the structure of the `REBUT_CONFIG` secret. Set `hostname` to the exact endpoint hostname, configure server-side profile IDs, and set deployment-wide limits. Clients choose profile IDs; they cannot override model names or the provider URL. The example is configuration, not a promise of account-level model access.
