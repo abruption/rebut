@@ -7,6 +7,7 @@ import {
   type ReviewInput,
   type ReviewOutcome,
   type ReviewUsage,
+  type InvalidOutputReason,
 } from "./contracts.js";
 
 export type { Profile, ReviewInput, ReviewOutcome } from "./contracts.js";
@@ -221,6 +222,11 @@ export async function runReview(
     price_version: profile.priceVersion,
   };
   const controller = new AbortController();
+  const invalid = (reason: InvalidOutputReason): ReviewOutcome => ({
+    ...base,
+    status: "invalid_output",
+    invalid_output_reason: reason,
+  });
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     const body = JSON.stringify(
@@ -301,7 +307,7 @@ export async function runReview(
     const texts: string[] = [];
     let refused = false;
     for (const item of response.output) {
-      if (!isRecord(item)) return { ...base, status: "invalid_output" };
+      if (!isRecord(item)) return invalid("unexpected_output_item");
       if (item.type === "reasoning") continue;
       if (
         item.type !== "message" ||
@@ -309,29 +315,35 @@ export async function runReview(
         item.status !== "completed" ||
         !Array.isArray(item.content)
       )
-        return { ...base, status: "invalid_output" };
+        return invalid("invalid_message");
+      // Structured Outputs apply to the final assistant answer. Intermediate
+      // commentary can be plain text and must not be parsed or merged with it.
+      if (item.phase === "commentary") continue;
+      if (item.phase != null && item.phase !== "final_answer")
+        return invalid("unsupported_message_phase");
       for (const content of item.content) {
-        if (!isRecord(content)) return { ...base, status: "invalid_output" };
+        if (!isRecord(content)) return invalid("invalid_content");
         if (content.type === "refusal") refused = true;
         else if (
           content.type === "output_text" &&
           typeof content.text === "string"
         )
           texts.push(content.text);
-        else return { ...base, status: "invalid_output" };
+        else return invalid("unsupported_content");
       }
     }
     if (refused) return { ...base, status: "refused" };
-    if (texts.length !== 1) return { ...base, status: "invalid_output" };
+    if (texts.length === 0) return invalid("missing_final_output");
+    if (texts.length !== 1) return invalid("multiple_final_outputs");
     let decoded: unknown;
     try {
       decoded = JSON.parse(texts[0]!);
     } catch {
-      return { ...base, status: "invalid_output" };
+      return invalid("invalid_json");
     }
     const review = ReviewSchema.safeParse(decoded);
-    if (!review.success || !grounded(input, review.data))
-      return { ...base, status: "invalid_output" };
+    if (!review.success) return invalid("schema_mismatch");
+    if (!grounded(input, review.data)) return invalid("ungrounded_finding");
     if (!parsedUsage.success) return base;
     return { ...base, status: "completed", review: review.data };
   } catch {

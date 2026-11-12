@@ -222,6 +222,162 @@ describe("reservation and request", () => {
 });
 
 describe("response validation", () => {
+  it("selects final_answer instead of treating commentary as structured review text", async () => {
+    const final = payload().output[0]!;
+    const response = payload({
+      output: [
+        {
+          type: "message",
+          role: "assistant",
+          status: "completed",
+          phase: "commentary",
+          content: [
+            {
+              type: "output_text",
+              text: "I will check the supplied evidence.",
+            },
+          ],
+        },
+        { ...final, phase: "final_answer" },
+      ],
+    });
+    const result = await runReview(input, profile, "fake", mockFetch(response));
+    expect(result.status).toBe("completed");
+    expect(result.review).toEqual(review);
+  });
+  it("never selects JSON-looking commentary as the final review", async () => {
+    const final = payload().output[0]!;
+    const result = await runReview(
+      input,
+      profile,
+      "fake",
+      mockFetch(
+        payload({
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              status: "completed",
+              phase: "commentary",
+              content: [
+                {
+                  type: "output_text",
+                  text: JSON.stringify({
+                    ...review,
+                    summary: "Untrusted intermediate summary",
+                  }),
+                },
+              ],
+            },
+            { ...final, phase: "final_answer" },
+          ],
+        }),
+      ),
+    );
+    expect(result.status).toBe("completed");
+    expect(result.review?.summary).toBe(review.summary);
+  });
+  it.each([undefined, null, "final_answer"])(
+    "preserves supported final phase %s",
+    async (phase) => {
+      const final = payload().output[0]!;
+      expect(
+        (
+          await runReview(
+            input,
+            profile,
+            "fake",
+            mockFetch(payload({ output: [{ ...final, phase }] })),
+          )
+        ).status,
+      ).toBe("completed");
+    },
+  );
+  it("rejects commentary-only and ambiguous final outputs without returning their text", async () => {
+    const final = payload().output[0]!;
+    const commentary = { ...final, phase: "commentary" };
+    const missing = await runReview(
+      input,
+      profile,
+      "fake",
+      mockFetch(payload({ output: [commentary] })),
+    );
+    expect(missing).toMatchObject({
+      status: "invalid_output",
+      invalid_output_reason: "missing_final_output",
+    });
+    const multiple = await runReview(
+      input,
+      profile,
+      "fake",
+      mockFetch(
+        payload({
+          output: [
+            { ...final, phase: "final_answer" },
+            { ...final, phase: "final_answer" },
+          ],
+        }),
+      ),
+    );
+    expect(multiple).toMatchObject({
+      status: "invalid_output",
+      invalid_output_reason: "multiple_final_outputs",
+    });
+    const unknown = await runReview(
+      input,
+      profile,
+      "fake",
+      mockFetch(payload({ output: [{ ...final, phase: "unknown_phase" }] })),
+    );
+    expect(unknown).toMatchObject({
+      status: "invalid_output",
+      invalid_output_reason: "unsupported_message_phase",
+    });
+    for (const result of [missing, multiple, unknown])
+      expect(result.review).toBeUndefined();
+  });
+  it("reports bounded JSON, schema, and evidence diagnostic codes without private content", async () => {
+    const output = (text: string) => [
+      {
+        type: "message",
+        role: "assistant",
+        status: "completed",
+        phase: "final_answer",
+        content: [{ type: "output_text", text }],
+      },
+    ];
+    const cases = [
+      { text: "private non-JSON model output", reason: "invalid_json" },
+      {
+        text: JSON.stringify({ private_field: "private review body" }),
+        reason: "schema_mismatch",
+      },
+      {
+        text: JSON.stringify({
+          ...review,
+          findings: [
+            { ...review.findings[0], path: "private-not-supplied.ts" },
+          ],
+        }),
+        reason: "ungrounded_finding",
+      },
+    ];
+    for (const test of cases) {
+      const result = await runReview(
+        input,
+        profile,
+        "fake",
+        mockFetch(payload({ output: output(test.text) })),
+      );
+      expect(result).toMatchObject({
+        status: "invalid_output",
+        invalid_output_reason: test.reason,
+      });
+      expect(result.usage).toBeDefined();
+      expect(result.review).toBeUndefined();
+      expect(JSON.stringify(result)).not.toContain("private");
+    }
+  });
   it("distinguishes refusal and incomplete responses", async () => {
     const refused = payload({
       output: [

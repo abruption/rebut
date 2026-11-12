@@ -115,6 +115,17 @@ export interface ReviewUsage {
   cached_tokens: number;
   reasoning_tokens: number;
 }
+export type InvalidOutputReason =
+  | "unexpected_output_item"
+  | "invalid_message"
+  | "unsupported_message_phase"
+  | "invalid_content"
+  | "unsupported_content"
+  | "missing_final_output"
+  | "multiple_final_outputs"
+  | "invalid_json"
+  | "schema_mismatch"
+  | "ungrounded_finding";
 export interface ReviewOutcome {
   status: "completed" | "refused" | "incomplete" | "invalid_output" | "unknown";
   review?: Review;
@@ -127,4 +138,6 @@ export interface ReviewOutcome {
   price_version: string;
   upstream_status?: number;
   upstream_error_code?: string;
+  /** Bounded diagnostic code only; never contains source, review text, or paths. */
+  invalid_output_reason?: InvalidOutputReason;
 }

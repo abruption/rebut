@@ -53,3 +53,5 @@ SHA-256 涵盖脱敏后规范化的 `{schema_version,task_kind,requirements,file
 仅存元数据的 D1 账本保留请求 ID、哈希、配置方案、状态、预留金额、经过清理的提供商 ID 及用量。它从不存储源代码或审查文本。示例禁用了 Worker 可观测性。`AUTH_TOKENS` 包含令牌摘要，而非 Bearer 原值；请将原始 Bearer 令牌保存在密码管理器中。设置方法见[安装](installation.md)。
 
 OpenAI 请求使用 `store:false`；这**不**保证提供商零保留数据，也不能替代您组织的数据政策。参见 [OpenAI 数据控制](https://developers.openai.com/api/docs/guides/your-data)。请将凭据和私有部署标识符保留在公开源代码及日志之外。
+
+结果为 `invalid_output` 时，`invalid_output_reason` 可在不保留源代码或审查正文的情况下标识失败的验证阶段。中间 `commentary` 消息会被排除，仅将 `final_answer` 或未指定 phase 的旧格式消息解析为结构化审查。多个最终输出、无效 JSON 或模式以及超出所提供证据范围的发现仍会被拒绝。

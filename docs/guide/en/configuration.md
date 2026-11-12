@@ -53,3 +53,5 @@ After a timeout, query **the same request ID**. Repeating it never creates anoth
 The metadata-only D1 ledger retains request IDs, hashes, profile, status, reservation, sanitized provider IDs and usage. It never stores source or review text. Worker observability is disabled in the example. `AUTH_TOKENS` contains token digests, not bearer values; keep original bearer tokens in your password manager. See [installation](installation.md) for setup.
 
 The OpenAI request uses `store:false`; this does **not** promise zero provider retention or replace your organization's data policy. See [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data). Keep credentials and private deployment identifiers outside public source and logs.
+
+When the result is `invalid_output`, `invalid_output_reason` identifies the failed validation stage without retaining source or review text. Intermediate `commentary` messages are excluded; only `final_answer` (or a legacy message with no phase) is parsed as the structured review. Multiple final outputs, invalid JSON/schema, and findings outside supplied evidence remain errors.

@@ -53,3 +53,5 @@ SHA-256은 마스킹 후 정규화한 `{schema_version,task_kind,requirements,fi
 메타데이터 전용 D1 원장은 요청 ID, 해시, 프로필, 상태, 예약, 정제된 공급자 ID와 사용량을 보관합니다. 소스나 검토 텍스트는 저장하지 않습니다. 예시에서는 Worker 관측 기능을 비활성화합니다. `AUTH_TOKENS`에는 bearer 값이 아닌 토큰 다이제스트가 들어갑니다. 원본 bearer 토큰은 비밀번호 관리자에 보관하세요. 설정 방법은 [설치](installation.md)를 참고하세요.
 
 OpenAI 요청에는 `store:false`를 사용합니다. 이는 공급자의 보관 기간이 0임을 보장하거나 조직의 데이터 정책을 대체하지 **않습니다**. [OpenAI 데이터 제어](https://developers.openai.com/api/docs/guides/your-data)를 참고하세요. 자격증명과 비공개 배포 식별자는 공개 소스와 로그에 포함하지 마세요.
+
+결과가 `invalid_output`이면 `invalid_output_reason`으로 원문이나 검토 본문을 보관하지 않고도 실패한 검증 단계를 구분할 수 있습니다. 중간 `commentary` 메시지는 제외하고 `final_answer` 또는 phase가 없는 기존 형식의 메시지만 구조화된 검토로 해석합니다. 최종 출력 중복, JSON·스키마 오류, 제공된 근거 범위를 벗어난 지적은 계속 오류로 처리합니다.
