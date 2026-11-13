@@ -9,7 +9,7 @@
 Node.js **24 이상**과 npm을 사용합니다. 직접 호스팅한 Worker의 클라이언트·stdio 브리지를 설치합니다.
 
 ```sh
-npm install -g rebut
+npm install -g rebut-mcp
 ```
 
 ## 클라이언트 설정

@@ -6,7 +6,7 @@
 
 ## ローカル CLI 設定
 
-`npm install -g rebut` でインストールし、`rebut set endpoint https://YOUR_HOST/mcp` で Worker を設定します。macOS の既定は Keychain です。`rebut set token` は入力を隠す対話型プロンプトを使い、`rebut set token --stdin` は保護されたパイプ入力を明示的に受け付けます。Bearer 値を引数や追跡対象ファイルに入れないでください。既存の Vaultwarden ワークフローは `rebut set secret-store vaultwarden` で明示的に選びます。既定の項目は `Rebut — MCP Access Token` で、`rebut set vaultwarden-item NAME` で変更できます。macOS 以外では `rebut set secret-store env` を明示し、安全な実行環境から `REBUT_TOKEN` を渡します。バックエンドは自動で代替されません。
+`npm install -g rebut-mcp` でインストールし、`rebut set endpoint https://YOUR_HOST/mcp` で Worker を設定します。macOS の既定は Keychain です。`rebut set token` は入力を隠す対話型プロンプトを使い、`rebut set token --stdin` は保護されたパイプ入力を明示的に受け付けます。Bearer 値を引数や追跡対象ファイルに入れないでください。既存の Vaultwarden ワークフローは `rebut set secret-store vaultwarden` で明示的に選びます。既定の項目は `Rebut — MCP Access Token` で、`rebut set vaultwarden-item NAME` で変更できます。macOS 以外では `rebut set secret-store env` を明示し、安全な実行環境から `REBUT_TOKEN` を渡します。バックエンドは自動で代替されません。
 
 `env` バックエンドの場合、Codex 設定は値を保存せず、変数名だけを `env_vars = ['REBUT_TOKEN']` として保存します。トークンは実際に Codex を実行するホストの安全な実行環境で渡してください。設定コマンドにだけ渡した環境変数は、後の Codex セッションでは利用できません。
 

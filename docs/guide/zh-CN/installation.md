@@ -9,7 +9,7 @@
 使用 Node.js **24 或更高版本**和 npm。安装自托管 Worker 的客户端及 stdio 桥接程序：
 
 ```sh
-npm install -g rebut
+npm install -g rebut-mcp
 ```
 
 ## 配置客户端

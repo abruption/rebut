@@ -76,7 +76,7 @@ export async function connectRemote(options: RemoteOptions): Promise<Client> {
       reconnectionDelayGrowFactor: 1,
     },
   });
-  const client = new Client({ name: "rebut", version: "0.1.0" });
+  const client = new Client({ name: "rebut-mcp", version: "0.1.0" });
   // Enforce the same finite budgets for CLI consumers and the stdio bridge.
   const callTool = client.callTool.bind(client);
   client.callTool = (params, requestOptions) =>

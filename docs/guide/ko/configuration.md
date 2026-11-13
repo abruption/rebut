@@ -6,7 +6,7 @@
 
 ## 로컬 CLI 설정
 
-`npm install -g rebut`로 설치하고 `rebut set endpoint https://YOUR_HOST/mcp`로 Worker를 설정합니다. macOS 기본값은 Keychain입니다. `rebut set token`은 입력을 숨기는 대화형 프롬프트, `rebut set token --stdin`은 명시적인 보호된 파이프 입력을 사용합니다. bearer 값을 인자나 추적되는 파일에 넣지 마세요. 기존 Vaultwarden 작업 흐름은 `rebut set secret-store vaultwarden`으로 선택합니다. 기본 항목은 `Rebut — MCP Access Token`이며 `rebut set vaultwarden-item NAME`으로 변경합니다. macOS 외 환경은 `rebut set secret-store env`를 명시하고 안전한 실행 환경으로 `REBUT_TOKEN`을 제공합니다. 백엔드 자동 대체는 없습니다.
+`npm install -g rebut-mcp`로 설치하고 `rebut set endpoint https://YOUR_HOST/mcp`로 Worker를 설정합니다. macOS 기본값은 Keychain입니다. `rebut set token`은 입력을 숨기는 대화형 프롬프트, `rebut set token --stdin`은 명시적인 보호된 파이프 입력을 사용합니다. bearer 값을 인자나 추적되는 파일에 넣지 마세요. 기존 Vaultwarden 작업 흐름은 `rebut set secret-store vaultwarden`으로 선택합니다. 기본 항목은 `Rebut — MCP Access Token`이며 `rebut set vaultwarden-item NAME`으로 변경합니다. macOS 외 환경은 `rebut set secret-store env`를 명시하고 안전한 실행 환경으로 `REBUT_TOKEN`을 제공합니다. 백엔드 자동 대체는 없습니다.
 
 `env` 백엔드에서 Codex 설정은 값 없이 변수명만 `env_vars = ['REBUT_TOKEN']`로 저장합니다. 토큰은 실제 Codex 호스트의 안전한 실행 환경에 제공해야 합니다. 설정 명령에만 제공한 환경 변수는 이후 Codex 세션에 전달되지 않습니다.
 

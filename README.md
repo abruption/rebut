@@ -17,7 +17,7 @@ Rebut은 **명시적으로 선택하여 사용하는 검토 도구**입니다. �
 **Node.js 24 이상**이 필요합니다. npm CLI를 설치하고 직접 배포한 Worker를 설정합니다.
 
 ```sh
-npm install -g rebut
+npm install -g rebut-mcp
 rebut set endpoint https://YOUR_HOST/mcp
 rebut set token
 rebut setup --client codex
@@ -27,7 +27,7 @@ rebut doctor --connect
 
 macOS에서 `rebut set token`은 입력을 숨기는 대화형 프롬프트로 bearer를 받아 기본 Keychain에 저장합니다. 토큰을 인자로 전달하지 마세요. 명시적인 Vaultwarden/env 백엔드와 Codex 마이그레이션 옵션은 [설치 안내](docs/guide/ko/installation.md)를 참고하세요.
 
-`rebut`(초기 CLI 버전 `0.1.0`, 실행 명령 `rebut`)는 **직접 호스팅한 Worker**의 클라이언트이자 stdio 브리지입니다. Worker/D1은 GitHub 소스 체크아웃에서 자신의 Cloudflare 계정과 OpenAI 키로 배포합니다. 공개 소스나 npm 패키지는 개인 Worker 또는 크레딧 접근 권한을 주지 않습니다. 패키지에는 실제 엔드포인트, 비공개 설정, bearer, 공급자 키, 검토 본문이 포함되지 않습니다. 이 안내는 CLI `0.1.0`을 대상으로 합니다.
+`rebut-mcp`(초기 CLI 버전 `0.1.0`, 실행 명령 `rebut`)는 **직접 호스팅한 Worker**의 클라이언트이자 stdio 브리지입니다. Worker/D1은 GitHub 소스 체크아웃에서 자신의 Cloudflare 계정과 OpenAI 키로 배포합니다. 공개 소스나 npm 패키지는 개인 Worker 또는 크레딧 접근 권한을 주지 않습니다. 패키지에는 실제 엔드포인트, 비공개 설정, bearer, 공급자 키, 검토 본문이 포함되지 않습니다. 이 안내는 CLI `0.1.0`을 대상으로 합니다.
 
 개발자 검증은 소스 체크아웃에서 수행합니다.
 

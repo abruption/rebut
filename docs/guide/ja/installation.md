@@ -9,7 +9,7 @@
 Node.js **24 以降**と npm を使用します。セルフホストした Worker のクライアントと stdio ブリッジをインストールします。
 
 ```sh
-npm install -g rebut
+npm install -g rebut-mcp
 ```
 
 ## クライアントの設定

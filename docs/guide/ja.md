@@ -6,7 +6,7 @@
 
 Rebut は、OpenAI Responses API による独立したレビューを提供する、明示的に選択して利用する認証付き Cloudflare Worker MCP です。明示的に提供された確定済みの証拠だけをレビューします。リポジトリのクローン、任意の URL の取得、コマンドやテストの実行、ファイルの編集、プルリクエストの作成は行いません。
 
-`npm install -g rebut` でクライアントをインストールし、自分の Worker と認証情報バックエンドを設定してから `rebut setup --client codex` を実行します。パッケージはセルフホストした Worker のブリッジであり、Worker/D1 のデプロイには引き続き GitHub のソースチェックアウトと自分の Cloudflare アカウント・OpenAI キーが必要です。Keychain、Vaultwarden、明示的な env モード、無料診断、選択的な有料レビューについては[インストール](ja/installation.md)から始めてください。
+`npm install -g rebut-mcp` でクライアントをインストールし、自分の Worker と認証情報バックエンドを設定してから `rebut setup --client codex` を実行します。パッケージはセルフホストした Worker のブリッジであり、Worker/D1 のデプロイには引き続き GitHub のソースチェックアウトと自分の Cloudflare アカウント・OpenAI キーが必要です。Keychain、Vaultwarden、明示的な env モード、無料診断、選択的な有料レビューについては[インストール](ja/installation.md)から始めてください。
 
 | ガイド                                         | 内容                                                                                     |
 | ---------------------------------------------- | ---------------------------------------------------------------------------------------- |

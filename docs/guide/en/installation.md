@@ -9,7 +9,7 @@
 Use Node.js **24 or later** and npm. Install the client/stdio bridge for your self-hosted Worker with:
 
 ```sh
-npm install -g rebut
+npm install -g rebut-mcp
 ```
 
 ## Configure the client

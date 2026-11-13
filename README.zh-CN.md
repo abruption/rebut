@@ -17,7 +17,7 @@ Rebut 是一个**需要明确选择启用的审查器**。它不会替代现有�
 需要 **Node.js 24 或更高版本**。安装 npm CLI，并配置您自行部署的 Worker：
 
 ```sh
-npm install -g rebut
+npm install -g rebut-mcp
 rebut set endpoint https://YOUR_HOST/mcp
 rebut set token
 rebut setup --client codex
@@ -27,7 +27,7 @@ rebut doctor --connect
 
 在 macOS 上，`rebut set token` 使用隐藏输入的交互式提示，默认将 Bearer 令牌保存在 Keychain 中。绝不要将令牌作为参数传递。明确选择 Vaultwarden/env 后端及 Codex 迁移选项见[安装指南](docs/guide/zh-CN/installation.md)。
 
-`rebut`（初始 CLI 版本 `0.1.0`，命令 `rebut`）是**自托管 Worker**的客户端和 stdio 桥接程序。Worker/D1 仍需从 GitHub 源代码检出目录使用您自己的 Cloudflare 账户和 OpenAI 密钥部署。公开源代码或 npm 包不会授予个人 Worker 或额度的访问权限。包中不包含真实端点、私有配置、Bearer 令牌、提供商密钥或审查正文。这些说明适用于 CLI `0.1.0`。
+`rebut-mcp`（初始 CLI 版本 `0.1.0`，命令 `rebut`）是**自托管 Worker**的客户端和 stdio 桥接程序。Worker/D1 仍需从 GitHub 源代码检出目录使用您自己的 Cloudflare 账户和 OpenAI 密钥部署。公开源代码或 npm 包不会授予个人 Worker 或额度的访问权限。包中不包含真实端点、私有配置、Bearer 令牌、提供商密钥或审查正文。这些说明适用于 CLI `0.1.0`。
 
 开发者验证仍在源代码检出目录中执行：
 

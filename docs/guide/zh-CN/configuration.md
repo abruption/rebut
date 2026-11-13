@@ -6,7 +6,7 @@
 
 ## 本地 CLI 配置
 
-使用 `npm install -g rebut` 安装，通过 `rebut set endpoint https://YOUR_HOST/mcp` 配置 Worker。macOS 默认使用 Keychain：`rebut set token` 使用隐藏输入的交互式提示；`rebut set token --stdin` 明确接受受保护的管道输入。不要将 Bearer 值放入参数或受版本控制的文件。现有 Vaultwarden 工作流使用 `rebut set secret-store vaultwarden` 明确选择；默认条目为 `Rebut — MCP Access Token`，可用 `rebut set vaultwarden-item NAME` 修改。非 macOS 环境须明确使用 `rebut set secret-store env`，并通过安全执行环境提供 `REBUT_TOKEN`。后端不会自动回退。
+使用 `npm install -g rebut-mcp` 安装，通过 `rebut set endpoint https://YOUR_HOST/mcp` 配置 Worker。macOS 默认使用 Keychain：`rebut set token` 使用隐藏输入的交互式提示；`rebut set token --stdin` 明确接受受保护的管道输入。不要将 Bearer 值放入参数或受版本控制的文件。现有 Vaultwarden 工作流使用 `rebut set secret-store vaultwarden` 明确选择；默认条目为 `Rebut — MCP Access Token`，可用 `rebut set vaultwarden-item NAME` 修改。非 macOS 环境须明确使用 `rebut set secret-store env`，并通过安全执行环境提供 `REBUT_TOKEN`。后端不会自动回退。
 
 使用 `env` 后端时，Codex 设置仅保存变量名 `env_vars = ['REBUT_TOKEN']`，绝不保存其值。令牌必须通过实际运行 Codex 的宿主的安全执行环境提供；仅为设置命令提供该变量，不会使其在后续 Codex 会话中可用。
 
