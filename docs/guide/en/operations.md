@@ -4,6 +4,13 @@
 
 [Rebut](../../../README.en.md) · [User guide](../en.md)
 
+## Local operations
+
+Stop local MCP processes before backing up the metadata-only SQLite ledger and its settings. Preserve request history and unknown reservations; do not delete or live-sync an open ledger to clear a limit. API keys are not in SQLite and stay in the selected credential backend. SIGTERM attempts to abort and record uncertain in-flight work before closing; a crash, SIGKILL or network interruption may still leave reserved state. Look up the original ID without replaying it. `rebut remove` removes registration only, not the ledger or credentials. The D1 operations below apply only to Worker mode.
+
+## Worker
+
+
 Back up the metadata-only D1 ledger using Cloudflare's supported export/Time Travel mechanisms. Do not delete the ledger to clear an inconvenient pending request: doing so loses spend and duplicate protection. Retain request rows for the lifetime of IDs clients may reuse; pruning permits old IDs to execute again.
 
 Use `rebut status REQUEST_ID` for a free metadata lookup under the original principal. `rebut doctor` checks sanitized local configuration and credential availability; `rebut doctor --connect` performs a free remote `tools/list` check. None of these commands starts a paid review. Preserve the request ID and reservation after any uncertain result.
@@ -28,3 +35,17 @@ Run `npm ci`, typecheck, build, and tests. Review migration SQL first, then appl
 ## Rotate or remove
 
 Rotate a token by generating a new random value and replacing that principal's digest in `AUTH_TOKENS`, then updating the authorized client's password-manager-backed configuration. Do not change the principal ID merely to rotate a token. Rotate the OpenAI key by updating only `OPENAI_API_KEY`; other consumers of a shared key need their own coordination. Delete the Worker to stop new requests. Export and review the ledger before separately removing D1; deletion is irreversible and makes deduplication history unavailable.
+
+## Local recovery and bounded capacity
+
+1. Stop MCP hosts and inspect the original request with `rebut status REQUEST_ID`; do not resubmit it.
+2. Back up the closed local ledger and settings. Review provider evidence when available. `budget_reserved_microusd` and `budget_accounted_microusd` are application accounting, not confirmed invoices for unknown executions.
+3. If the execution remains uncertain, retain its row, full accounted reservation and ID. Do not mark it unbilled, delete it or manufacture a completed result.
+4. After explicitly accepting that retained accounting, an operator may add bounded capacity for intentionally new reviews. For one uncertain request occupying the default one slot, `rebut set max-concurrent 2` adds one slot; the range is 1–10. It does not release the old slot, refund money or authorize retry of the old input.
+5. Restart MCP hosts. Daily/monthly/request limits still apply to the total accounted spend. Actual ledger settlement needs independent evidence and a targeted operator review; it is not automated.
+
+If the ID is missing, start with `rebut status --pending`: it lists up to 100 local reserved/unknown metadata records without keys or provider calls, with has_more if more exist. It is a diagnostic snapshot, not authorization for a new paid invocation. If no rows are pending, a money or daily-request ceiling may still be responsible for limit_exceeded.
+
+Capacity is capped at 10. If all slots remain uncertain, stop for evidence-based operator reconciliation rather than deleting history or mislabelling unknown as unbilled. Once independently reconciled, reduce temporary capacity back to the intended normal limit (default 1) and restart.
+
+Choose capacity from the pending count plus the deliberately allowed new parallel requests (maximum 10), rather than copying the example 2 over an existing custom limit. Capacity/budget commands retain a complete local-limit snapshot. If the original ID is missing, run status --pending before step 1.

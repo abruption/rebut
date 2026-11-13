@@ -192,7 +192,7 @@ function integer(value: string, allowZero = false): number {
   return parsed;
 }
 
-function price(value: string): number {
+export function price(value: string): number {
   const match = /^(\d+)(?:\.(\d{1,6}))?$/.exec(value);
   if (!match || match[1]!.length > 13)
     throw new Error(
@@ -205,11 +205,13 @@ function price(value: string): number {
   return Number(micro);
 }
 
-export interface ProfileCommandDependencies {
-  endpoint: string;
-  loadReviewToken: () => Promise<string>;
-  loadAdminToken: () => Promise<string>;
-}
+export type ProfileCommandDependencies =
+  | { registry: import("../profiles.js").ProfileRegistry }
+  | {
+      endpoint: string;
+      loadReviewToken: () => Promise<string>;
+      loadAdminToken: () => Promise<string>;
+    };
 
 export async function profileCommand(
   args: string[],
@@ -218,10 +220,13 @@ export async function profileCommand(
   const [command, id, ...rest] = args;
   if (command === "list" && args.length === 1)
     return {
-      profiles: await listProfiles({
-        endpoint: deps.endpoint,
-        loadToken: deps.loadReviewToken,
-      }),
+      profiles:
+        "registry" in deps
+          ? await deps.registry.list()
+          : await listProfiles({
+              endpoint: deps.endpoint,
+              loadToken: deps.loadReviewToken,
+            }),
     };
   if ((command !== "set" && command !== "remove") || !Id.safeParse(id).success)
     throw new Error("Expected profiles list, set ID, or remove ID.");
@@ -271,6 +276,19 @@ export async function profileCommand(
   }
   const explicit = flags.get("--if-revision");
   let revision = explicit === undefined ? undefined : integer(explicit, true);
+  if ("registry" in deps) {
+    revision ??=
+      (await deps.registry.list()).find((record) => record.id === id)
+        ?.revision ?? 0;
+    const result = await (command === "set"
+      ? deps.registry.set(id!, profile!, revision)
+      : deps.registry.remove(id!, revision));
+    if (result.status === "conflict")
+      throw new Error(
+        "Profile revision conflict; read current profiles before making another change.",
+      );
+    return result;
+  }
   const options = { endpoint: deps.endpoint, loadToken: deps.loadAdminToken };
   if (revision === undefined)
     revision =

@@ -11,10 +11,20 @@ import {
 } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { LimitsSchema } from "../config.js";
 import { validateEndpoint } from "./connection.js";
 export const SettingsSchema = z
   .object({
     schemaVersion: z.literal(1),
+    mode: z.enum(["local", "worker"]).optional(),
+    apiKeyEnv: z.enum(["REBUT_OPENAI_API_KEY", "OPENAI_API_KEY"]).optional(),
+    localLimits: LimitsSchema.optional(),
+    vaultwardenApiKeyItem: z
+      .string()
+      .min(1)
+      .max(200)
+      .refine((s) => !/[\x00-\x1f\x7f]/.test(s))
+      .optional(),
     defaultModel: z
       .string()
       .regex(/^[a-zA-Z0-9._:-]{1,100}$/)
@@ -65,6 +75,7 @@ export async function readSettings(): Promise<Settings> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT")
       return {
         schemaVersion: 1,
+        mode: "local",
         secretStore: process.platform === "darwin" ? "keychain" : "env",
         vaultwardenItem: "Rebut — MCP Access Token",
         vaultwardenAdminItem: "Rebut — MCP Admin Token",
@@ -96,4 +107,14 @@ export async function writeSettings(value: Settings): Promise<void> {
   } finally {
     await unlink(temporary).catch(() => {});
   }
+}
+
+export function executionMode(settings: Settings): "local" | "worker" {
+  return settings.mode ?? (settings.endpoint ? "worker" : "local");
+}
+
+export function providerEnvName(
+  settings: Settings,
+): "REBUT_OPENAI_API_KEY" | "OPENAI_API_KEY" {
+  return settings.apiKeyEnv ?? "REBUT_OPENAI_API_KEY";
 }

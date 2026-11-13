@@ -3,7 +3,7 @@ import {
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
 import { CLIENT_TOOL_TIMEOUT_MS } from "../timeouts.js";
-import { Agent } from "undici";
+import { createNodeHttpTransport } from "./http.js";
 
 export interface RemoteOptions {
   endpoint: string;
@@ -53,10 +53,7 @@ export async function connectRemote(options: RemoteOptions): Promise<Client> {
   const url = validateEndpoint(options.endpoint);
   // Node fetch otherwise imposes its own 300-second headers/body deadlines,
   // independently of the MCP request timer. Do not alter the global dispatcher.
-  const dispatcher = new Agent({
-    headersTimeout: CLIENT_TOOL_TIMEOUT_MS,
-    bodyTimeout: CLIENT_TOOL_TIMEOUT_MS,
-  });
+  const http = createNodeHttpTransport();
   const transport = new StreamableHTTPClientTransport(url, {
     authProvider: { token: options.loadToken },
     requestInit: { redirect: "error" },
@@ -73,12 +70,7 @@ export async function connectRemote(options: RemoteOptions): Promise<Client> {
       ) {
         throw new Error(REMOTE_FAILURE_MESSAGE);
       }
-      const requestInit: RequestInit & { dispatcher: Agent } = {
-        ...init,
-        redirect: "error",
-        dispatcher,
-      };
-      return fetch(input, requestInit);
+      return http.fetch(input, { ...init, redirect: "error" });
     },
     onInsufficientScope: "throw",
     maxStepUpRetries: 0,
@@ -89,7 +81,7 @@ export async function connectRemote(options: RemoteOptions): Promise<Client> {
       reconnectionDelayGrowFactor: 1,
     },
   });
-  const client = new Client({ name: "rebut-mcp", version: "0.1.1" });
+  const client = new Client({ name: "rebut-mcp", version: "0.2.0" });
   const close = client.close.bind(client);
   let closing: Promise<void> | undefined;
   client.close = () =>
@@ -97,7 +89,7 @@ export async function connectRemote(options: RemoteOptions): Promise<Client> {
       try {
         await close();
       } finally {
-        await dispatcher.destroy();
+        await http.close();
       }
     })());
   // Enforce the same finite budgets for CLI consumers and the stdio bridge.

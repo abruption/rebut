@@ -4,9 +4,9 @@
 
 [Rebut](../../README.en.md)
 
-Rebut is an opt-in, authenticated Cloudflare Worker MCP for independent reviews through the OpenAI Responses API. It reviews only explicitly supplied frozen evidence. It does not clone repositories, fetch arbitrary URLs, run commands or tests, edit files, or create pull requests.
+Rebut is a local-first, opt-in code review MCP using your own OpenAI Responses API key. New installs run stdio locally; Cloudflare Worker is optional for a shared ledger. It reviews only supplied frozen evidence and gives the model no repository, URL-fetch, shell, test, edit or PR tools.
 
-Install the client with `npm install -g rebut-mcp`, configure your own Worker and credential backend, then run `rebut setup --client codex`. The package bridges a self-hosted Worker; Worker/D1 deployment still requires a GitHub source checkout, your own Cloudflare account, and your own OpenAI key. Start with [installation](en/installation.md) for Keychain, Vaultwarden, explicit env mode, free diagnostics, and opt-in paid review.
+Install rebut-mcp, configure the local provider key, then run rebut setup --client codex. Existing endpoint-only configurations stay Worker. See [installation](en/installation.md) for Keychain, Vaultwarden, env credentials and optional Worker setup.
 
 | Guide                                              | Contents                                                                                |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------- |
