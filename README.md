@@ -70,4 +70,5 @@ npm run test:package
 - [선택적 검토자 연동](docs/guide/ko/reviewer-integration.md)
 - [아키텍처](docs/guide/ko/architecture.md)
 - [검증 및 결과의 한계](docs/guide/ko/validation.md)
+- [최초 릴리즈 기록](docs/releases/0.1.0.ko.md) · [0.2.0 릴리즈 후보](docs/releases/0.2.0.ko.md)
 - [MIT 라이선스](LICENSE)

@@ -48,6 +48,7 @@
     "README*.md",
     "LICENSE",
     "docs/guide",
+    "docs/releases",
     "config.example.json",
     "src/contracts.ts",
     "migrations"
