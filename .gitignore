@@ -9,3 +9,6 @@ dist/
 .worktree/
 lib/
 *.tgz
+
+# Local project instructions
+/AGENTS.md
