@@ -95,8 +95,10 @@ rebut review < /protected/path/request-001.bundle.json
 rebut status request-001
 ```
 
-Save the initial response locally with restrictive permissions; the server stores only metadata and cannot replay review bodies. Keep the same request ID after timeout or uncertainty. Set the MCP client deadline above 60 seconds; the provider timeout is 45 seconds. See the [opt-in reviewer workflow](reviewer-integration.md).
+Save the initial response locally with restrictive permissions; the server stores only metadata and cannot replay review bodies. Keep the same request ID after timeout or uncertainty. The provider deadline is 1,800 seconds (30 minutes). The MCP HTTP client allows 1,830 seconds and Codex `tool_timeout_sec` is 1,860 seconds, leaving time to record and deliver the outcome. Startup and handshake limits remain short and separate. Update both the Worker and CLI, refresh existing registration with `rebut setup --client codex --replace`, and restart Codex. Editing host configuration alone does not update the older limit inside the 0.1.0 CLI. See the [opt-in reviewer workflow](reviewer-integration.md).
 
 ## Upgrade or remove
 
 Use the [operations guide](operations.md) to preserve the D1 ledger and reconcile pending executions before upgrading or removing a deployment. Source publication and a private paid deployment are separate actions.
+
+Upgrade in this order: **install the CLI → refresh Codex registration with existing options preserved → restart Codex/MCP → deploy the Worker**. Deploying the longer Worker deadline first can let the old CLI disconnect at 65 seconds. Preserve custom registration options such as `REBUT_CONFIG_DIR`. Node HTTP headers/body deadlines also match the MCP tool deadline. Thirty minutes is an application upper bound, not a guarantee from every network or host. Sleep, termination or disconnection can leave a request reserved or unknown; query its original ID without automatic replay or reservation release.

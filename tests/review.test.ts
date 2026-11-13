@@ -545,22 +545,53 @@ describe("response validation", () => {
       (await runReview(input, profile, "fake", invalidJsonFetcher)).status,
     ).toBe("unknown");
   });
-  it("bounds the entire request including uncooperative fetch to 45 seconds", async () => {
+  it("bounds the entire request including uncooperative fetch to 1800 seconds", async () => {
     vi.useFakeTimers();
     const fetcher = vi
       .fn<typeof fetch>()
       .mockImplementation(() => new Promise(() => {}));
     const promise = runReview(input, profile, "fake", fetcher);
-    await vi.advanceTimersByTimeAsync(45_000);
+    await vi.advanceTimersByTimeAsync(1_799_999);
+    expect((fetcher.mock.calls[0]![1]?.signal as AbortSignal).aborted).toBe(
+      false,
+    );
+    await vi.advanceTimersByTimeAsync(1);
     expect(await promise).toMatchObject({
       status: "unknown",
       unknown_reason: "provider_timeout",
-      provider_elapsed_ms: 45_000,
+      provider_elapsed_ms: 1_800_000,
     });
     expect((fetcher.mock.calls[0]![1]?.signal as AbortSignal).aborted).toBe(
       true,
     );
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it("allows a valid review to finish after the former 45-second deadline", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(
+            () =>
+              resolve(
+                new Response(JSON.stringify(payload()), {
+                  headers: { "x-request-id": "req_slow" },
+                }),
+              ),
+            46_000,
+          );
+        }),
+    );
+    const pending = runReview(input, profile, "fake", fetcher);
+    await vi.advanceTimersByTimeAsync(46_000);
+    expect(await pending).toMatchObject({
+      status: "completed",
+      api_request_id: "req_slow",
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect((fetcher.mock.calls[0]![1]?.signal as AbortSignal).aborted).toBe(
+      false,
+    );
   });
   it("retains safe headers when a provider body stalls until the deadline", async () => {
     vi.useFakeTimers();
@@ -571,13 +602,13 @@ describe("response validation", () => {
       }),
     );
     const pending = runReview(input, profile, "fake", fetcher);
-    await vi.advanceTimersByTimeAsync(45_000);
+    await vi.advanceTimersByTimeAsync(1_800_000);
     expect(await pending).toMatchObject({
       status: "unknown",
       unknown_reason: "provider_timeout",
       api_request_id: "req_stalled",
       upstream_status: 503,
-      provider_elapsed_ms: 45_000,
+      provider_elapsed_ms: 1_800_000,
     });
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
@@ -672,7 +703,7 @@ describe("response validation", () => {
         }),
     );
     const pending = runReview(input, profile, "fake", fetcher);
-    await vi.advanceTimersByTimeAsync(45_000);
+    await vi.advanceTimersByTimeAsync(1_800_000);
     const result = await pending;
     const before = JSON.stringify(result);
     const cancel = vi.fn();

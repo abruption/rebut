@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PROVIDER_TIMEOUT_MS } from "./timeouts.js";
 import {
   ReviewInputSchema,
   ReviewSchema,
@@ -309,7 +310,7 @@ export async function runReview(
         timeout = setTimeout(() => {
           controller.abort();
           resolve(undefined);
-        }, 45_000);
+        }, PROVIDER_TIMEOUT_MS);
       }),
     ]);
     if (!received) return unknown("provider_timeout");
