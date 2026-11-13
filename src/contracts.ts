@@ -126,6 +126,20 @@ export type InvalidOutputReason =
   | "invalid_json"
   | "schema_mismatch"
   | "ungrounded_finding";
+export type UnknownReason =
+  | "request_invalid"
+  | "provider_timeout"
+  | "provider_transport_error"
+  | "provider_response_read_error"
+  | "provider_http_error"
+  | "response_too_large"
+  | "response_body_missing"
+  | "response_invalid_json"
+  | "response_invalid_encoding"
+  | "response_invalid_shape"
+  | "model_mismatch"
+  | "usage_invalid"
+  | "response_status_unhandled";
 export interface ReviewOutcome {
   status: "completed" | "refused" | "incomplete" | "invalid_output" | "unknown";
   review?: Review;
@@ -140,4 +154,7 @@ export interface ReviewOutcome {
   upstream_error_code?: string;
   /** Bounded diagnostic code only; never contains source, review text, or paths. */
   invalid_output_reason?: InvalidOutputReason;
+  /** Allowlisted metadata only; never include exception strings or response bodies. */
+  unknown_reason?: UnknownReason;
+  provider_elapsed_ms?: number;
 }

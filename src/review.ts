@@ -8,6 +8,7 @@ import {
   type ReviewOutcome,
   type ReviewUsage,
   type InvalidOutputReason,
+  type UnknownReason,
 } from "./contracts.js";
 
 export type { Profile, ReviewInput, ReviewOutcome } from "./contracts.js";
@@ -157,15 +158,23 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 const safeMetadata = (v: unknown): string | undefined =>
   typeof v === "string" && /^[A-Za-z0-9_.:-]{1,160}$/.test(v) ? v : undefined;
 
+class ResponseReadError extends Error {
+  constructor(public readonly reason: UnknownReason) {
+    super("Bounded provider response rejected");
+  }
+}
+
 async function boundedJson(
   response: Response,
   signal: AbortSignal,
 ): Promise<unknown> {
   const maxBytes = 1_000_000;
   const length = response.headers.get("content-length");
-  if (length && Number(length) > maxBytes)
-    throw new Error("Response size limit");
-  if (!response.body) throw new Error("Missing response body");
+  if (length && Number(length) > maxBytes) {
+    void response.body?.cancel().catch(() => {});
+    throw new ResponseReadError("response_too_large");
+  }
+  if (!response.body) throw new ResponseReadError("response_body_missing");
   const reader = response.body.getReader();
   const cancel = () => {
     void reader.cancel().catch(() => {});
@@ -179,7 +188,7 @@ async function boundedJson(
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > maxBytes) throw new Error("Response size limit");
+      if (total > maxBytes) throw new ResponseReadError("response_too_large");
       chunks.push(value);
     }
     const all = new Uint8Array(total);
@@ -188,9 +197,17 @@ async function boundedJson(
       all.set(chunk, offset);
       offset += chunk.byteLength;
     }
-    return JSON.parse(
-      new TextDecoder("utf-8", { fatal: true }).decode(all),
-    ) as unknown;
+    let text: string;
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(all);
+    } catch {
+      throw new ResponseReadError("response_invalid_encoding");
+    }
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      throw new ResponseReadError("response_invalid_json");
+    }
   } finally {
     signal.removeEventListener("abort", cancel);
     void reader.cancel().catch(() => {});
@@ -222,6 +239,17 @@ export async function runReview(
     price_version: profile.priceVersion,
   };
   const controller = new AbortController();
+  const started = Date.now();
+  let requestStarted = false;
+  let receivedHeaders = false;
+  const unknown = (reason: UnknownReason): ReviewOutcome => ({
+    ...base,
+    unknown_reason: reason,
+    provider_elapsed_ms: Math.min(
+      Number.MAX_SAFE_INTEGER,
+      Math.max(0, Date.now() - started),
+    ),
+  });
   const invalid = (reason: InvalidOutputReason): ReviewOutcome => ({
     ...base,
     status: "invalid_output",
@@ -235,6 +263,7 @@ export async function runReview(
     // Promise.race also bounds test/custom fetchers that ignore AbortSignal.
     const received = await Promise.race([
       (async () => {
+        requestStarted = true;
         const res = await fetcher("https://api.openai.com/v1/responses", {
           method: "POST",
           headers: {
@@ -246,6 +275,15 @@ export async function runReview(
           redirect: "manual",
         });
         const api_request_id = safeMetadata(res.headers.get("x-request-id"));
+        // Preserve safe headers even if reading the body later fails or times out.
+        // An uncooperative fetch that resolves after cancellation must not mutate metadata.
+        if (controller.signal.aborted) {
+          void res.body?.cancel().catch(() => {});
+          return undefined;
+        }
+        receivedHeaders = true;
+        base.api_request_id = api_request_id;
+        if (!res.ok) base.upstream_status = res.status;
         if (!res.ok) {
           let upstream_error_code: string | undefined;
           try {
@@ -274,17 +312,23 @@ export async function runReview(
         }, 45_000);
       }),
     ]);
-    if (!received) return base;
+    if (!received) return unknown("provider_timeout");
     base.api_request_id = received.api_request_id;
     if ("upstream_status" in received) {
       base.upstream_status = received.upstream_status;
       base.upstream_error_code = received.upstream_error_code;
     }
     const response = received.payload;
-    if (!isRecord(response)) return base;
+    if (!isRecord(response))
+      return unknown(
+        "upstream_status" in received
+          ? "provider_http_error"
+          : "response_invalid_shape",
+      );
     base.response_id = safeMetadata(response.id);
     base.actual_model = safeMetadata(response.model);
-    if (!compatibleModel(base.actual_model, profile.model)) return base;
+    if (!compatibleModel(base.actual_model, profile.model))
+      return unknown("model_mismatch");
     const parsedUsage = UsageSchema.safeParse(response.usage);
     if (parsedUsage.success) {
       const usage = parsedUsage.data;
@@ -303,7 +347,7 @@ export async function runReview(
     if (response.status === "incomplete")
       return { ...base, status: "incomplete" };
     if (response.status !== "completed" || !Array.isArray(response.output))
-      return base;
+      return unknown("response_status_unhandled");
     const texts: string[] = [];
     let refused = false;
     for (const item of response.output) {
@@ -344,10 +388,20 @@ export async function runReview(
     const review = ReviewSchema.safeParse(decoded);
     if (!review.success) return invalid("schema_mismatch");
     if (!grounded(input, review.data)) return invalid("ungrounded_finding");
-    if (!parsedUsage.success) return base;
+    if (!parsedUsage.success) return unknown("usage_invalid");
     return { ...base, status: "completed", review: review.data };
-  } catch {
-    return base;
+  } catch (error) {
+    return unknown(
+      !requestStarted
+        ? "request_invalid"
+        : controller.signal.aborted
+          ? "provider_timeout"
+          : error instanceof ResponseReadError
+            ? error.reason
+            : receivedHeaders
+              ? "provider_response_read_error"
+              : "provider_transport_error",
+    );
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
   }

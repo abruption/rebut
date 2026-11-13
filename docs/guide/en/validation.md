@@ -23,3 +23,9 @@ Seven additional synthetic tests reproduce and cover commentary followed by a st
 ## CLI validation scope
 
 The initial 23-test record above and the 30-test parser regression suite describe historical Worker validation, not npm CLI coverage. CLI validation separately covers argument/configuration handling, credential-backend selection without automatic fallback, Codex setup preserving other MCP entries, frozen collector output, sanitized diagnostics, and mocked client/stdio transport. Run `npm run typecheck`, `npm run build`, then `npm test` in a source checkout; record the actual CLI results separately. These instructions do not establish npm publication, additional device compatibility, a successful Astra review, or a new paid API test. Use `luna-test` for any explicitly authorized real API test; automated tests must mock the provider.
+
+## Unknown-result diagnostics
+
+Newly processed `unknown` outcomes include an allowlisted `unknown_reason` and `provider_elapsed_ms`. These distinguish timeout, transport/body-read errors, size/JSON/encoding limits, and model/usage mismatches without retaining exception strings or response bodies. Already received safe provider request IDs and HTTP error statuses survive body-processing failures. Elapsed time is an application observation, not proof of provider execution or billing completion. Missing metadata in historical records cannot be reconstructed. Unknown reservations and concurrency slots remain held; diagnostics do not extend deadlines, retry requests, or release reservations.
+
+`unknown_reason` describes where processing stopped. If `upstream_status` is also present, an HTTP error was observed before the body-read deadline expired. Interpret both fields together. Historical records and defensive failure paths may omit diagnostic fields.
