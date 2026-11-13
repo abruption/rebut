@@ -1,6 +1,6 @@
 {
   "name": "rebut-mcp",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "license": "MIT",
   "scripts": {
@@ -38,7 +38,7 @@
     "vitest": "5.1.0",
     "wrangler": "4.160.1"
   },
-  "description": "Authenticated MCP client for independent, evidence-grounded reviews through your self-hosted Rebut Worker",
+  "description": "Local-first independent code review MCP server with optional self-hosted Cloudflare Worker backend",
   "bin": {
     "rebut": "bin/rebut.mjs"
   },
@@ -48,8 +48,10 @@
     "README*.md",
     "LICENSE",
     "docs/guide",
+    "docs/releases",
     "config.example.json",
-    "src/contracts.ts"
+    "src/contracts.ts",
+    "migrations"
   ],
   "repository": {
     "type": "git",

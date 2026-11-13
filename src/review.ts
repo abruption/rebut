@@ -233,6 +233,7 @@ export async function runReview(
   profile: Profile,
   apiKey: string,
   fetcher: typeof fetch = fetch,
+  parentSignal?: AbortSignal,
 ): Promise<ReviewOutcome> {
   const base: ReviewOutcome = {
     status: "unknown",
@@ -256,13 +257,25 @@ export async function runReview(
     status: "invalid_output",
     invalid_output_reason: reason,
   });
+  let interrupted = false;
+  let onAbort: (() => void) | undefined;
+  const cancellation = new Promise<undefined>((resolve) => {
+    onAbort = () => {
+      interrupted = true;
+      controller.abort();
+      resolve(undefined);
+    };
+    parentSignal?.addEventListener("abort", onAbort, { once: true });
+  });
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
+    if (parentSignal?.aborted) return unknown("execution_aborted");
     const body = JSON.stringify(
       buildReviewBody(ReviewInputSchema.parse(input), profile),
     );
     // Promise.race also bounds test/custom fetchers that ignore AbortSignal.
     const received = await Promise.race([
+      cancellation,
       (async () => {
         requestStarted = true;
         const res = await fetcher("https://api.openai.com/v1/responses", {
@@ -313,7 +326,8 @@ export async function runReview(
         }, PROVIDER_TIMEOUT_MS);
       }),
     ]);
-    if (!received) return unknown("provider_timeout");
+    if (!received)
+      return unknown(interrupted ? "execution_aborted" : "provider_timeout");
     base.api_request_id = received.api_request_id;
     if ("upstream_status" in received) {
       base.upstream_status = received.upstream_status;
@@ -395,15 +409,18 @@ export async function runReview(
     return unknown(
       !requestStarted
         ? "request_invalid"
-        : controller.signal.aborted
-          ? "provider_timeout"
-          : error instanceof ResponseReadError
-            ? error.reason
-            : receivedHeaders
-              ? "provider_response_read_error"
-              : "provider_transport_error",
+        : interrupted
+          ? "execution_aborted"
+          : controller.signal.aborted
+            ? "provider_timeout"
+            : error instanceof ResponseReadError
+              ? error.reason
+              : receivedHeaders
+                ? "provider_response_read_error"
+                : "provider_transport_error",
     );
   } finally {
+    if (onAbort) parentSignal?.removeEventListener("abort", onAbort);
     if (timeout !== undefined) clearTimeout(timeout);
   }
 }

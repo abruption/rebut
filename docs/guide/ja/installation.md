@@ -4,53 +4,46 @@
 
 [Rebut](../../../README.ja.md) · [ユーザーガイド](../ja.md)
 
-## npm CLI のインストール
 
-Node.js **24 以降**と npm を使用します。セルフホストした Worker のクライアントと stdio ブリッジをインストールします。
+**Node.js 24以降**が必要です。新規インストールはローカルstdio MCPが既定で、Cloudflareアカウント・Worker endpoint・別のHTTPデーモンは不要です。
 
 ```sh
 npm install -g rebut-mcp
 ```
 
-## クライアントの設定
+## ローカル設定
 
-自分のエンドポイントを設定してから Bearer トークンを保存します。macOS の既定は Keychain で、`rebut set token` は入力を隠すプロンプトを使います。`rebut set token --stdin` は保護されたパイプ入力を明示的に受け付けます。トークン値を引数や追跡対象ファイルに入れないでください。
-
-```sh
-rebut set endpoint https://YOUR_HOST/mcp
-rebut set token
-```
-
-既存の Vaultwarden を使う場合はバックエンドを明示的に選択します。`bw-get` と既定の項目 `Rebut — MCP Access Token` を使用し、必要に応じて項目名を変更できます。
+macOSの rebut set api-key はOpenAI APIキーを非表示入力でlogin Keychainへ保存します。com.abruption.rebutのopenai-api-keyを使い、Worker接続／管理者トークンと分離します。--stdinは保護されたパイプ用で、資格情報を引数に入れません。
 
 ```sh
-rebut set secret-store vaultwarden
-rebut set vaultwarden-item NAME
+rebut set api-key
 ```
 
-macOS 以外では `env` を明示的に選び、安全な実行環境で `REBUT_TOKEN` を渡します。追跡対象ファイルやコマンド引数に書かないでください。バックエンドは自動で代替されません。クライアントに OpenAI プロバイダーキーは不要です。
+環境変数は rebut set secret-store env を選び、実際のMCPホストの安全な環境でREBUT_OPENAI_API_KEYを提供します。登録には変数名だけを保存します。Vaultwardenは rebut set secret-store vaultwarden と rebut set vaultwarden-api-key-item NAME を使い、既定ローカル項目はRebut — OpenAI API Keyです。既存bw-getログインが必要で、資格情報やbackendの自動切り替えはありません。
 
-`env` バックエンドの場合、Codex 設定は値を保存せず、変数名だけを `env_vars = ['REBUT_TOKEN']` として保存します。トークンは実際に Codex を実行するホストの安全な実行環境で渡してください。設定コマンドにだけ渡した環境変数は、後の Codex セッションでは利用できません。
-
-```sh
-rebut set secret-store env
-```
-
-## Codex の接続と設定確認
+## 接続と確認
 
 ```sh
 rebut setup --client codex
-rebut doctor
 rebut doctor --connect
 ```
 
-設定は `CODEX_HOME` または `~/.codex` を使い、`--codex-home PATH` で保存先を指定できます。`rebut mcp` を stdio サーバーとして登録し、他の MCP エントリを保持します。既存の非公開 `rebut` ブリッジの移行には `--replace` が必要です。
+rebut setup --client codex はCODEX_HOMEまたは~/.codexにrebut mcpを登録し、--codex-home PATHで宛先を指定できます。ホストがサーバーを自動起動します。doctor --connect はローカル資格情報・SQLite・実際のMCPツール登録を確認し、プロバイダー呼び出しやAPIアカウント権限確認はしません。ローカルenvはREBUT_OPENAI_API_KEY名だけを転送します。置換時はカスタムREBUT_CONFIG_DIRを維持してください。
 
-`rebut doctor` は機密値を除いたローカル設定と認証情報の利用可否を表示します。`rebut doctor --connect` は無料でリモートの `tools/list` を確認します。どちらも有料レビューを開始しません。
+## 任意のWorkerモード
+
+endpoint設定はWorkerモードを明示的に選び、既存のendpointのみの設定も更新時にWorkerを維持します。ローカルOpenAIキーではなく別のMCP接続トークンを使い、macOSはrebut set token、envはREBUT_TOKEN、Vaultwardenはvaultwarden-itemです。管理操作は別の管理者資格情報を使います。Workerの作成は下記の非公開デプロイを参照してください。
+
+```sh
+rebut set endpoint https://YOUR_HOST/mcp
+rebut setup --client codex --replace
+```
+
+rebut set mode localで明示的に切り替え、障害時の自動代替はしません。backend間で要求・予約・予算は共有／移行されないためunknownを別backendで再実行しません。SQLiteは~/.local/share/rebut/local/ledger.sqlite、カスタムREBUT_CONFIG_DIRではlocal/に保存します。既定のUTC日額$6.66・月額$200はこのディレクトリのみの制限です。ローカル予算のset daily-budget／monthly-budget／request-budgetはUSD小数を受け取り、Worker制限はデプロイ設定で管理します。
 
 ## ソースチェックアウトと開発者向け検証
 
-npm パッケージはクライアントであり、ホストされたレビューサービスではありません。Worker/D1 は GitHub のソースチェックアウトから、Workers/D1 権限のある自分の Cloudflare アカウントと OpenAI Responses API キーでデプロイします。公開ソース/npm は個人の Worker やクレジットへのアクセスを付与しません。実際のエンドポイント、非公開設定、Bearer、プロバイダーキー、レビュー本文はパッケージに含まれません。この手順は CLI `0.1.0` を対象としています。
+CLI 0.2.0向けです。npmはローカルサーバーと任意Workerブリッジを実行し、ホスト型サービスやAPIクレジットは提供しません。Cloudflareアカウントとソースチェックアウトは任意のWorkerデプロイだけに必要です。実endpoint・非公開設定・資格情報・レビュー本文はパッケージに含めません。
 
 ```sh
 npm ci
@@ -102,3 +95,9 @@ rebut status request-001
 デプロイのアップグレードや削除の前に、[運用ガイド](operations.md)に従って D1 台帳を保持し、保留中の実行を照合してください。ソースの公開と非公開の有料デプロイは、それぞれ別の操作です。
 
 更新順は **CLIのインストール → 既存オプションを維持したCodex登録更新 → Codex/MCP再起動 → Workerデプロイ**です。Workerを先に更新すると、旧CLIが65秒で切断する場合があります。`REBUT_CONFIG_DIR` など既存のカスタム登録オプションを維持してください。Node HTTPのヘッダー・本文期限もMCPツール期限に合わせます。30分はアプリの上限であり、すべてのネットワークやホストの接続保証ではありません。スリープ・終了・切断でreservedまたはunknownの予約が残る場合は、元の要求IDで確認し、自動再実行・予約解除は行いません。
+
+モード・資格情報backend・ローカル予算変更後は、必要に応じ `rebut setup --client codex --replace` で登録を更新しMCPホストを再起動してください。既存プロセスは起動時設定を維持しdoctorでは再読込しません。setup再実行時も同じREBUT_CONFIG_DIR環境変数を指定します。secret-storeは全役割に共通ですが、役割ごとのアカウント／項目は別です。
+
+ローカルenvはREBUT_OPENAI_API_KEYが既定で、Codexや他アプリのキーを黙って再利用しません。OPENAI_API_KEYを明示共有する場合はrebut set api-key-env OPENAI_API_KEY後に登録更新・再起動します。変数間fallbackはありません。日・月・要求上限は独立し、1つの変更で他は自動拡大しません。カスタム制限は更新後も保持します。ツール説明は起動時ヒントで、実行時には明示要求のプロファイルを動的に確認します。
+
+検証対象はmacOS/Linuxで、Windows動作・ACLは未検証です。

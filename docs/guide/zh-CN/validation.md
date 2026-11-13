@@ -4,6 +4,11 @@
 
 [Rebut](../../../README.zh-CN.md) · [用户指南](../zh-CN.md)
 
+## 默认本地执行验证
+
+本地测试使用合成供应商与临时私有 SQLite，覆盖重启／幂等、多连接、unknown 预算和并发保留、无密钥元数据查询、凭据角色分离、取消结算及危险路径拒绝。真实 tarball 包测试覆盖可选 Worker 中继和无 endpoint 的本地 stdio、合成 review/status、重启与 doctor。模拟不证明真实 API 权限或模型质量。
+
+
 - TypeScript 检查及 Worker dry-run 打包成功。
 - 23 项自动化测试涵盖合成的提供商成功/拒绝/未完成/证据与用量格式错误场景、超时、响应大小与来源限制、真实 SQLite 预算/认领隔离，以及本地 Worker + D1 + MCP 调用。本地同时提交相同审查时，恰好只分派一次模拟提供商请求。
 - 使用现有的密码管理器包装脚本，通过官方 MCP TypeScript SDK v2 客户端访问了已部署且经过身份验证的 Worker。OpenAI 密钥未发送给客户端。

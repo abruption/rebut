@@ -4,13 +4,11 @@
 
 [Rebut](../../../README.zh-CN.md) · [用户指南](../zh-CN.md)
 
-## 本地 CLI 配置
 
-使用 `npm install -g rebut-mcp` 安装，通过 `rebut set endpoint https://YOUR_HOST/mcp` 配置 Worker。macOS 默认使用 Keychain：`rebut set token` 使用隐藏输入的交互式提示；`rebut set token --stdin` 明确接受受保护的管道输入。不要将 Bearer 值放入参数或受版本控制的文件。现有 Vaultwarden 工作流使用 `rebut set secret-store vaultwarden` 明确选择；默认条目为 `Rebut — MCP Access Token`，可用 `rebut set vaultwarden-item NAME` 修改。非 macOS 环境须明确使用 `rebut set secret-store env`，并通过安全执行环境提供 `REBUT_TOKEN`。后端不会自动回退。
+## 本地配置方案与预算范围
 
-使用 `env` 后端时，Codex 设置仅保存变量名 `env_vars = ['REBUT_TOKEN']`，绝不保存其值。令牌必须通过实际运行 Codex 的宿主的安全执行环境提供；仅为设置命令提供该变量，不会使其在后续 Codex 会话中可用。
+新配置默认本地，已有 endpoint 配置保持 Worker。rebut set api-key 保存本地 OpenAI 密钥，与 Worker 的 set token／set admin-token 分离。env 本地读取 REBUT_OPENAI_API_KEY，Worker 读取 REBUT_TOKEN／REBUT_ADMIN_TOKEN；Vaultwarden 本地使用 vaultwarden-api-key-item。profile list/set/remove 针对所选后端，本地不需要 Worker 管理员令牌。配置方案、修订和元数据保存在私有 SQLite，预算仅覆盖该目录，不汇总其他设备或 OpenAI 账户整体用量。需要中央账本可共享 Worker。切换不会迁移不确定请求或释放预留。
 
-`rebut setup --client codex` 使用 `CODEX_HOME` 或 `~/.codex`；`--codex-home PATH` 指定其他目录。它注册 `rebut mcp` 并保留其他 MCP 条目；迁移现有私有 `rebut` 桥接配置需要 `--replace`。`rebut doctor` 显示已清理敏感值的本地配置及凭据可用性；`rebut doctor --connect` 免费检查远程 `tools/list`。两者均不进行付费审查。参见[安装](installation.md)。
 
 ## 模型与推理偏好
 
@@ -25,6 +23,10 @@ rebut set profile PROFILE_ID
 `MODEL_ID`、`EFFORT` 和 `PROFILE_ID` 是占位符。模型/推理偏好会匹配服务器允许列表中的配置方案，不授予任意模型的访问权限。收集器显式指定的 `--profile` 优先于本地偏好。未设置偏好时仍默认为 `astra-medium`。`rebut review` 使用冻结输入包中已包含的配置方案，不会根据当前偏好改写它。
 
 ## 所有者管理服务器配置方案
+
+仅限 Worker：本地配置方案管理不需要这些管理员凭据。
+
+本节所有者／管理员步骤仅适用于 Worker。本地配置方案使用 OS 所有权和本地 SQLite。
 
 `rebut profile list` 通过经过身份验证的只读 GET 列出服务器配置方案、模型、推理设置、输出上限、费率及修订版本，不调用提供商，也不启动付费审查。
 

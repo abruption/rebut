@@ -127,6 +127,8 @@ export type InvalidOutputReason =
   | "schema_mismatch"
   | "ungrounded_finding";
 export type UnknownReason =
+  | "review_execution_error"
+  | "execution_aborted"
   | "request_invalid"
   | "provider_timeout"
   | "provider_transport_error"

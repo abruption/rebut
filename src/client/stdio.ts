@@ -16,7 +16,7 @@ const REVIEW_GUIDANCE =
 /** Runs until stdin closes or the process receives SIGINT/SIGTERM. */
 export async function serveStdio(options: RemoteOptions): Promise<void> {
   const remote = await connectRemote(options);
-  const server = new McpServer({ name: "rebut-mcp", version: "0.1.1" });
+  const server = new McpServer({ name: "rebut-mcp", version: "0.2.0" });
   let finish!: () => void;
   const finished = new Promise<void>((resolve) => {
     finish = resolve;

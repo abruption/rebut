@@ -26,7 +26,12 @@ async function fixture(run: (dir: string) => Promise<void>) {
     await rm(dir, { recursive: true, force: true });
   }
 }
-function cli(dir: string, args: string[], input?: string) {
+function cli(
+  dir: string,
+  args: string[],
+  input?: string,
+  extraEnv: Record<string, string> = {},
+) {
   return spawnSync(process.execPath, [resolve("bin/rebut.mjs"), ...args], {
     input,
     encoding: "utf8",
@@ -35,6 +40,7 @@ function cli(dir: string, args: string[], input?: string) {
       ...process.env,
       REBUT_CONFIG_DIR: join(dir, "settings"),
       REBUT_TOKEN: fixtureToken,
+      ...extraEnv,
     },
   });
 }
@@ -168,4 +174,117 @@ it("stores model and reasoning preferences without embedding an admin secret or 
     expect(result.status).toBe(1);
     expect(result.stdout + result.stderr).not.toContain(fixtureToken);
     expect(cli(dir, ["set", "reasoning", "bad effort"]).status).toBe(1);
+  }));
+
+it("sets up local mode without an endpoint and forwards only the API-key variable name", async () =>
+  fixture(async (dir) => {
+    expect(cli(dir, ["set", "secret-store", "env"]).status).toBe(0);
+    const home = join(dir, "local-codex");
+    expect(
+      cli(dir, ["setup", "--client", "codex", "--codex-home", home]).status,
+    ).toBe(0);
+    const config = parse(
+      await readFile(join(home, "config.toml"), "utf8"),
+    ) as any;
+    expect(config.mcp_servers.rebut.env_vars).toEqual(["REBUT_OPENAI_API_KEY"]);
+    const doctor = cli(dir, ["doctor"], undefined, {
+      OPENAI_API_KEY: "",
+      REBUT_OPENAI_API_KEY: "",
+    });
+    expect(JSON.parse(doctor.stdout)).toMatchObject({
+      mode: "local",
+      endpointConfigured: false,
+      credentialAvailable: false,
+    });
+    const status = cli(dir, ["status", "missing"], undefined, {
+      OPENAI_API_KEY: "",
+    });
+    expect(status.status).toBe(0);
+    const pending = cli(dir, ["status", "--pending"], undefined, {
+      OPENAI_API_KEY: "",
+      REBUT_OPENAI_API_KEY: "",
+    });
+    expect(pending.status).toBe(0);
+    expect(JSON.parse(pending.stdout)).toMatchObject({
+      backend: "local",
+      requests: [],
+      has_more: false,
+    });
+    expect(JSON.parse(JSON.parse(status.stdout).content[0].text)).toEqual({
+      backend: "local",
+      status: "not_found",
+    });
+    const rejected = cli(dir, ["set", "api-key", fixtureToken]);
+    expect(rejected.status).toBe(1);
+    expect(rejected.stdout + rejected.stderr).not.toContain(fixtureToken);
+  }));
+it("keeps mode selection explicit and local budgets separate from Worker settings", async () =>
+  fixture(async (dir) => {
+    expect(
+      cli(dir, ["set", "endpoint", "https://worker.invalid/mcp"]).status,
+    ).toBe(0);
+    let settings = JSON.parse(
+      await readFile(join(dir, "settings/config.json"), "utf8"),
+    );
+    expect(settings.mode).toBeUndefined();
+    expect(cli(dir, ["set", "daily-budget", "1.23"]).status).toBe(1);
+    expect(cli(dir, ["set", "mode", "local"]).status).toBe(0);
+    expect(cli(dir, ["set", "daily-budget", "1.23"]).status).toBe(0);
+    settings = JSON.parse(
+      await readFile(join(dir, "settings/config.json"), "utf8"),
+    );
+    expect(settings.endpoint).toBe("https://worker.invalid/mcp");
+    expect(settings.localLimits.dailyMicrousd).toBe(1230000);
+    const profiles = cli(dir, ["profile", "list"], undefined, {
+      OPENAI_API_KEY: "",
+    });
+    expect(profiles.status).toBe(0);
+    expect(
+      JSON.parse(profiles.stdout).profiles.some(
+        (p: any) => p.id === "luna-test",
+      ),
+    ).toBe(true);
+  }));
+
+it("lets an operator add bounded local capacity without changing recorded requests", async () =>
+  fixture(async (dir) => {
+    expect(cli(dir, ["set", "secret-store", "env"]).status).toBe(0);
+    expect(cli(dir, ["set", "max-concurrent", "2"]).status).toBe(0);
+    const current = JSON.parse(
+      await readFile(join(dir, "settings/config.json"), "utf8"),
+    );
+    expect(current.localLimits.maxConcurrent).toBe(2);
+    expect(current.localLimits.dailyMicrousd).toBe(6660000);
+    for (const value of ["0", "11", "1.5", "-1"])
+      expect(cli(dir, ["set", "max-concurrent", value]).status).toBe(1);
+    const result = cli(dir, ["set", "api-key-env", "OPENAI_API_KEY"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("setup --client codex --replace");
+  }));
+it("does not add new-only settings when updating a legacy Worker configuration", async () =>
+  fixture(async (dir) => {
+    await mkdir(join(dir, "settings"), { recursive: true });
+    await writeFile(
+      join(dir, "settings/config.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        endpoint: "https://worker.invalid/mcp",
+        secretStore: "env",
+        vaultwardenItem: "legacy",
+      }),
+    );
+    expect(cli(dir, ["set", "model", "gpt-6-astra"]).status).toBe(0);
+    expect(
+      cli(dir, ["set", "endpoint", "https://new.invalid/mcp"]).status,
+    ).toBe(0);
+    const current = JSON.parse(
+      await readFile(join(dir, "settings/config.json"), "utf8"),
+    );
+    for (const field of [
+      "mode",
+      "apiKeyEnv",
+      "localLimits",
+      "vaultwardenApiKeyItem",
+    ])
+      expect(current).not.toHaveProperty(field);
   }));
