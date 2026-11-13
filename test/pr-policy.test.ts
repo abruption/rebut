@@ -36,6 +36,11 @@ async function check(body: string, issue: Record<string, unknown>, apiOk = true)
 
 const validIssue = { state: "open", created_at: "2026-11-13T01:00:00Z" };
 describe("Issue-first PR policy", () => {
+  it("uses a read-only base workflow without checking out or executing PR code", () => {
+    expect(workflow).toMatch(/^  pull_request_target:$/m);
+    expect(workflow).not.toMatch(/^  pull_request:$/m);
+    expect(workflow).not.toMatch(/actions\/checkout|pull_request\.head|npm (?:ci|install)|: write/);
+  });
   it("accepts an earlier open issue in this repository", async () => {
     const result = await check("## Issue\n\nCloses #1", validIssue);
     expect(result.exitCode).toBe(0);

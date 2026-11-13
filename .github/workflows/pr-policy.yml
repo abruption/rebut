@@ -1,7 +1,8 @@
 name: PR policy
 
 on:
-  pull_request:
+  # Keep this metadata-only: use the trusted base revision, never PR code.
+  pull_request_target:
     types: [opened, edited, synchronize, reopened, ready_for_review]
 
 permissions:
