@@ -545,17 +545,192 @@ describe("response validation", () => {
       (await runReview(input, profile, "fake", invalidJsonFetcher)).status,
     ).toBe("unknown");
   });
-  it("bounds the entire request including uncooperative fetch to 45 seconds", async () => {
+  it("bounds the entire request including uncooperative fetch to 1800 seconds", async () => {
     vi.useFakeTimers();
     const fetcher = vi
       .fn<typeof fetch>()
       .mockImplementation(() => new Promise(() => {}));
     const promise = runReview(input, profile, "fake", fetcher);
-    await vi.advanceTimersByTimeAsync(45_000);
-    expect((await promise).status).toBe("unknown");
+    await vi.advanceTimersByTimeAsync(1_799_999);
+    expect((fetcher.mock.calls[0]![1]?.signal as AbortSignal).aborted).toBe(
+      false,
+    );
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await promise).toMatchObject({
+      status: "unknown",
+      unknown_reason: "provider_timeout",
+      provider_elapsed_ms: 1_800_000,
+    });
     expect((fetcher.mock.calls[0]![1]?.signal as AbortSignal).aborted).toBe(
       true,
     );
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it("allows a valid review to finish after the former 45-second deadline", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(
+            () =>
+              resolve(
+                new Response(JSON.stringify(payload()), {
+                  headers: { "x-request-id": "req_slow" },
+                }),
+              ),
+            46_000,
+          );
+        }),
+    );
+    const pending = runReview(input, profile, "fake", fetcher);
+    await vi.advanceTimersByTimeAsync(46_000);
+    expect(await pending).toMatchObject({
+      status: "completed",
+      api_request_id: "req_slow",
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect((fetcher.mock.calls[0]![1]?.signal as AbortSignal).aborted).toBe(
+      false,
+    );
+  });
+  it("retains safe headers when a provider body stalls until the deadline", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(new ReadableStream({ start() {} }), {
+        status: 503,
+        headers: { "x-request-id": "req_stalled" },
+      }),
+    );
+    const pending = runReview(input, profile, "fake", fetcher);
+    await vi.advanceTimersByTimeAsync(1_800_000);
+    expect(await pending).toMatchObject({
+      status: "unknown",
+      unknown_reason: "provider_timeout",
+      api_request_id: "req_stalled",
+      upstream_status: 503,
+      provider_elapsed_ms: 1_800_000,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it("classifies bounded body failures without leaking bodies or losing request IDs", async () => {
+    const headers = { "x-request-id": "req_body" };
+    const cases = [
+      {
+        response: new Response("private not JSON", { headers }),
+        reason: "response_invalid_json",
+      },
+      {
+        response: new Response(new Uint8Array([0xff]), { headers }),
+        reason: "response_invalid_encoding",
+      },
+      {
+        response: new Response(null, { headers }),
+        reason: "response_body_missing",
+      },
+      {
+        response: new Response("private oversized", {
+          headers: { ...headers, "content-length": "1000001" },
+        }),
+        reason: "response_too_large",
+      },
+      {
+        response: new Response("x".repeat(1_000_001), { headers }),
+        reason: "response_too_large",
+      },
+      {
+        response: new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(new Error("private read failure"));
+            },
+          }),
+          { headers },
+        ),
+        reason: "provider_response_read_error",
+      },
+    ];
+    for (const { response, reason } of cases) {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response);
+      const result = await runReview(input, profile, "fake", fetcher);
+      expect(result).toMatchObject({
+        status: "unknown",
+        unknown_reason: reason,
+        api_request_id: "req_body",
+      });
+      expect(result.provider_elapsed_ms).toBeGreaterThanOrEqual(0);
+      expect(result.usage).toBeUndefined();
+      expect(result.review).toBeUndefined();
+      expect(JSON.stringify(result)).not.toContain("private");
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    }
+  });
+  it("distinguishes transport, HTTP and local-input failures with no retries", async () => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new Error("private network error"));
+    expect(await runReview(input, profile, "fake", transport)).toMatchObject({
+      unknown_reason: "provider_transport_error",
+    });
+    expect(transport).toHaveBeenCalledTimes(1);
+    const http = mockFetch(
+      { error: { code: "rate_limit_exceeded", message: "private" } },
+      429,
+    );
+    expect(await runReview(input, profile, "fake", http)).toMatchObject({
+      unknown_reason: "provider_http_error",
+      upstream_status: 429,
+      upstream_error_code: "rate_limit_exceeded",
+    });
+    expect(http).toHaveBeenCalledTimes(1);
+    const unused = vi.fn<typeof fetch>();
+    expect(
+      await runReview(
+        { ...input, schema_version: 2 } as any,
+        profile,
+        "fake",
+        unused,
+      ),
+    ).toMatchObject({ unknown_reason: "request_invalid" });
+    expect(unused).not.toHaveBeenCalled();
+  });
+  it("does not mutate returned metadata if an uncooperative fetch resolves after timeout", async () => {
+    vi.useFakeTimers();
+    let resolveFetch!: (response: Response) => void;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+    const pending = runReview(input, profile, "fake", fetcher);
+    await vi.advanceTimersByTimeAsync(1_800_000);
+    const result = await pending;
+    const before = JSON.stringify(result);
+    const cancel = vi.fn();
+    resolveFetch(
+      new Response(new ReadableStream({ cancel }), {
+        headers: { "x-request-id": "req_late" },
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(1);
+    expect(JSON.stringify(result)).toBe(before);
+    expect(result.api_request_id).toBeUndefined();
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+  it("cancels the body when Content-Length exceeds the response bound", async () => {
+    const cancel = vi.fn();
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(new ReadableStream({ cancel }), {
+        headers: {
+          "content-length": "1000001",
+          "x-request-id": "req_oversize",
+        },
+      }),
+    );
+    expect(await runReview(input, profile, "fake", fetcher)).toMatchObject({
+      unknown_reason: "response_too_large",
+      api_request_id: "req_oversize",
+    });
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 });

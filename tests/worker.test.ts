@@ -5,6 +5,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { inputHash } from "../src/contracts.js";
 let mf: Miniflare,
   calls = 0;
+let malformedProviderBody = false;
 const token = "synthetic-test-token-not-a-secret";
 const cfg = JSON.parse(readFileSync("config.example.json", "utf8"));
 cfg.hostname = "127.0.0.1";
@@ -31,6 +32,10 @@ beforeAll(async () => {
           outboundService: async (req) => {
             expect(req.url).toBe("https://api.openai.com/v1/responses");
             calls++;
+            if (malformedProviderBody)
+              return new Response("private malformed provider body", {
+                headers: { "x-request-id": "req_malformed_fixture" },
+              });
             return new Response(
               JSON.stringify({
                 id: "resp_mock",
@@ -363,4 +368,103 @@ it("retains original resolved model and revision for a completed ID after profil
   );
   expect(disabled.status).toBe("profile_not_allowed");
   expect(calls).toBe(after);
+});
+
+it("persists safe unknown diagnostics without releasing budget or invoking the provider again", async () => {
+  const input = {
+    schema_version: 1 as const,
+    task_kind: "code" as const,
+    requirements: "Synthetic unknown diagnostic",
+    files: [
+      { path: "sample.ts", start_line: 1, content: "export const value = 1;" },
+    ],
+    diff: "",
+    request_id: "synthetic-unknown-diagnostic",
+    profile: "astra-medium",
+    input_sha256: "",
+  };
+  input.input_sha256 = await inputHash(input);
+  const before = calls;
+  malformedProviderBody = true;
+  try {
+    const outcome = JSON.parse(
+      (
+        await decode(
+          await rpc("tools/call", { name: "review", arguments: input }),
+        )
+      ).result.content[0].text,
+    );
+    expect(outcome).toMatchObject({
+      status: "unknown",
+      unknown_reason: "response_invalid_json",
+      api_request_id: "req_malformed_fixture",
+    });
+    const row = await (
+      await mf.getD1Database("DB")
+    )
+      .prepare(
+        "SELECT state,reserved_microusd,charged_microusd,metadata FROM requests WHERE request_id=?",
+      )
+      .bind(input.request_id)
+      .first<any>();
+    expect(row.state).toBe("unknown");
+    expect(row.charged_microusd).toBe(row.reserved_microusd);
+    const totals = await (
+      await mf.getD1Database("DB")
+    )
+      .prepare(
+        "SELECT SUM(charged_microusd) AS total, COUNT(*) AS count, SUM(state IN ('reserved','unknown')) AS active FROM requests",
+      )
+      .first<any>();
+    expect(cfg.limits.maxConcurrent).toBe(1);
+    expect(totals.active).toBe(1);
+    expect(row.reserved_microusd).toBeLessThanOrEqual(
+      cfg.limits.requestMicrousd,
+    );
+    expect(totals.total + row.reserved_microusd).toBeLessThanOrEqual(
+      cfg.limits.dailyMicrousd,
+    );
+    expect(totals.total + row.reserved_microusd).toBeLessThanOrEqual(
+      cfg.limits.monthlyMicrousd,
+    );
+    expect(totals.count + 1).toBeLessThanOrEqual(cfg.limits.dailyRequests);
+    expect(JSON.parse(row.metadata)).toMatchObject({
+      unknown_reason: "response_invalid_json",
+      api_request_id: "req_malformed_fixture",
+    });
+    expect(row.metadata).not.toContain("private malformed");
+    const replay = JSON.parse(
+      (
+        await decode(
+          await rpc("tools/call", { name: "review", arguments: input }),
+        )
+      ).result.content[0].text,
+    );
+    expect(replay).toMatchObject({
+      status: "unknown",
+      unknown_reason: "response_invalid_json",
+      result_replay_available: false,
+    });
+    const blocked = JSON.parse(
+      (
+        await decode(
+          await rpc("tools/call", {
+            name: "review",
+            arguments: { ...input, request_id: "synthetic-unknown-blocked" },
+          }),
+        )
+      ).result.content[0].text,
+    );
+    expect(blocked.status).toBe("limit_exceeded");
+    expect(calls).toBe(before + 1);
+  } finally {
+    malformedProviderBody = false;
+    // Isolated fixture cleanup so this unknown does not occupy the slot for unrelated tests.
+    await (
+      await mf.getD1Database("DB")
+    )
+      .prepare("DELETE FROM requests WHERE request_id=?")
+      .bind(input.request_id)
+      .run();
+  }
 });

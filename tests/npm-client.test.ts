@@ -1,6 +1,7 @@
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/client";
+import { Agent, getGlobalDispatcher } from "undici";
 import {
   InMemoryTransport,
   McpServer,
@@ -58,7 +59,7 @@ const options = {
   loadToken: async () => "synthetic-not-a-credential",
 };
 
-function fixture() {
+function fixture(delayMs = 0) {
   const calls: Array<{ name: string; args: unknown }> = [];
   const requests: Array<{ headers: Headers }> = [];
   const handler = createMcpHandler(() => {
@@ -72,6 +73,8 @@ function fixture() {
         },
         async (args) => {
           calls.push({ name, args });
+          if (delayMs)
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
           return result;
         },
       );
@@ -139,8 +142,8 @@ describe("npm remote connection", () => {
         resetTimeoutOnProgress: false,
       });
       expect(TOOL_CALL_OPTIONS).toEqual({
-        timeout: 65000,
-        maxTotalTimeout: 65000,
+        timeout: 1830000,
+        maxTotalTimeout: 1830000,
         resetTimeoutOnProgress: false,
       });
     } finally {
@@ -175,8 +178,8 @@ describe("npm remote connection", () => {
     const client = await connectRemote(options);
     try {
       const longer = {
-        timeout: 999999,
-        maxTotalTimeout: 999999,
+        timeout: 3_600_000,
+        maxTotalTimeout: 3_600_000,
         resetTimeoutOnProgress: true,
       };
       await client.listTools(undefined, longer);
@@ -192,6 +195,73 @@ describe("npm remote connection", () => {
     } finally {
       await client.close();
     }
+  });
+  it("receives a tool result beyond the former 65-second client deadline without another call", async () => {
+    vi.useFakeTimers();
+    const f = fixture(90_000);
+    const client = await connectRemote(options);
+    try {
+      const pending = client
+        .callTool({
+          name: "review_status",
+          arguments: { request_id: "same-id" },
+        })
+        .then(
+          (value) => ({ value }),
+          (error) => ({ error }),
+        );
+      await vi.advanceTimersByTimeAsync(90_000);
+      expect(await pending).toEqual({ value: result });
+      expect(f.calls).toEqual([
+        { name: "review_status", args: { request_id: "same-id" } },
+      ]);
+    } finally {
+      await client.close();
+    }
+  });
+  it("bounds a stalled tool at 1830 seconds without another invocation", async () => {
+    vi.useFakeTimers();
+    const f = fixture(3_600_000);
+    const client = await connectRemote(options);
+    let settled = false;
+    try {
+      const pending = client
+        .callTool({
+          name: "review_status",
+          arguments: { request_id: "same-id" },
+        })
+        .then(
+          (value) => {
+            settled = true;
+            return { value };
+          },
+          (error) => {
+            settled = true;
+            return { error };
+          },
+        );
+      await vi.advanceTimersByTimeAsync(1_829_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await pending).toHaveProperty("error");
+      expect(f.calls).toHaveLength(1);
+    } finally {
+      await client.close();
+    }
+  });
+  it("uses and destroys a private HTTP dispatcher without changing the global one", async () => {
+    const globalDispatcher = getGlobalDispatcher();
+    const f = fixture();
+    const client = await connectRemote(options);
+    const dispatcher = (
+      f.fetcher.mock.calls[0]![1] as RequestInit & { dispatcher: Agent }
+    ).dispatcher;
+    expect(dispatcher).toBeInstanceOf(Agent);
+    expect(dispatcher).not.toBe(globalDispatcher);
+    await client.close();
+    await client.close();
+    expect(dispatcher.destroyed).toBe(true);
+    expect(getGlobalDispatcher()).toBe(globalDispatcher);
   });
   it("bounds a stalled handshake at fifteen seconds without retrying", async () => {
     vi.useFakeTimers();

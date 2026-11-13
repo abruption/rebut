@@ -2,6 +2,8 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
+import { CLIENT_TOOL_TIMEOUT_MS } from "../timeouts.js";
+import { Agent } from "undici";
 
 export interface RemoteOptions {
   endpoint: string;
@@ -16,8 +18,8 @@ export const HANDSHAKE_OPTIONS = {
   resetTimeoutOnProgress: false,
 } as const;
 export const TOOL_CALL_OPTIONS = {
-  timeout: 65_000,
-  maxTotalTimeout: 65_000,
+  timeout: CLIENT_TOOL_TIMEOUT_MS,
+  maxTotalTimeout: CLIENT_TOOL_TIMEOUT_MS,
   resetTimeoutOnProgress: false,
 } as const;
 export const REMOTE_FAILURE_MESSAGE =
@@ -49,6 +51,12 @@ export function validateEndpoint(endpoint: string): URL {
 
 export async function connectRemote(options: RemoteOptions): Promise<Client> {
   const url = validateEndpoint(options.endpoint);
+  // Node fetch otherwise imposes its own 300-second headers/body deadlines,
+  // independently of the MCP request timer. Do not alter the global dispatcher.
+  const dispatcher = new Agent({
+    headersTimeout: CLIENT_TOOL_TIMEOUT_MS,
+    bodyTimeout: CLIENT_TOOL_TIMEOUT_MS,
+  });
   const transport = new StreamableHTTPClientTransport(url, {
     authProvider: { token: options.loadToken },
     requestInit: { redirect: "error" },
@@ -65,7 +73,12 @@ export async function connectRemote(options: RemoteOptions): Promise<Client> {
       ) {
         throw new Error(REMOTE_FAILURE_MESSAGE);
       }
-      return fetch(input, { ...init, redirect: "error" });
+      const requestInit: RequestInit & { dispatcher: Agent } = {
+        ...init,
+        redirect: "error",
+        dispatcher,
+      };
+      return fetch(input, requestInit);
     },
     onInsufficientScope: "throw",
     maxStepUpRetries: 0,
@@ -76,7 +89,17 @@ export async function connectRemote(options: RemoteOptions): Promise<Client> {
       reconnectionDelayGrowFactor: 1,
     },
   });
-  const client = new Client({ name: "rebut-mcp", version: "0.1.0" });
+  const client = new Client({ name: "rebut-mcp", version: "0.1.1" });
+  const close = client.close.bind(client);
+  let closing: Promise<void> | undefined;
+  client.close = () =>
+    (closing ??= (async () => {
+      try {
+        await close();
+      } finally {
+        await dispatcher.destroy();
+      }
+    })());
   // Enforce the same finite budgets for CLI consumers and the stdio bridge.
   const callTool = client.callTool.bind(client);
   client.callTool = (params, requestOptions) =>

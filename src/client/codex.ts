@@ -11,6 +11,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { parse, stringify } from "smol-toml";
+import { CODEX_TOOL_TIMEOUT_SECONDS } from "../timeouts.js";
 
 export interface CodexSetupOptions {
   codexHome?: string;
@@ -62,7 +63,7 @@ function desired(options: CodexSetupOptions): Table {
     command: options.nodePath ?? process.execPath,
     args: [resolve(options.entrypoint), "mcp"],
     startup_timeout_sec: 60,
-    tool_timeout_sec: 75,
+    tool_timeout_sec: CODEX_TOOL_TIMEOUT_SECONDS,
     enabled_tools: ["review", "review_status"],
     ...(options.forwardTokenEnv ? { env_vars: ["REBUT_TOKEN"] } : {}),
     ...(options.configDir !== undefined

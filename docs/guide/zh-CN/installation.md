@@ -95,8 +95,10 @@ rebut review < /protected/path/request-001.bundle.json
 rebut status request-001
 ```
 
-服务器仅存储元数据，无法重放审查正文，请以严格权限在本地保存首次响应。超时或结果不确定后保留同一请求 ID。MCP 客户端期限应超过 60 秒；提供商超时为 45 秒。参见[按需审查工作流](reviewer-integration.md)。
+服务器仅存储元数据，无法重放审查正文，请以严格权限在本地保存首次响应。超时或结果不确定后保留同一请求 ID。供应商等待期限为 1,800 秒（30 分钟），MCP HTTP 客户端为 1,830 秒，Codex 的 `tool_timeout_sec` 为 1,860 秒，为记录和传输结果留出时间。启动与握手仍使用独立的短期限。需同时更新 Worker 和 CLI，执行 `rebut setup --client codex --replace` 刷新已有配置并重启 Codex。仅修改宿主配置不能更新 0.1.0 CLI 内部的旧期限。参见[按需审查工作流](reviewer-integration.md)。
 
 ## 升级或移除
 
 升级或移除部署之前，请按照[运维指南](operations.md)保留 D1 账本并核对待处理的执行。公开源代码与部署私有付费服务是两个独立的操作。
+
+升级顺序为 **安装 CLI → 保留原选项并更新 Codex 注册 → 重启 Codex/MCP → 部署 Worker**。先部署更长期限的 Worker，旧 CLI 可能仍在 65 秒断开。保留 `REBUT_CONFIG_DIR` 等已有自定义注册选项。Node HTTP 的响应头／正文期限也与 MCP 工具期限一致。30 分钟是应用上限，不是所有网络或宿主的连接保证。休眠、终止或断线可能留下 reserved 或 unknown 预留；应查询原请求 ID，不自动重放或释放预留。

@@ -63,7 +63,7 @@ describe("portable Codex setup", () => {
           command: options.nodePath,
           args: [options.entrypoint, "mcp"],
           startup_timeout_sec: 60,
-          tool_timeout_sec: 75,
+          tool_timeout_sec: 1860,
           enabled_tools: ["review", "review_status"],
         },
       },
@@ -85,7 +85,7 @@ describe("portable Codex setup", () => {
       command: options.nodePath,
       args: [options.entrypoint, "mcp"],
       startup_timeout_sec: 60,
-      tool_timeout_sec: 75,
+      tool_timeout_sec: 1860,
       enabled_tools: ["review", "review_status"],
       env_vars: ["REBUT_TOKEN"],
     });
