@@ -3,7 +3,7 @@ import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
 const workflow = readFileSync(
-  new URL("../.github/workflows/pr-policy.yml", import.meta.url),
+  new URL("../.github/workflows/trusted-pr-policy.yml", import.meta.url),
   "utf8",
 );
 const script = workflow
@@ -11,9 +11,17 @@ const script = workflow
   .split("          JS")[0]!
   .replace(/^          /gm, "");
 
-async function check(body: string, issue: Record<string, unknown>, apiOk = true) {
+async function check(
+  body: string,
+  issue: Record<string, unknown>,
+  apiOk = true,
+) {
   const process = {
-    env: { GITHUB_REPOSITORY: "owner/repo", PR_NUMBER: "2", GH_TOKEN: "fixture" },
+    env: {
+      GITHUB_REPOSITORY: "owner/repo",
+      PR_NUMBER: "2",
+      GH_TOKEN: "fixture",
+    },
     exitCode: 0,
   };
   const requests: string[] = [];
@@ -36,6 +44,28 @@ async function check(body: string, issue: Record<string, unknown>, apiOk = true)
 
 const validIssue = { state: "open", created_at: "2026-11-13T01:00:00Z" };
 describe("Issue-first PR policy", () => {
+  it("keeps the legacy required check during the staged migration", () => {
+    const legacy = readFileSync(
+      new URL("../.github/workflows/pr-policy.yml", import.meta.url),
+      "utf8",
+    );
+    expect(legacy).toMatch(/^  pull_request:$/m);
+    expect(legacy).toContain("name: Issue-first PR");
+    expect(workflow).toContain("name: Trusted Issue-first PR");
+    expect(workflow).not.toMatch(/^    name: Issue-first PR$/m);
+    const legacyScript = legacy
+      .split("node --input-type=module <<'JS'\n")[1]!
+      .split("          JS")[0]!
+      .replace(/^          /gm, "");
+    expect(legacyScript).toBe(script);
+  });
+  it("uses a read-only base workflow without checking out or executing PR code", () => {
+    expect(workflow).toMatch(/^  pull_request_target:$/m);
+    expect(workflow).not.toMatch(/^  pull_request:$/m);
+    expect(workflow).not.toMatch(
+      /actions\/checkout|pull_request\.head|npm (?:ci|install)|: write/,
+    );
+  });
   it("accepts an earlier open issue in this repository", async () => {
     const result = await check("## Issue\n\nCloses #1", validIssue);
     expect(result.exitCode).toBe(0);
