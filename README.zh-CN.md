@@ -10,7 +10,7 @@
 
 </div>
 
-Rebut 是一个**需要明确选择启用的审查器**。它不会替代现有的 Claude/Gemini 工作流，也不会自动调用三个审查器。采用 MIT 许可证；使用您自己的 Cloudflare 账户和 OpenAI 密钥部署。公开源代码与部署个人付费服务是两个独立的操作。
+Rebut 是一个使用您自己的 Cloudflare 账户和 OpenAI 密钥部署的代码审查工具。
 
 ## 快速开始
 

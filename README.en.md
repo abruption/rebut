@@ -10,7 +10,7 @@
 
 </div>
 
-Rebut is an **opt-in reviewer**. It does not replace an existing Claude/Gemini workflow or automatically call three reviewers. MIT licensed; deploy with your own Cloudflare account and OpenAI key. Source publication and a personal paid deployment are separate actions.
+Rebut is a code review tool you deploy with your own Cloudflare account and OpenAI key.
 
 ## Quick start
 
