@@ -17,11 +17,25 @@ import { serveStdio } from "./client/stdio.js";
 import { setupCodex, removeCodex, CodexSetupError } from "./client/codex.js";
 import { collect } from "./client/collector.js";
 import { ReviewInputSchema } from "./contracts.js";
+import {
+  profileCommand,
+  listProfiles,
+  resolveProfile,
+  safeProfileError,
+} from "./client/profiles.js";
 const HELP = `Rebut: opt-in independent review MCP client
 
 rebut set endpoint URL
 rebut set secret-store keychain|vaultwarden|env
 rebut set vaultwarden-item NAME
+rebut set vaultwarden-admin-item NAME
+rebut set model MODEL
+rebut set reasoning EFFORT
+rebut set profile PROFILE_ID
+rebut set admin-token [--stdin]
+rebut profile list
+rebut profile set ID --model MODEL --reasoning EFFORT --max-output-tokens N --input-usd-per-million USD --output-usd-per-million USD --price-version VERSION [--if-revision N]
+rebut profile remove ID [--if-revision N]
 rebut set token [--stdin]        Hidden input; never pass a token as an argument
 rebut setup --client codex [--codex-home PATH] [--replace]
 rebut remove --client codex [--codex-home PATH]
@@ -120,12 +134,16 @@ export async function runCli(args: string[]): Promise<void> {
   const settings = await readSettings();
   if (command === "set") {
     const [key, ...values] = rest;
-    if (key === "token") {
+    if (key === "token" || key === "admin-token") {
       const parsed = options(values, { stdin: { type: "boolean" } });
       const token = (
         parsed.values.stdin ? await stdin(1024) : await hidden()
       ).trim();
-      await storeToken(token, settings);
+      await storeToken(
+        token,
+        settings,
+        key === "admin-token" ? "admin" : "review",
+      );
       process.stdout.write(
         "Token saved and verified in macOS login Keychain.\n",
       );
@@ -150,7 +168,25 @@ export async function runCli(args: string[]): Promise<void> {
         throw new CliError("Unknown secret store.");
       settings.secretStore = value as typeof settings.secretStore;
     } else if (key === "vaultwarden-item") settings.vaultwardenItem = value;
-    else throw new CliError("Unknown configuration key.");
+    else if (key === "vaultwarden-admin-item")
+      settings.vaultwardenAdminItem = value;
+    else if (key === "model") {
+      if (!/^[a-zA-Z0-9._:-]{1,100}$/.test(value))
+        throw new CliError("Invalid model ID.");
+      settings.defaultModel = value;
+      delete settings.defaultProfile;
+    } else if (key === "reasoning") {
+      if (!/^[a-z][a-z0-9_-]{0,31}$/.test(value))
+        throw new CliError("Invalid reasoning effort.");
+      settings.defaultReasoning = value;
+      delete settings.defaultProfile;
+    } else if (key === "profile") {
+      if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(value))
+        throw new CliError("Invalid profile ID.");
+      settings.defaultProfile = value;
+      delete settings.defaultModel;
+      delete settings.defaultReasoning;
+    } else throw new CliError("Unknown configuration key.");
     await writeSettings(settings);
     process.stdout.write("Configuration saved.\n");
     return;
@@ -201,14 +237,60 @@ export async function runCli(args: string[]): Promise<void> {
       throw new CliError(
         "Collect requires root, request-id, requirements and explicit source files.",
       );
+    let chosen = p.values.profile as string | undefined;
+    if (
+      !chosen &&
+      (settings.defaultModel ||
+        settings.defaultReasoning ||
+        settings.defaultProfile)
+    )
+      chosen = (await preferred()).id;
     output(
       await collect(
         p.values.root as string,
         p.positionals,
         p.values.requirements as string,
         p.values["request-id"] as string,
-        p.values.profile as string | undefined,
+        chosen,
       ),
+    );
+    return;
+  }
+  async function preferred() {
+    if (!settings.endpoint)
+      throw new CliError(
+        "Set the Worker endpoint before selecting server models.",
+      );
+    const records = await listProfiles({
+      endpoint: settings.endpoint,
+      loadToken: () => loadToken(settings),
+    });
+    const model =
+      settings.defaultModel ??
+      records.find((r) => r.id === "astra-medium" && r.enabled)?.profile?.model;
+    const id = resolveProfile(records, {
+      profile: settings.defaultProfile,
+      model:
+        settings.defaultModel || settings.defaultReasoning ? model : undefined,
+      reasoning: settings.defaultReasoning,
+    });
+    const selected = records.find((r) => r.id === id)!;
+    return {
+      id,
+      model: selected.profile!.model,
+      reasoning: selected.profile!.reasoning,
+      revision: selected.revision,
+    };
+  }
+  if (command === "profile") {
+    if (!settings.endpoint)
+      throw new CliError("Set the Worker endpoint first.");
+    output(
+      await profileCommand(rest, {
+        endpoint: settings.endpoint,
+        loadReviewToken: () => loadToken(settings),
+        loadAdminToken: () => loadToken(settings, "admin"),
+      }),
     );
     return;
   }
@@ -224,6 +306,9 @@ export async function runCli(args: string[]): Promise<void> {
       endpointConfigured: !!settings.endpoint,
       secretStore: settings.secretStore,
       credentialAvailable,
+      defaultModel: settings.defaultModel,
+      defaultReasoning: settings.defaultReasoning,
+      defaultProfile: settings.defaultProfile,
     };
     if (p.values.connect) {
       if (!settings.endpoint || !credentialAvailable)
@@ -252,7 +337,20 @@ export async function runCli(args: string[]): Promise<void> {
   };
   if (command === "mcp") {
     if (rest.length) throw new CliError("Unexpected mcp arguments.");
-    await serveStdio(remote);
+    let preferredProfile;
+    let reviewUnavailable = false;
+    if (
+      settings.defaultModel ||
+      settings.defaultReasoning ||
+      settings.defaultProfile
+    ) {
+      try {
+        preferredProfile = await preferred();
+      } catch {
+        reviewUnavailable = true;
+      }
+    }
+    await serveStdio({ ...remote, preferredProfile, reviewUnavailable });
     return;
   }
   if (command === "status" || command === "review") {
@@ -291,6 +389,8 @@ export async function runCli(args: string[]): Promise<void> {
 export function safeError(error: unknown): string {
   if (error instanceof CliError) return error.message;
   if (error instanceof CodexSetupError) return error.message;
+  const profileError = safeProfileError(error);
+  if (profileError) return profileError;
   const code = error instanceof Error ? error.message : "";
   const known: Record<string, string> = {
     SETTINGS_INVALID: "Invalid local settings file.",

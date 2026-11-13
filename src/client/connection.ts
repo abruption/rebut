@@ -5,6 +5,8 @@ import {
 
 export interface RemoteOptions {
   endpoint: string;
+  preferredProfile?: { id: string; model: string; reasoning?: string };
+  reviewUnavailable?: boolean;
   loadToken: () => Promise<string>;
 }
 

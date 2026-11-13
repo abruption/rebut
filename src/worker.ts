@@ -5,11 +5,14 @@ import { ReviewInputSchema, inputHash } from "./contracts.js";
 import { estimateReservation, runReview } from "./review.js";
 import { Ledger } from "./ledger.js";
 import { parseConfig } from "./config.js";
+import { ProfileRegistry } from "./profiles.js";
+import { profileApi } from "./profile-api.js";
 export interface Env {
   DB: D1Database;
   REBUT_CONFIG: string;
   AUTH_TOKENS: string;
   OPENAI_API_KEY: string;
+  ADMIN_TOKEN_SHA256?: string;
 }
 const PrincipalSchema = z.record(
   z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
@@ -52,8 +55,6 @@ export async function handleReview(raw: unknown, principal: string, env: Env) {
     config = parseConfig(env.REBUT_CONFIG);
   if ((await inputHash(input)) !== input.input_sha256)
     return { status: "input_hash_mismatch" };
-  const profile = config.profiles[input.profile];
-  if (!profile) return { status: "profile_not_allowed" };
   const ledger = new Ledger(env.DB);
   const fingerprint = await sha256(
     JSON.stringify({
@@ -61,6 +62,22 @@ export async function handleReview(raw: unknown, principal: string, env: Env) {
       profile: input.profile,
     }),
   );
+  const existing = await ledger.get(principal, input.request_id);
+  if (existing)
+    return existing.fingerprint === fingerprint
+      ? metadata(existing)
+      : { status: "conflict" };
+  const selected = await new ProfileRegistry(env.DB, config.profiles).resolve(
+    input.profile,
+  );
+  if (!selected) return { status: "profile_not_allowed" };
+  const profile = selected.profile;
+  const snapshot = {
+    requested_model: profile.model,
+    requested_reasoning: profile.reasoning,
+    profile_revision: selected.revision,
+    price_version: profile.priceVersion,
+  };
   const reserved = await ledger.reserve(
     principal,
     input.request_id,
@@ -69,6 +86,8 @@ export async function handleReview(raw: unknown, principal: string, env: Env) {
     input.profile,
     estimateReservation(input, profile),
     config.limits,
+    new Date(),
+    snapshot,
   );
   if (reserved.status === "existing") return metadata(reserved.row);
   if (reserved.status !== "acquired") return { status: reserved.status };
@@ -82,7 +101,12 @@ export async function handleReview(raw: unknown, principal: string, env: Env) {
       price_version: profile.priceVersion,
     };
   }
-  const { review, ...info } = outcome;
+  const { review, ...outcomeInfo } = outcome;
+  const info = {
+    ...outcomeInfo,
+    requested_reasoning: profile.reasoning,
+    profile_revision: selected.revision,
+  };
   await ledger.finish(
     principal,
     input.request_id,
@@ -108,7 +132,10 @@ export default {
     ctx: ExecutionContext,
   ): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname !== "/mcp")
+    const profileRoute =
+      url.pathname === "/profiles" ||
+      /^\/admin\/profiles\/[^/]+$/.test(url.pathname);
+    if (url.pathname !== "/mcp" && !profileRoute)
       return new Response("Not found", { status: 404 });
     try {
       if (
@@ -126,6 +153,22 @@ export default {
         request.headers.get("origin") !== url.origin
       )
         return new Response("Forbidden", { status: 403 });
+      if (profileRoute) {
+        const auth = request.headers.get("authorization");
+        const adminDigest = env.ADMIN_TOKEN_SHA256;
+        const isAdmin = !!(
+          adminDigest &&
+          /^[a-f0-9]{64}$/.test(adminDigest) &&
+          auth?.startsWith("Bearer ") &&
+          auth.length <= 520 &&
+          (await sha256(auth.slice(7))) === adminDigest
+        );
+        const reader =
+          url.pathname === "/profiles"
+            ? await authenticate(request, env)
+            : null;
+        return await profileApi(request, config, env.DB, isAdmin, !!reader);
+      }
       const principal = await authenticate(request, env);
       if (!principal)
         return new Response("Unauthorized", {

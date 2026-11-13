@@ -146,3 +146,26 @@ it("collect command emits a valid frozen profile without reading credentials", a
     expect(result.profile).toBe("luna-test");
     expect(result.input_sha256).toBe(await inputHash(result));
   }));
+it("stores model and reasoning preferences without embedding an admin secret or exposing credentials to Codex", async () =>
+  fixture(async (dir) => {
+    expect(cli(dir, ["set", "model", "new-responses-model"]).status).toBe(0);
+    expect(cli(dir, ["set", "reasoning", "future_effort"]).status).toBe(0);
+    let settings = JSON.parse(
+      await readFile(join(dir, "settings/config.json"), "utf8"),
+    );
+    expect(settings).toMatchObject({
+      defaultModel: "new-responses-model",
+      defaultReasoning: "future_effort",
+    });
+    expect(cli(dir, ["set", "profile", "explicit-profile"]).status).toBe(0);
+    settings = JSON.parse(
+      await readFile(join(dir, "settings/config.json"), "utf8"),
+    );
+    expect(settings.defaultProfile).toBe("explicit-profile");
+    expect(settings.defaultModel).toBeUndefined();
+    expect(settings.defaultReasoning).toBeUndefined();
+    const result = cli(dir, ["set", "admin-token", fixtureToken]);
+    expect(result.status).toBe(1);
+    expect(result.stdout + result.stderr).not.toContain(fixtureToken);
+    expect(cli(dir, ["set", "reasoning", "bad effort"]).status).toBe(1);
+  }));

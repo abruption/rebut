@@ -47,7 +47,7 @@ export async function serveStdio(options: RemoteOptions): Promise<void> {
           title: tool.title,
           description:
             tool.name === "review"
-              ? `${tool.description ?? ""}\n\n${REVIEW_GUIDANCE}`.trim()
+              ? `${tool.description ?? ""}\n\n${REVIEW_GUIDANCE}${options.preferredProfile ? "\nPreferred profile for new reviews: " + options.preferredProfile.id + " (model " + options.preferredProfile.model + ", reasoning " + (options.preferredProfile.reasoning ?? "provider default") + "). Explicit request profile remains authoritative." : ""}`.trim()
               : tool.description,
           inputSchema: fromJsonSchema<Record<string, unknown>>(
             tool.inputSchema as JsonSchemaType,
@@ -65,6 +65,16 @@ export async function serveStdio(options: RemoteOptions): Promise<void> {
         },
         async (args) => {
           try {
+            if (tool.name === "review" && options.reviewUnavailable)
+              return {
+                isError: true,
+                content: [
+                  {
+                    type: "text" as const,
+                    text: "Configured model preference is unavailable. Correct it with profile list/set before a new review. Existing request metadata remains available through review_status.",
+                  },
+                ],
+              };
             return await remote.callTool({ name: tool.name, arguments: args });
           } catch {
             return {

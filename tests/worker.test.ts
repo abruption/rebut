@@ -24,6 +24,9 @@ beforeAll(async () => {
               test: createHash("sha256").update(token).digest("hex"),
             }),
             OPENAI_API_KEY: "fake",
+            ADMIN_TOKEN_SHA256: createHash("sha256")
+              .update("synthetic-admin-token-not-a-secret")
+              .digest("hex"),
           },
           outboundService: async (req) => {
             expect(req.url).toBe("https://api.openai.com/v1/responses");
@@ -71,7 +74,10 @@ beforeAll(async () => {
     }),
   );
   const db = await mf.getD1Database("DB");
-  for (const statement of readFileSync("migrations/0001_ledger.sql", "utf8")
+  for (const statement of (
+    readFileSync("migrations/0001_ledger.sql", "utf8") +
+    readFileSync("migrations/0002_profiles.sql", "utf8")
+  )
     .split(";")
     .map((s) => s.trim())
     .filter(Boolean))
@@ -188,4 +194,173 @@ it("rejects oversize transport without paying", async () => {
     ).status,
   ).toBe(413);
   expect(calls).toBe(1);
+});
+const adminToken = "synthetic-admin-token-not-a-secret";
+async function profileHttp(
+  path: string,
+  method = "GET",
+  body?: unknown,
+  bearer = token,
+) {
+  return mf.dispatchFetch("http://127.0.0.1" + path, {
+    method,
+    headers: {
+      Host: "127.0.0.1",
+      Authorization: `Bearer ${bearer}`,
+      "content-type": "application/json",
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+}
+it("separates profile administration from review access and applies revisions without model execution", async () => {
+  const before = calls;
+  const profiles = await profileHttp("/profiles");
+  expect(profiles.status).toBe(200);
+  const initial = (await profiles.json()) as any;
+  expect(
+    initial.profiles.find((p: any) => p.id === "astra-medium").revision,
+  ).toBe(0);
+  const profile = {
+    ...cfg.profiles["astra-medium"],
+    model: "future-responses-model",
+    reasoning: "future_effort",
+  };
+  expect(
+    (
+      await profileHttp("/admin/profiles/future", "PUT", {
+        expected_revision: 0,
+        profile,
+      })
+    ).status,
+  ).toBe(401);
+  const created = await profileHttp(
+    "/admin/profiles/future",
+    "PUT",
+    { expected_revision: 0, profile },
+    adminToken,
+  );
+  expect(created.status).toBe(200);
+  expect(((await created.json()) as any).record).toMatchObject({
+    id: "future",
+    revision: 1,
+    enabled: true,
+    profile: { model: "future-responses-model", reasoning: "future_effort" },
+  });
+  expect(
+    (
+      await profileHttp(
+        "/admin/profiles/future",
+        "PUT",
+        { expected_revision: 0, profile },
+        adminToken,
+      )
+    ).status,
+  ).toBe(409);
+  expect(
+    (
+      await profileHttp(
+        "/admin/profiles/future",
+        "DELETE",
+        { expected_revision: 1 },
+        adminToken,
+      )
+    ).status,
+  ).toBe(200);
+  const listed = (await (await profileHttp("/profiles")).json()) as any;
+  expect(listed.profiles.find((p: any) => p.id === "future")).toMatchObject({
+    enabled: false,
+    revision: 2,
+  });
+  expect(calls).toBe(before);
+});
+it("retains original resolved model and revision for a completed ID after profile changes and disabling", async () => {
+  const profile = { ...cfg.profiles["astra-medium"] };
+  expect(
+    (
+      await profileHttp(
+        "/admin/profiles/mutable",
+        "PUT",
+        { expected_revision: 0, profile },
+        adminToken,
+      )
+    ).status,
+  ).toBe(200);
+  const input = {
+    schema_version: 1 as const,
+    task_kind: "code" as const,
+    requirements: "Preserve value",
+    files: [
+      {
+        path: "sample.ts",
+        start_line: 1,
+        content: "export const value = 1;\n",
+      },
+    ],
+    diff: "",
+    request_id: "profile-snapshot-1",
+    profile: "mutable",
+    input_sha256: "",
+  };
+  input.input_sha256 = await inputHash(input);
+  const outcome = JSON.parse(
+    (
+      await decode(
+        await rpc("tools/call", { name: "review", arguments: input }),
+      )
+    ).result.content[0].text,
+  );
+  expect(outcome).toMatchObject({
+    status: "completed",
+    requested_model: "gpt-6-astra",
+    profile_revision: 1,
+  });
+  const after = calls;
+  expect(
+    (
+      await profileHttp(
+        "/admin/profiles/mutable",
+        "PUT",
+        {
+          expected_revision: 1,
+          profile: { ...profile, model: "new-responses-model" },
+        },
+        adminToken,
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await profileHttp(
+        "/admin/profiles/mutable",
+        "DELETE",
+        { expected_revision: 2 },
+        adminToken,
+      )
+    ).status,
+  ).toBe(200);
+  const duplicate = JSON.parse(
+    (
+      await decode(
+        await rpc("tools/call", { name: "review", arguments: input }),
+      )
+    ).result.content[0].text,
+  );
+  expect(duplicate).toMatchObject({
+    status: "completed",
+    requested_model: "gpt-6-astra",
+    profile_revision: 1,
+  });
+  expect(calls).toBe(after);
+  const disabled = JSON.parse(
+    (
+      await decode(
+        await rpc("tools/call", {
+          name: "review",
+          arguments: { ...input, request_id: "profile-snapshot-2" },
+        }),
+      )
+    ).result.content[0].text,
+  );
+  expect(disabled.status).toBe("profile_not_allowed");
+  expect(calls).toBe(after);
 });

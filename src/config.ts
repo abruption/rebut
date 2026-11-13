@@ -2,11 +2,12 @@ import { z } from "zod";
 import type { Profile } from "./contracts.js";
 import type { Limits } from "./ledger.js";
 const SafeInt = z.number().int().positive().max(1_000_000_000_000);
-const ProfileSchema = z
+export const ProfileSchema = z
   .object({
     model: z.string().regex(/^[a-zA-Z0-9._:-]{1,100}$/),
     reasoning: z
-      .enum(["none", "minimal", "low", "medium", "high", "xhigh", "max"])
+      .string()
+      .regex(/^[a-z][a-z0-9_-]{0,31}$/)
       .optional(),
     maxOutputTokens: SafeInt.max(16384),
     inputMicrousdPerMillion: SafeInt,

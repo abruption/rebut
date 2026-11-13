@@ -80,6 +80,12 @@ The collector rejects symlinks, FIFOs, secret filenames, binary files, and overs
 4. Store three Workers Secrets: `OPENAI_API_KEY`, `REBUT_CONFIG`, and `AUTH_TOKENS`. Use Wrangler's interactive secret prompt or `secret bulk` via protected stdin; never put secret values in arguments or tracked files. `REBUT_CONFIG` uses the structure in [`config.example.json`](../../../config.example.json); change `hostname` to your exact endpoint hostname. `AUTH_TOKENS` is a JSON object mapping stable principal IDs to SHA-256 digests of independently generated random 256-bit bearer tokens. Store original tokens in your password manager. Clients with the same token share a principal; distinct tokens isolate request/status access.
 5. Connect a bearer-header-capable MCP client to `https://YOUR_HOST/mcp`, and verify `tools/list`. Host and browser Origin validation apply before tool execution. This bearer setup does not implement OAuth for clients that require OAuth discovery.
 
+## One-time upgrade for owner-managed profiles
+
+Dynamic profiles require one Worker upgrade from the source checkout, D1 migration `0002`, and the `ADMIN_TOKEN_SHA256` Worker secret. Apply pending migrations to the existing D1 database, preserving its ledger, then deploy the upgraded Worker with your private config. Generate a separate random 256-bit admin bearer, store its SHA-256 hash as `ADMIN_TOKEN_SHA256` using a protected interactive secret prompt, and keep the original bearer in your credential store. Do not reuse the review bearer or change existing principal IDs. After this one-time setup, CLI profile changes write D1 without another Worker build/deploy or npm upgrade.
+
+Store the owner bearer with `rebut set admin-token` (hidden input), or explicitly use `rebut set admin-token --stdin` with a protected pipe. With the selected Vaultwarden backend, the default admin item is `Rebut — MCP Admin Token`; change it with `rebut set vaultwarden-admin-item NAME`. The env backend uses `REBUT_ADMIN_TOKEN` in a secure execution environment; it is never forwarded to Codex. Keychain service `com.abruption.rebut` separates review account `codex-mcp-bearer` from admin account `codex-mcp-admin`. Backends do not fall back automatically. See [configuration](configuration.md) for model preferences, listing, explicit prices, and revision-safe updates/removal.
+
 ## Run the client
 
 `rebut review` reads a JSON bundle from stdin and starts a paid review only when explicitly selected by the user. `rebut status REQUEST_ID` is a free metadata query.

@@ -12,9 +12,48 @@
 
 `rebut setup --client codex` 使用 `CODEX_HOME` 或 `~/.codex`；`--codex-home PATH` 指定其他目录。它注册 `rebut mcp` 并保留其他 MCP 条目；迁移现有私有 `rebut` 桥接配置需要 `--replace`。`rebut doctor` 显示已清理敏感值的本地配置及凭据可用性；`rebut doctor --connect` 免费检查远程 `tools/list`。两者均不进行付费审查。参见[安装](installation.md)。
 
+## 模型与推理偏好
+
+为新收集的输入包设置本地偏好，或直接选择服务器配置方案：
+
+```sh
+rebut set model MODEL_ID
+rebut set reasoning EFFORT
+rebut set profile PROFILE_ID
+```
+
+`MODEL_ID`、`EFFORT` 和 `PROFILE_ID` 是占位符。模型/推理偏好会匹配服务器允许列表中的配置方案，不授予任意模型的访问权限。收集器显式指定的 `--profile` 优先于本地偏好。未设置偏好时仍默认为 `astra-medium`。`rebut review` 使用冻结输入包中已包含的配置方案，不会根据当前偏好改写它。
+
+## 所有者管理服务器配置方案
+
+`rebut profile list` 通过经过身份验证的只读 GET 列出服务器配置方案、模型、推理设置、输出上限、费率及修订版本，不调用提供商，也不启动付费审查。
+
+```sh
+rebut profile list
+rebut set admin-token
+```
+
+修改配置方案需要单独的所有者管理 Bearer 令牌。`rebut set admin-token` 使用隐藏输入的交互式提示；`rebut set admin-token --stdin` 明确接受受保护的管道。绝不要将令牌放入参数或受版本控制的文件。macOS Keychain 服务为 `com.abruption.rebut`，审查账户为 `codex-mcp-bearer`，管理账户为 `codex-mcp-admin`。已选择的 Vaultwarden 后端可使用用户单独选择的条目：默认为 `Rebut — MCP Admin Token`，通过 `rebut set vaultwarden-admin-item NAME` 修改。env 后端从安全执行环境读取 `REBUT_ADMIN_TOKEN`。管理令牌绝不会转发给 Codex。后端不会自动回退。
+
+完成[安装](installation.md)中的一次性 Worker 升级、D1 迁移 `0002` 及 `ADMIN_TOKEN_SHA256` Secret 设置后，所有者可以添加或更新配置方案。以下示例使用现有 Astra/medium 配置及日期为 2026-11-12 的 Standard 费率；选择数值前请核实官方[模型](https://developers.openai.com/api/docs/models/gpt-6-astra)和[价格](https://developers.openai.com/api/docs/pricing)文档。对于新模型，请将占位符 `MODEL_ID` 替换为已核实的 Responses 兼容模型 ID，并明确提供其支持的推理设置、输出上限和官方费率。
+
+```sh
+rebut profile set astra-medium --model gpt-6-astra --reasoning medium --max-output-tokens 8192 --input-usd-per-million 10 --output-usd-per-million 50 --price-version official-2026-11-12
+```
+
+两项费率及 `--price-version` 都是必填项；服务器据此预留预算并估算成本。Rebut 不会自动抓取价格或调用提供商的模型端点。`--if-revision N` 为 set/remove 添加明确的比较交换修订条件。发生 `409` 冲突后，应重新读取 `rebut profile list` 并决定如何修改，绝不自动覆盖。
+
+```sh
+rebut profile remove PROFILE_ID --if-revision N
+```
+
+移除会创建禁用墓碑记录，而不是删除审查历史。一次安装 Worker/D1 支持后，配置方案变更只写入 D1：Responses 兼容的新模型 ID 或推理值无需重新构建/部署 Worker 或升级 npm。配置方案更新或移除后，现有请求保留原始模型和修订版本。变更不会重新运行请求，也不会自动释放或退还预算预留。普通审查 Bearer 令牌不能修改配置方案；此所有者 API 不作为 MCP 工具暴露，也不能修改预算、身份验证或提供商 URL。
+
 ## 服务器配置
 
 [`config.example.json`](../../../config.example.json) 定义了 `REBUT_CONFIG` Secret 的结构。将 `hostname` 设为端点的准确主机名，配置服务器端的配置方案 ID，并设置部署范围内的限制。客户端选择配置方案 ID，不能覆盖模型名称或提供商 URL。示例只是配置，不承诺账户级模型访问权限。
+
+`REBUT_CONFIG` 提供初始配置方案。D1 覆盖记录及禁用墓碑优先；移除配置方案不会恢复相同 ID 的初始配置方案。服务器会为每个已预留请求冻结解析后的配置方案及修订版本。
 
 | 配置方案       | 模型          | 推理     | 最大输出令牌数 | 每 1M 令牌的 Standard 输入/输出价格 |
 | -------------- | ------------- | -------- | -------------- | ----------------------------------- |

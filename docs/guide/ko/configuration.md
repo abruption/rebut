@@ -12,9 +12,48 @@
 
 `rebut setup --client codex`는 `CODEX_HOME` 또는 `~/.codex`를 사용하며 `--codex-home PATH`로 경로를 지정합니다. `rebut mcp`를 등록하고 다른 MCP 항목을 보존합니다. 기존 비공개 `rebut` 브리지 이전에는 `--replace`가 필요합니다. `rebut doctor`는 민감한 값을 제거한 로컬 설정과 자격증명 사용 가능 여부를, `rebut doctor --connect`는 무료 원격 `tools/list`를 확인합니다. 유료 검토는 수행하지 않습니다. [설치](installation.md)를 참고하세요.
 
+## 모델 및 추론 환경설정
+
+새로 수집할 번들의 로컬 환경설정을 지정하거나 서버 프로필을 직접 선택합니다.
+
+```sh
+rebut set model MODEL_ID
+rebut set reasoning EFFORT
+rebut set profile PROFILE_ID
+```
+
+`MODEL_ID`, `EFFORT`, `PROFILE_ID`는 자리표시자입니다. 모델·추론 환경설정은 서버 허용 목록의 프로필로 해석되며 임의 모델 접근 권한을 주지 않습니다. 수집기의 명시적 `--profile`이 로컬 환경설정보다 우선합니다. 환경설정이 없으면 기본값은 `astra-medium`입니다. `rebut review`는 고정 번들에 포함된 프로필을 유지하며 현재 환경설정으로 바꾸지 않습니다.
+
+## 소유자 서버 프로필 관리
+
+`rebut profile list`는 인증된 읽기 전용 GET으로 서버 프로필, 모델, 추론 설정, 출력 한도, 요금, 리비전을 조회합니다. 공급자를 호출하거나 유료 검토를 시작하지 않습니다.
+
+```sh
+rebut profile list
+rebut set admin-token
+```
+
+프로필 변경에는 별도의 소유자 admin bearer가 필요합니다. `rebut set admin-token`은 입력을 숨기는 대화형 프롬프트를 사용하며 `rebut set admin-token --stdin`은 보호된 파이프 입력을 명시적으로 받습니다. 토큰을 인자나 추적되는 파일에 넣지 마세요. macOS Keychain 서비스는 `com.abruption.rebut`, 검토 계정은 `codex-mcp-bearer`, 관리자 계정은 `codex-mcp-admin`입니다. 선택한 Vaultwarden 백엔드는 별도의 사용자 지정 항목을 사용할 수 있습니다. 기본값은 `Rebut — MCP Admin Token`이며 `rebut set vaultwarden-admin-item NAME`으로 변경합니다. env 백엔드는 안전한 실행 환경의 `REBUT_ADMIN_TOKEN`을 읽습니다. 관리자 토큰은 Codex에 전달되지 않습니다. 자동 백엔드 대체는 없습니다.
+
+[설치](installation.md)의 일회성 Worker 업그레이드, D1 마이그레이션 `0002`, `ADMIN_TOKEN_SHA256` 시크릿 설정 후 소유자는 프로필을 추가·수정할 수 있습니다. 다음 예시는 기존 Astra/medium 설정과 2026-11-12 Standard 요금을 사용합니다. 값을 선택하기 전에 공식 [모델](https://developers.openai.com/api/docs/models/gpt-6-astra)·[가격](https://developers.openai.com/api/docs/pricing) 문서를 확인하세요. 새 모델에는 자리표시자 `MODEL_ID`를 검증된 Responses 호환 모델 ID로 바꾸고 지원되는 추론 설정, 출력 한도, 공식 요금을 모두 명시합니다.
+
+```sh
+rebut profile set astra-medium --model gpt-6-astra --reasoning medium --max-output-tokens 8192 --input-usd-per-million 10 --output-usd-per-million 50 --price-version official-2026-11-12
+```
+
+두 요금과 `--price-version`은 필수이며 서버는 이를 예산 예약과 비용 추정에 사용합니다. Rebut은 가격을 자동 조회하거나 공급자 모델 엔드포인트를 호출하지 않습니다. `--if-revision N`은 set/remove에 명시적인 비교 후 교환 리비전 조건을 추가합니다. `409` 충돌이 나면 `rebut profile list`를 다시 읽고 변경 여부를 판단하세요. 자동으로 덮어쓰지 마세요.
+
+```sh
+rebut profile remove PROFILE_ID --if-revision N
+```
+
+제거는 검토 이력을 지우지 않고 비활성화 tombstone을 남깁니다. Worker/D1 지원을 한 번 설치하면 프로필 변경은 D1만 기록합니다. Responses 호환 새 모델 ID나 추론 값에는 Worker 빌드·배포 또는 npm 업그레이드가 필요하지 않습니다. 기존 요청은 프로필 수정·제거 후에도 원래 모델과 리비전을 유지합니다. 변경으로 요청을 재실행하거나 예약을 자동 해제·환불하지 않습니다. 일반 검토 bearer는 프로필을 변경할 수 없습니다. 이 소유자 API는 MCP 도구로 노출되지 않으며 예산, 인증, 공급자 URL을 변경할 수 없습니다.
+
 ## 서버 설정
 
 [`config.example.json`](../../../config.example.json)은 `REBUT_CONFIG` 시크릿의 구조를 정의합니다. `hostname`을 정확한 엔드포인트 호스트명으로 지정하고, 서버 측 프로필 ID와 배포 전체의 한도를 설정합니다. 클라이언트는 프로필 ID를 선택하며 모델명이나 공급자 URL을 재정의할 수 없습니다. 예시는 설정을 보여 주며 계정 수준의 모델 접근 권한을 보장하지 않습니다.
+
+`REBUT_CONFIG`는 초기 프로필을 제공합니다. D1 재정의와 비활성화 tombstone이 우선하므로 프로필을 제거해도 같은 ID의 초기 프로필이 다시 활성화되지 않습니다. 서버는 각 예약 요청에 해석된 프로필과 리비전을 고정합니다.
 
 | 프로필         | 모델          | 추론     | 최대 출력 토큰 | 1M 토큰당 Standard 입력/출력 |
 | -------------- | ------------- | -------- | -------------- | ---------------------------- |

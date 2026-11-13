@@ -80,6 +80,12 @@ rebut collect --root /path/to/project --request-id request-001 --requirements 'C
 4. Workers Secrets에 `OPENAI_API_KEY`, `REBUT_CONFIG`, `AUTH_TOKENS` 세 가지를 저장합니다. Wrangler의 대화형 시크릿 프롬프트 또는 보호된 표준 입력을 통한 `secret bulk`를 사용하세요. 시크릿 값을 인자나 추적되는 파일에 넣지 마세요. `REBUT_CONFIG`는 [`config.example.json`](../../../config.example.json)의 구조를 사용하며, `hostname`을 정확한 엔드포인트 호스트명으로 변경합니다. `AUTH_TOKENS`는 안정적인 인증 주체 ID를 서로 독립적으로 생성한 무작위 256비트 bearer 토큰의 SHA-256 다이제스트에 매핑하는 JSON 객체입니다. 원본 토큰은 비밀번호 관리자에 저장하세요. 같은 토큰을 쓰는 클라이언트는 인증 주체을 공유하며, 서로 다른 토큰은 요청·상태 접근을 격리합니다.
 5. Bearer 헤더를 지원하는 MCP 클라이언트를 `https://YOUR_HOST/mcp`에 연결하고 `tools/list`를 확인합니다. 도구 실행 전에 Host 및 브라우저 Origin 검증이 적용됩니다. 이 bearer 설정은 OAuth 검색이 필요한 클라이언트를 위한 OAuth를 구현하지 않습니다.
 
+## 소유자 프로필 관리를 위한 일회성 업그레이드
+
+동적 프로필에는 소스 체크아웃의 Worker를 한 번 업그레이드하고 D1 마이그레이션 `0002`와 Worker 시크릿 `ADMIN_TOKEN_SHA256`을 적용해야 합니다. 원장을 보존하며 기존 D1에 대기 중인 마이그레이션을 적용한 뒤 비공개 설정으로 업그레이드한 Worker를 배포합니다. 별도의 무작위 256비트 관리자 bearer를 생성하고 보호된 대화형 시크릿 프롬프트로 SHA-256 해시를 `ADMIN_TOKEN_SHA256`에 저장합니다. 원본 bearer는 자격증명 저장소에 보관하세요. 검토 bearer를 재사용하거나 기존 인증 주체 ID를 바꾸지 마세요. 이 일회성 설정 후 CLI 프로필 변경은 Worker 재빌드·재배포나 npm 업그레이드 없이 D1에 기록합니다.
+
+`rebut set admin-token`의 숨김 입력으로 소유자 bearer를 저장하거나 보호된 파이프에서 `rebut set admin-token --stdin`을 명시적으로 사용합니다. 선택한 Vaultwarden 백엔드의 기본 관리자 항목은 `Rebut — MCP Admin Token`이며 `rebut set vaultwarden-admin-item NAME`으로 변경합니다. env 백엔드는 안전한 실행 환경의 `REBUT_ADMIN_TOKEN`을 사용하며 Codex에 전달하지 않습니다. Keychain 서비스 `com.abruption.rebut`는 검토 계정 `codex-mcp-bearer`와 관리자 계정 `codex-mcp-admin`을 분리합니다. 백엔드는 자동으로 대체되지 않습니다. 모델 환경설정, 조회, 명시적 가격, 리비전을 확인하는 수정·제거는 [설정](configuration.md)을 참고하세요.
+
 ## 클라이언트 실행
 
 `rebut review`는 표준 입력으로 JSON 번들을 받아 사용자가 명시적으로 선택한 경우에만 유료 검토를 시작합니다. `rebut status REQUEST_ID`는 무료 메타데이터 조회입니다.

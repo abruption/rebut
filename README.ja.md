@@ -40,6 +40,8 @@ npm test
 
 自動テストはプロバイダーをモックし、有料モデルを呼び出しません。実際の API テストには **gpt-6-luna**、本番には **gpt-6-astra / medium** を使います。Luna の結果は Astra の利用可否や同等のレビュー品質を実証しません。Worker には D1 と `OPENAI_API_KEY`、`REBUT_CONFIG`、`AUTH_TOKENS` のシークレットが必要です。[インストールと非公開デプロイ](docs/guide/ja/installation.md)に従ってください。
 
+`rebut set model MODEL_ID`、`rebut set reasoning EFFORT`、`rebut set profile PROFILE_ID` でローカルの既定値を選びます。新しい収集ではサーバーの許可リスト内のプロファイルに解決され、明示的な `collect --profile` が優先し、`review` は確定済みバンドルのプロファイルを保持します。設定がなければ `astra-medium` です。`rebut profile list` はプロバイダーを呼ばず、認証付きでサーバーのモデルと料金のメタデータを読み取ります。所有者は一度限りの Worker 更新、マイグレーション `0002`、別の管理認証情報の設定後に D1 でプロファイルを管理できます。[設定](docs/guide/ja/configuration.md)を参照してください。
+
 ## 主な機能
 
 - 明示的に許可したテキストソースを収集し、一般的なシークレットのパターンを除去して、確定済みの証拠のハッシュを計算します。送信前にマスキング結果を確認してください。

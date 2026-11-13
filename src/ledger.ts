@@ -34,6 +34,7 @@ export class Ledger {
     amount: number,
     limits: Limits,
     now = new Date(),
+    initialMetadata?: Record<string, unknown>,
   ) {
     const claim = crypto.randomUUID(),
       date = now.toISOString(),
@@ -44,8 +45,8 @@ export class Ledger {
     await this.db
       .prepare(
         `INSERT INTO requests
-   (principal,request_id,fingerprint,input_sha256,profile,claim,created_at,day,month,state,reserved_microusd,charged_microusd)
-   SELECT ?,?,?,?,?,?,?,?,?,'reserved',?,?
+   (principal,request_id,fingerprint,input_sha256,profile,claim,created_at,day,month,state,reserved_microusd,charged_microusd,metadata)
+   SELECT ?,?,?,?,?,?,?,?,?,'reserved',?,?,?
    WHERE ? <= ?
    AND COALESCE((SELECT SUM(charged_microusd) FROM requests WHERE day=?),0)+? <= ?
    AND COALESCE((SELECT SUM(charged_microusd) FROM requests WHERE month=?),0)+? <= ?
@@ -65,6 +66,7 @@ export class Ledger {
         month,
         amount,
         amount,
+        initialMetadata ? JSON.stringify(initialMetadata) : null,
         amount,
         limits.requestMicrousd,
         day,

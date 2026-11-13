@@ -8,6 +8,8 @@ Back up the metadata-only D1 ledger using Cloudflare's supported export/Time Tra
 
 Use `rebut status REQUEST_ID` for a free metadata lookup under the original principal. `rebut doctor` checks sanitized local configuration and credential availability; `rebut doctor --connect` performs a free remote `tools/list` check. None of these commands starts a paid review. Preserve the request ID and reservation after any uncertain result.
 
+Owner profile changes use revisions: after a `409` conflict, reread `rebut profile list` before deciding whether to set/remove again. Removal leaves a disabling tombstone. Existing requests keep their original model/revision, principal-scoped ID, and reservation even after profile changes; no automatic rerun, refund, or reservation release follows. After the one-time Worker upgrade, D1 migration `0002`, and `ADMIN_TOKEN_SHA256` setup, profile updates require only D1 writes. Keep the separate admin bearer out of Codex/MCP configuration.
+
 ## Timeout, disconnect, or unknown
 
 `reserved` means an execution was reserved and may still be running or may have been interrupted; it is not proof of an unbilled failure. `unknown` means the outcome or usage could not be verified. Neither status is automatically retried, expired, or refunded. Both occupy concurrency indefinitely until reviewed. This intentionally stops further spending when execution cannot be reconciled.

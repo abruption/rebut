@@ -40,6 +40,8 @@ npm test
 
 자동화 테스트는 공급자를 모의 처리하며 유료 모델을 호출하지 않습니다. 실제 API 테스트에는 **gpt-6-luna**, 운영에는 **gpt-6-astra / medium**을 사용합니다. Luna 결과로 Astra의 사용 가능 여부나 동등한 검토 품질을 입증할 수는 없습니다. Worker 배포에는 D1과 `OPENAI_API_KEY`, `REBUT_CONFIG`, `AUTH_TOKENS` 시크릿이 필요합니다. [설치 및 비공개 배포](docs/guide/ko/installation.md)를 따르세요.
 
+`rebut set model MODEL_ID`, `rebut set reasoning EFFORT`, `rebut set profile PROFILE_ID`로 로컬 기본값을 선택합니다. 새 수집에서 서버 허용 목록의 프로필을 찾으며 명시적인 `collect --profile`이 우선하고 `review`는 고정 번들의 프로필을 유지합니다. 환경설정이 없으면 `astra-medium`입니다. `rebut profile list`는 공급자 호출 없이 인증된 서버 모델·요금 메타데이터를 조회합니다. 소유자는 일회성 Worker 업그레이드, 마이그레이션 `0002`, 별도 관리자 자격증명 설정 뒤 D1에서 프로필을 관리할 수 있습니다. [설정](docs/guide/ko/configuration.md)을 참고하세요.
+
 ## 주요 기능
 
 - 명시적으로 허용한 텍스트 소스를 수집하고, 흔한 비밀정보 패턴을 제거한 뒤 고정한 증거 자료의 해시를 계산합니다. 전송 전에 마스킹 결과를 확인하세요.

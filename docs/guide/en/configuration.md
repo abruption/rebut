@@ -12,9 +12,48 @@ For the `env` backend, Codex setup stores only `env_vars = ['REBUT_TOKEN']` (the
 
 `rebut setup --client codex` uses `CODEX_HOME` or `~/.codex`; `--codex-home PATH` selects another home. It registers `rebut mcp`, preserves other MCP entries, and requires `--replace` to migrate an existing private `rebut` bridge. `rebut doctor` shows sanitized local configuration/credential availability; `rebut doctor --connect` checks remote `tools/list` for free. Neither performs a paid review. See [installation](installation.md).
 
+## Model and reasoning preferences
+
+Set local preferences for newly collected bundles, or select a server profile directly:
+
+```sh
+rebut set model MODEL_ID
+rebut set reasoning EFFORT
+rebut set profile PROFILE_ID
+```
+
+`MODEL_ID`, `EFFORT`, and `PROFILE_ID` are placeholders. Model/reasoning preferences resolve an allowlisted server profile; they do not grant arbitrary model access. An explicit collector `--profile` overrides local preferences. With no preferences the default remains `astra-medium`. `rebut review` respects the profile embedded in the frozen bundle and does not rewrite it using current preferences.
+
+## Owner-managed server profiles
+
+`rebut profile list` makes an authenticated, read-only GET to list server profiles, models, reasoning settings, output limits, rates, and revisions. It does not call the provider or start a paid review.
+
+```sh
+rebut profile list
+rebut set admin-token
+```
+
+Profile mutation requires a separate owner admin bearer. `rebut set admin-token` uses hidden interactive input; `rebut set admin-token --stdin` explicitly accepts a protected pipe. Never pass tokens as arguments or put them in tracked files. macOS Keychain uses service `com.abruption.rebut`, review account `codex-mcp-bearer`, and admin account `codex-mcp-admin`. The selected Vaultwarden backend can use a separate user-selected item: default `Rebut — MCP Admin Token`, configured with `rebut set vaultwarden-admin-item NAME`. The env backend reads `REBUT_ADMIN_TOKEN` from a secure execution environment. The admin token is never forwarded to Codex. There is no automatic backend fallback.
+
+After a one-time Worker upgrade, D1 migration `0002`, and `ADMIN_TOKEN_SHA256` secret setup described in [installation](installation.md), the owner can add/update a profile. This example uses the existing Astra/medium configuration and its dated 2026-11-12 Standard rates; verify the official [model](https://developers.openai.com/api/docs/models/gpt-6-astra) and [pricing](https://developers.openai.com/api/docs/pricing) documents before choosing values. For a new model, substitute the placeholder `MODEL_ID` with a verified Responses-compatible model ID and explicitly supply its supported reasoning setting, output limit, and official rates.
+
+```sh
+rebut profile set astra-medium --model gpt-6-astra --reasoning medium --max-output-tokens 8192 --input-usd-per-million 10 --output-usd-per-million 50 --price-version official-2026-11-12
+```
+
+Both prices and `--price-version` are required; the server uses them for budget reservations and cost estimates. Rebut does not automatically fetch prices or call a provider models endpoint. `--if-revision N` adds an explicit compare-and-swap revision condition to set/remove. A `409` conflict requires rereading `rebut profile list` and deciding what to change; never overwrite automatically.
+
+```sh
+rebut profile remove PROFILE_ID --if-revision N
+```
+
+Removal creates a disabling tombstone rather than deleting review history. Once Worker/D1 support is installed, these profile changes write D1 only: Responses-compatible new model IDs or reasoning values require no Worker build/deploy or npm upgrade. Existing requests retain their original model and revision after profile updates or removal. Changes never rerun requests or automatically release/refund reservations. The normal review bearer cannot mutate profiles; this owner API is not exposed as an MCP tool and cannot change budgets, authentication, or the provider URL.
+
 ## Server configuration
 
 [`config.example.json`](../../../config.example.json) defines the structure of the `REBUT_CONFIG` secret. Set `hostname` to the exact endpoint hostname, configure server-side profile IDs, and set deployment-wide limits. Clients choose profile IDs; they cannot override model names or the provider URL. The example is configuration, not a promise of account-level model access.
+
+`REBUT_CONFIG` supplies seed profiles. D1 overrides and disabling tombstones take precedence; profile removal does not restore a seed with the same ID. The server freezes the resolved profile and revision for each reserved request.
 
 | Profile        | Model         | Reasoning | Maximum output tokens | Standard input/output per 1M tokens |
 | -------------- | ------------- | --------- | --------------------- | ----------------------------------- |

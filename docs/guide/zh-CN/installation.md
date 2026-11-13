@@ -80,6 +80,12 @@ rebut collect --root /path/to/project --request-id request-001 --requirements 'C
 4. 保存三个 Workers Secret：`OPENAI_API_KEY`、`REBUT_CONFIG` 和 `AUTH_TOKENS`。使用 Wrangler 的交互式 Secret 提示，或通过受保护的标准输入使用 `secret bulk`；绝不要将秘密值放入参数或受版本控制的文件中。`REBUT_CONFIG` 使用 [`config.example.json`](../../../config.example.json) 中的结构；将 `hostname` 改为端点的准确主机名。`AUTH_TOKENS` 是一个 JSON 对象，将稳定的主体 ID 映射到独立生成的随机 256 位 Bearer 令牌的 SHA-256 摘要。将原始令牌存储在密码管理器中。使用相同令牌的客户端共享一个主体；不同令牌隔离请求/状态访问权限。
 5. 将支持 Bearer 请求头的 MCP 客户端连接到 `https://YOUR_HOST/mcp`，并验证 `tools/list`。工具执行前会验证 Host 和浏览器 Origin。此 Bearer 配置未为要求 OAuth 发现的客户端实现 OAuth。
 
+## 所有者配置方案管理的一次性升级
+
+动态配置方案需要从源代码检出目录升级一次 Worker，应用 D1 迁移 `0002` 并设置 Worker Secret `ADMIN_TOKEN_SHA256`。保留账本，在现有 D1 数据库应用待处理迁移后，使用私有配置部署升级后的 Worker。生成单独的随机 256 位管理 Bearer 令牌，通过受保护的交互式 Secret 提示将其 SHA-256 哈希保存为 `ADMIN_TOKEN_SHA256`，并将原始令牌保存在凭据存储中。不要复用审查令牌或更改现有主体 ID。完成这一次性设置后，CLI 配置方案变更仅写入 D1，无需再次构建/部署 Worker 或升级 npm。
+
+通过 `rebut set admin-token` 的隐藏输入保存所有者令牌，或明确使用 `rebut set admin-token --stdin` 接收受保护管道。已选择的 Vaultwarden 后端默认管理条目为 `Rebut — MCP Admin Token`，可用 `rebut set vaultwarden-admin-item NAME` 修改。env 后端使用安全执行环境中的 `REBUT_ADMIN_TOKEN`，绝不转发给 Codex。Keychain 服务 `com.abruption.rebut` 分开使用审查账户 `codex-mcp-bearer` 与管理账户 `codex-mcp-admin`。后端不会自动回退。模型偏好、列表查询、明确的费率及带修订条件的更新/移除见[配置](configuration.md)。
+
 ## 运行客户端
 
 `rebut review` 从标准输入读取 JSON 输入包，仅在用户明确选择时启动付费审查。`rebut status REQUEST_ID` 是免费的元数据查询。

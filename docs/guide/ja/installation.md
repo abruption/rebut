@@ -80,6 +80,12 @@ rebut collect --root /path/to/project --request-id request-001 --requirements 'C
 4. 3 つの Workers Secrets、`OPENAI_API_KEY`、`REBUT_CONFIG`、`AUTH_TOKENS` を保存します。Wrangler の対話型シークレットプロンプトか、保護された標準入力経由の `secret bulk` を使い、シークレット値を引数や追跡対象ファイルに入れないでください。`REBUT_CONFIG` は [`config.example.json`](../../../config.example.json) の構造を使います。`hostname` をエンドポイントの正確なホスト名に変更してください。`AUTH_TOKENS` は、安定したプリンシパル ID を、それぞれ独立して生成したランダムな 256 ビット Bearer トークンの SHA-256 ダイジェストに対応付ける JSON オブジェクトです。元のトークンはパスワードマネージャーに保存します。同じトークンを使うクライアントはプリンシパルを共有し、異なるトークンはリクエストとステータスへのアクセスを分離します。
 5. Bearer ヘッダーに対応した MCP クライアントを `https://YOUR_HOST/mcp` に接続し、`tools/list` を確認します。ツール実行前に Host とブラウザーの Origin が検証されます。この Bearer 設定は、OAuth ディスカバリーを必要とするクライアント向けの OAuth を実装していません。
 
+## 所有者によるプロファイル管理の初回更新
+
+動的プロファイルには、ソースチェックアウトからの一度限りの Worker 更新、D1 マイグレーション `0002`、Worker Secret `ADMIN_TOKEN_SHA256` が必要です。台帳を保持したまま既存の D1 に未適用のマイグレーションを適用し、非公開設定で更新済み Worker をデプロイします。別のランダムな 256 ビット管理 Bearer を生成し、保護された対話型シークレットプロンプトでその SHA-256 ハッシュを `ADMIN_TOKEN_SHA256` に保存します。元の Bearer は認証情報ストアに保管してください。レビュー Bearer の再利用や既存プリンシパル ID の変更はしないでください。初回設定後の CLI プロファイル変更は D1 にだけ書き込み、Worker の再ビルド・再デプロイや npm 更新は不要です。
+
+`rebut set admin-token` の隠された入力で所有者 Bearer を保存するか、保護されたパイプで `rebut set admin-token --stdin` を明示的に使います。選択済み Vaultwarden バックエンドの既定の管理項目は `Rebut — MCP Admin Token` で、`rebut set vaultwarden-admin-item NAME` で変更します。env バックエンドは安全な実行環境の `REBUT_ADMIN_TOKEN` を使い、Codex には転送しません。Keychain サービス `com.abruption.rebut` はレビュー用 `codex-mcp-bearer` と管理用 `codex-mcp-admin` を分離します。自動的なバックエンドの代替はありません。モデル設定、一覧、明示的な料金、リビジョン条件付きの更新・削除は[設定](configuration.md)を参照してください。
+
 ## クライアントの実行
 
 `rebut review` は標準入力から JSON バンドルを読み取り、ユーザーが明示的に選んだ場合のみ有料レビューを開始します。`rebut status REQUEST_ID` は無料のメタデータ照会です。

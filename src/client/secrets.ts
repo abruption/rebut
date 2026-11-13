@@ -5,7 +5,7 @@ import type { Settings } from "./settings.js";
 const KEYCHAIN = String.raw`ObjC.import('Foundation');ObjC.import('Security');
 ObjC.bindFunction('SecItemCopyMatching',['int',['id','id*']]);ObjC.bindFunction('SecKeychainOpen',['int',['char*','id*']]);ObjC.bindFunction('SecKeychainGetStatus',['int',['id','unsigned int*']]);
 const input=JSON.parse(ObjC.unwrap($.NSString.alloc.initWithDataEncoding($.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile,$.NSUTF8StringEncoding)));
-if(input.service!=='com.abruption.rebut'||input.account!=='codex-mcp-bearer')throw Error('Invalid identity');
+if(input.service!=='com.abruption.rebut'||!['codex-mcp-bearer','codex-mcp-admin'].includes(input.account))throw Error('Invalid identity');
 const ref=Ref();let stage='open',status=$.SecKeychainOpen(ObjC.unwrap($.NSHomeDirectory())+'/Library/Keychains/login.keychain-db',ref),value=null;
 function attrs(){const q=$.NSMutableDictionary.alloc.init;q.setObjectForKey($('genp'),$('class'));q.setObjectForKey($(input.service),$('svce'));q.setObjectForKey($(input.account),$('acct'));return q;}
 if(status===0){stage='status';const flags=Ref();status=$.SecKeychainGetStatus(ref[0],flags);}
@@ -20,6 +20,7 @@ export function validateToken(token: string): string {
 function keychain(
   action: "load" | "store",
   value?: string,
+  role: "review" | "admin" = "review",
 ): string | undefined {
   if (process.platform !== "darwin") throw new Error("KEYCHAIN_UNSUPPORTED");
   const result = spawnSync(
@@ -29,7 +30,7 @@ function keychain(
       input: JSON.stringify({
         action,
         service: "com.abruption.rebut",
-        account: "codex-mcp-bearer",
+        account: role === "admin" ? "codex-mcp-admin" : "codex-mcp-bearer",
         ...(value ? { value } : {}),
       }),
       encoding: "utf8",
@@ -51,32 +52,50 @@ function keychain(
 export async function storeToken(
   token: string,
   settings: Settings,
+  role: "review" | "admin" = "review",
 ): Promise<void> {
   validateToken(token);
   if (settings.secretStore !== "keychain")
     throw new Error("TOKEN_STORAGE_REQUIRES_KEYCHAIN");
-  keychain("store", token);
-  if (keychain("load") !== token) throw new Error("KEYCHAIN_READBACK_FAILED");
+  keychain("store", token, role);
+  if (keychain("load", undefined, role) !== token)
+    throw new Error("KEYCHAIN_READBACK_FAILED");
 }
-export async function loadToken(settings: Settings): Promise<string> {
+export async function loadToken(
+  settings: Settings,
+  role: "review" | "admin" = "review",
+): Promise<string> {
   if (settings.secretStore === "env")
-    return validateToken(process.env.REBUT_TOKEN || "");
-  if (settings.secretStore === "keychain") return keychain("load")!;
+    return validateToken(
+      (role === "admin"
+        ? process.env.REBUT_ADMIN_TOKEN
+        : process.env.REBUT_TOKEN) || "",
+    );
+  if (settings.secretStore === "keychain")
+    return keychain("load", undefined, role)!;
   const executable = process.env.REBUT_BW_GET || "bw-get";
-  const result = spawnSync(executable, [settings.vaultwardenItem], {
-    input: "",
-    encoding: "utf8",
-    timeout: 30000,
-    maxBuffer: 8192,
-    env: {
-      ...process.env,
-      PATH: [
-        dirname(process.execPath),
-        join(homedir(), ".local", "bin"),
-        process.env.PATH || "",
-      ].join(delimiter),
+  const result = spawnSync(
+    executable,
+    [
+      role === "admin"
+        ? settings.vaultwardenAdminItem
+        : settings.vaultwardenItem,
+    ],
+    {
+      input: "",
+      encoding: "utf8",
+      timeout: 30000,
+      maxBuffer: 8192,
+      env: {
+        ...process.env,
+        PATH: [
+          dirname(process.execPath),
+          join(homedir(), ".local", "bin"),
+          process.env.PATH || "",
+        ].join(delimiter),
+      },
     },
-  });
+  );
   if (result.error || result.status !== 0)
     throw new Error("VAULTWARDEN_UNAVAILABLE");
   return validateToken(result.stdout.trim());

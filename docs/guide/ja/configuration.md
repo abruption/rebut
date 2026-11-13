@@ -12,9 +12,48 @@
 
 `rebut setup --client codex` は `CODEX_HOME` または `~/.codex` を使用し、`--codex-home PATH` で別の保存先を指定します。`rebut mcp` を登録し、他の MCP エントリを保持します。既存の非公開 `rebut` ブリッジの移行には `--replace` が必要です。`rebut doctor` は機密値を除いたローカル設定と認証情報の利用可否を表示し、`rebut doctor --connect` は無料でリモートの `tools/list` を確認します。いずれも有料レビューは実行しません。[インストール](installation.md)を参照してください。
 
+## モデルと推論の設定
+
+新しく収集するバンドルのローカル設定を指定するか、サーバーのプロファイルを直接選択します。
+
+```sh
+rebut set model MODEL_ID
+rebut set reasoning EFFORT
+rebut set profile PROFILE_ID
+```
+
+`MODEL_ID`、`EFFORT`、`PROFILE_ID` はプレースホルダーです。モデルと推論の設定はサーバーの許可リスト内のプロファイルに解決され、任意のモデルへのアクセスは付与しません。コレクターの明示的な `--profile` がローカル設定より優先されます。設定がなければ既定は `astra-medium` のままです。`rebut review` は確定済みバンドルに含まれるプロファイルを使い、現在の設定で書き換えません。
+
+## 所有者によるサーバープロファイル管理
+
+`rebut profile list` は認証付きの読み取り専用 GET で、サーバーのプロファイル、モデル、推論設定、出力上限、料金、リビジョンを一覧表示します。プロバイダーの呼び出しや有料レビューは行いません。
+
+```sh
+rebut profile list
+rebut set admin-token
+```
+
+プロファイルの変更には、別の所有者用管理 Bearer が必要です。`rebut set admin-token` は入力を隠す対話型プロンプトを使い、`rebut set admin-token --stdin` は保護されたパイプを明示的に受け付けます。トークンを引数や追跡対象ファイルに入れないでください。macOS Keychain のサービスは `com.abruption.rebut`、レビュー用アカウントは `codex-mcp-bearer`、管理用は `codex-mcp-admin` です。選択済みの Vaultwarden バックエンドでは、ユーザーが別の項目を選択できます。既定は `Rebut — MCP Admin Token` で、`rebut set vaultwarden-admin-item NAME` で変更します。env バックエンドは安全な実行環境から `REBUT_ADMIN_TOKEN` を読み取ります。管理トークンは Codex に転送されません。バックエンドは自動で代替されません。
+
+[インストール](installation.md)に記載した一度限りの Worker 更新、D1 マイグレーション `0002`、`ADMIN_TOKEN_SHA256` シークレット設定後、所有者はプロファイルを追加・更新できます。以下の例は既存の Astra/medium 設定と 2026-11-12 時点の Standard 料金を使っています。値を選ぶ前に公式の[モデル](https://developers.openai.com/api/docs/models/gpt-6-astra)と[料金](https://developers.openai.com/api/docs/pricing)を確認してください。新しいモデルにはプレースホルダー `MODEL_ID` を確認済みの Responses 互換モデル ID に置き換え、対応する推論設定、出力上限、公式料金をすべて明示します。
+
+```sh
+rebut profile set astra-medium --model gpt-6-astra --reasoning medium --max-output-tokens 8192 --input-usd-per-million 10 --output-usd-per-million 50 --price-version official-2026-11-12
+```
+
+両方の料金と `--price-version` は必須で、サーバーは予算予約と費用見積もりに使用します。Rebut は料金を自動取得せず、プロバイダーのモデルエンドポイントも呼び出しません。`--if-revision N` は set/remove に明示的な比較交換のリビジョン条件を加えます。`409` の競合時は `rebut profile list` を読み直して変更内容を判断し、自動で上書きしないでください。
+
+```sh
+rebut profile remove PROFILE_ID --if-revision N
+```
+
+削除はレビュー履歴を消さず、無効化する tombstone を残します。Worker/D1 の対応を一度導入すれば、プロファイル変更は D1 への書き込みだけです。Responses 互換の新しいモデル ID や推論値には Worker の再ビルド・再デプロイや npm 更新は不要です。プロファイルの更新・削除後も、既存のリクエストは元のモデルとリビジョンを保持します。変更による再実行や予約の自動解放・返金はありません。通常のレビュー Bearer ではプロファイルを変更できません。この所有者 API は MCP ツールとして公開されず、予算、認証、プロバイダー URL も変更できません。
+
 ## サーバー設定
 
 [`config.example.json`](../../../config.example.json) は `REBUT_CONFIG` シークレットの構造を定義しています。`hostname` をエンドポイントの正確なホスト名に設定し、サーバー側のプロファイル ID とデプロイ全体の上限を設定します。クライアントはプロファイル ID を選択しますが、モデル名やプロバイダー URL を上書きすることはできません。この例は設定を示すものであり、アカウントでのモデルアクセスを保証するものではありません。
+
+`REBUT_CONFIG` は初期プロファイルを提供します。D1 の上書きと無効化 tombstone が優先され、削除しても同じ ID の初期プロファイルは復活しません。サーバーは予約した各リクエストの解決済みプロファイルとリビジョンを固定します。
 
 | プロファイル   | モデル        | 推論     | 最大出力トークン数 | 100 万トークンあたりの Standard 入力/出力料金 |
 | -------------- | ------------- | -------- | ------------------ | --------------------------------------------- |

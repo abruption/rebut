@@ -251,6 +251,45 @@ describe("npm stdio bridge", () => {
       await running;
     }
   });
+  it("keeps status available while blocking new reviews with an unavailable preference", async () => {
+    const f = fixture();
+    const [local, serverSide] = InMemoryTransport.createLinkedPair();
+    stdio.transport = serverSide;
+    const ready = new Promise<void>((resolve) => {
+      stdio.ready = resolve;
+    });
+    const running = serveStdio({ ...options, reviewUnavailable: true });
+    await ready;
+    const client = new Client({ name: "synthetic-host", version: "1" });
+    await client.connect(local);
+    try {
+      expect((await client.listTools()).tools.map((t) => t.name)).toEqual([
+        "review",
+        "review_status",
+      ]);
+      expect(
+        (
+          await client.callTool({
+            name: "review",
+            arguments: { request_id: "new" },
+          })
+        ).isError,
+      ).toBe(true);
+      expect(f.calls).toHaveLength(0);
+      expect(
+        await client.callTool({
+          name: "review_status",
+          arguments: { request_id: "original" },
+        }),
+      ).toEqual(result);
+      expect(f.calls).toEqual([
+        { name: "review_status", args: { request_id: "original" } },
+      ]);
+    } finally {
+      await client.close();
+      await running;
+    }
+  });
   it.each(["EOF", "SIGINT", "SIGTERM"])(
     "cleans up on %s without writing non-MCP stdout",
     async (event) => {

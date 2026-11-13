@@ -40,6 +40,8 @@ npm test
 
 Automated tests mock the provider and make no paid model calls. Actual API tests use **gpt-6-luna**; production uses **gpt-6-astra / medium**. Luna results do not establish Astra availability or equivalent review quality. Worker deployment requires D1 and the secrets `OPENAI_API_KEY`, `REBUT_CONFIG`, and `AUTH_TOKENS`; follow [installation and private deployment](docs/guide/en/installation.md).
 
+Choose local defaults with `rebut set model MODEL_ID`, `rebut set reasoning EFFORT`, or `rebut set profile PROFILE_ID`. Preferences resolve server-allowlisted profiles for new collection; explicit `collect --profile` wins, and `review` keeps the frozen bundle profile. With no preferences the default is `astra-medium`. `rebut profile list` reads authenticated server model/rate metadata without a provider call. Owners can manage profiles in D1 after a one-time Worker upgrade, migration `0002`, and separate admin credential setup; see [configuration](docs/guide/en/configuration.md).
+
 ## What it does
 
 - Collects explicitly allowed text sources, removes common secret patterns, and hashes frozen evidence. Inspect redaction before sending.

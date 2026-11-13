@@ -15,6 +15,24 @@ import { validateEndpoint } from "./connection.js";
 export const SettingsSchema = z
   .object({
     schemaVersion: z.literal(1),
+    defaultModel: z
+      .string()
+      .regex(/^[a-zA-Z0-9._:-]{1,100}$/)
+      .optional(),
+    defaultReasoning: z
+      .string()
+      .regex(/^[a-z][a-z0-9_-]{0,31}$/)
+      .optional(),
+    defaultProfile: z
+      .string()
+      .regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/)
+      .optional(),
+    vaultwardenAdminItem: z
+      .string()
+      .min(1)
+      .max(200)
+      .refine((s) => !/[\x00-\x1f\x7f]/.test(s))
+      .default("Rebut — MCP Admin Token"),
     endpoint: z.string().max(2048).optional(),
     secretStore: z.enum(["keychain", "vaultwarden", "env"]),
     vaultwardenItem: z
@@ -49,6 +67,7 @@ export async function readSettings(): Promise<Settings> {
         schemaVersion: 1,
         secretStore: process.platform === "darwin" ? "keychain" : "env",
         vaultwardenItem: "Rebut — MCP Access Token",
+        vaultwardenAdminItem: "Rebut — MCP Admin Token",
       };
     throw new Error("SETTINGS_INVALID");
   }

@@ -40,6 +40,8 @@ npm test
 
 自动化测试模拟提供商，不会进行付费模型调用。真实 API 测试使用 **gpt-6-luna**，生产使用 **gpt-6-astra / medium**。Luna 结果不能证明 Astra 可用或审查质量相当。Worker 部署需要 D1 及 `OPENAI_API_KEY`、`REBUT_CONFIG`、`AUTH_TOKENS` 三个 Secret；请按照[安装与私有部署](docs/guide/zh-CN/installation.md)操作。
 
+使用 `rebut set model MODEL_ID`、`rebut set reasoning EFFORT` 或 `rebut set profile PROFILE_ID` 选择本地默认值。新收集时偏好会匹配服务器允许列表的配置方案；显式 `collect --profile` 优先，`review` 保留冻结输入包中的配置方案。无偏好时默认为 `astra-medium`。`rebut profile list` 无需调用提供商即可读取经过身份验证的服务器模型/费率元数据。所有者完成一次 Worker 升级、迁移 `0002` 及单独管理凭据设置后，可在 D1 中管理配置方案；见[配置](docs/guide/zh-CN/configuration.md)。
+
 ## 功能
 
 - 收集明确允许的文本来源，移除常见的秘密信息模式，并对冻结的证据计算哈希。发送前请检查脱敏结果。
