@@ -4,53 +4,46 @@
 
 [Rebut](../../../README.zh-CN.md) · [用户指南](../zh-CN.md)
 
-## 安装 npm CLI
 
-使用 Node.js **24 或更高版本**和 npm。安装自托管 Worker 的客户端及 stdio 桥接程序：
+需要 **Node.js 24 或更高版本**。新安装默认使用本地 stdio MCP 服务器，不需要 Cloudflare 账户、Worker endpoint 或独立 HTTP 守护进程。
 
 ```sh
 npm install -g rebut-mcp
 ```
 
-## 配置客户端
+## 本地配置
 
-设置自己的端点后保存 Bearer 令牌。macOS 默认使用 Keychain；`rebut set token` 使用隐藏输入的提示。`rebut set token --stdin` 明确接受受保护的管道输入。绝不要将令牌值放入参数或受版本控制的文件。
-
-```sh
-rebut set endpoint https://YOUR_HOST/mcp
-rebut set token
-```
-
-使用现有 Vaultwarden 安装时，请明确选择后端。它使用 `bw-get` 和默认条目 `Rebut — MCP Access Token`；需要时可自定义条目名称：
+macOS 的 `rebut set api-key` 隐藏输入 OpenAI API 密钥并存入登录 Keychain，使用 com.abruption.rebut 服务下的 openai-api-key，与 Worker 访问／管理员令牌分离。--stdin 用于受保护管道，不要将凭据值作为命令参数。
 
 ```sh
-rebut set secret-store vaultwarden
-rebut set vaultwarden-item NAME
+rebut set api-key
 ```
 
-非 macOS 环境请明确选择 `env`，通过安全执行环境提供 `REBUT_TOKEN`，不要写入受版本控制的文件或命令参数。后端不会自动回退。客户端无需 OpenAI 提供商密钥。
+环境变量方式请选择 `rebut set secret-store env`，在实际 MCP 宿主的安全环境中提供 REBUT_OPENAI_API_KEY；注册仅记录变量名。Vaultwarden 使用 `rebut set secret-store vaultwarden` 和 `rebut set vaultwarden-api-key-item NAME`，本地默认条目为 Rebut — OpenAI API Key，需要已有 bw-get 登录。不会自动更换凭据或后端。
 
-使用 `env` 后端时，Codex 设置仅保存变量名 `env_vars = ['REBUT_TOKEN']`，绝不保存其值。令牌必须通过实际运行 Codex 的宿主的安全执行环境提供；仅为设置命令提供该变量，不会使其在后续 Codex 会话中可用。
-
-```sh
-rebut set secret-store env
-```
-
-## 连接 Codex 并检查配置
+## 连接和检查
 
 ```sh
 rebut setup --client codex
-rebut doctor
 rebut doctor --connect
 ```
 
-设置使用 `CODEX_HOME` 或 `~/.codex`；可通过 `--codex-home PATH` 指定目标。它将 `rebut mcp` 注册为 stdio 服务器，保留其他 MCP 条目。迁移现有私有 `rebut` 桥接配置需要 `--replace`。
+rebut setup --client codex 在 CODEX_HOME 或 ~/.codex 注册 rebut mcp，可用 --codex-home PATH 指定目标。宿主自动启动服务器。doctor --connect 检查本地凭据可用性、SQLite 和真实 MCP 工具注册，不调用供应商，也不证明 API 账户权限。本地 env 方式只转发 REBUT_OPENAI_API_KEY 变量名。替换注册时保留自定义 REBUT_CONFIG_DIR。
 
-`rebut doctor` 显示已清理敏感值的本地配置及凭据可用性。`rebut doctor --connect` 免费检查远程 `tools/list`；两者都不会启动付费审查。
+## 可选 Worker 模式
+
+设置 endpoint 会明确选择 Worker 模式，已有仅 endpoint 配置升级后也保持 Worker。Worker 使用独立 MCP 访问令牌，而非本地 OpenAI 密钥：macOS 用 rebut set token，env 用 REBUT_TOKEN，Vaultwarden 用 vaultwarden-item。管理操作使用独立管理员凭据。需创建 Worker 时请按下方私有部署流程操作。
+
+```sh
+rebut set endpoint https://YOUR_HOST/mcp
+rebut setup --client codex --replace
+```
+
+通过 rebut set mode local 明确切换，不会在故障时自动回退。后端间不共享或迁移请求、预留和预算，不要在另一后端重放 unknown。本地 SQLite 位于 ~/.local/share/rebut/local/ledger.sqlite，或自定义 REBUT_CONFIG_DIR 下的 local/。UTC 每日 $6.66、每月 $200 默认限额仅适用于该数据目录。本地预算命令 set daily-budget、set monthly-budget、set request-budget 接受十进制 USD。Worker 限额仍由部署配置管理。
 
 ## 源代码检出与开发者验证
 
-npm 包是客户端，并非托管审查服务。Worker/D1 仍从 GitHub 源代码检出目录使用具有 Workers/D1 权限的自己的 Cloudflare 账户和 OpenAI Responses API 密钥部署。公开源代码/npm 不授予个人 Worker 或额度的访问权限。包中不包含真实端点、私有配置、Bearer 令牌、提供商密钥或审查正文。这些说明适用于 CLI `0.1.0`。
+本指南适用于 CLI 0.2.0。npm 包运行本地服务器及可选 Worker 桥接，不是托管审查服务，也不提供 API 额度。只有可选 Worker 部署需要 Cloudflare 账户和源代码检出。包中不含真实 endpoint、私有配置、凭据或审查正文。
 
 ```sh
 npm ci
@@ -102,3 +95,9 @@ rebut status request-001
 升级或移除部署之前，请按照[运维指南](operations.md)保留 D1 账本并核对待处理的执行。公开源代码与部署私有付费服务是两个独立的操作。
 
 升级顺序为 **安装 CLI → 保留原选项并更新 Codex 注册 → 重启 Codex/MCP → 部署 Worker**。先部署更长期限的 Worker，旧 CLI 可能仍在 65 秒断开。保留 `REBUT_CONFIG_DIR` 等已有自定义注册选项。Node HTTP 的响应头／正文期限也与 MCP 工具期限一致。30 分钟是应用上限，不是所有网络或宿主的连接保证。休眠、终止或断线可能留下 reserved 或 unknown 预留；应查询原请求 ID，不自动重放或释放预留。
+
+修改模式、凭据后端或本地预算后，必要时运行 `rebut setup --client codex --replace` 更新注册并重启 MCP 宿主。已有进程保留启动设置，doctor 不会重载。重跑 setup 时提供相同 REBUT_CONFIG_DIR 环境变量以保留自定义配置。secret-store 选择适用于全部凭据角色，但各角色使用独立账户或条目。
+
+本地 env 默认 REBUT_OPENAI_API_KEY，避免静默复用 Codex 或其他应用的密钥。若明确共享 OPENAI_API_KEY，执行 rebut set api-key-env OPENAI_API_KEY 后更新注册并重启，两变量之间无回退。日、月和单请求上限独立，修改一个不会自动提高其他上限；自定义限额跨升级保留。工具说明是启动快照，执行时动态检查明确请求的配置方案。
+
+验证目标为 macOS/Linux，Windows 行为与 ACL 未验证。

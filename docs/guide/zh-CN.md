@@ -4,9 +4,9 @@
 
 [Rebut](../../README.zh-CN.md)
 
-Rebut 是一个需要明确选择启用、经过身份验证的 Cloudflare Worker MCP，通过 OpenAI Responses API 提供独立审查。它仅审查明确提供并已冻结的证据。它不会克隆仓库、获取任意 URL、运行命令或测试、编辑文件，也不会创建拉取请求。
+Rebut 是默认本地、明确选择使用的代码审查 MCP，使用自己的 OpenAI Responses API 密钥。新安装运行本地 stdio，可选 Cloudflare Worker 用于共享账本。仅审查明确提供的冻结资料，不赋予模型仓库、URL 获取、shell、测试、编辑或 PR 工具。
 
-使用 `npm install -g rebut-mcp` 安装客户端，配置自己的 Worker 和凭据后端，然后运行 `rebut setup --client codex`。此包是自托管 Worker 的桥接程序；Worker/D1 部署仍需 GitHub 源代码检出目录、自己的 Cloudflare 账户及 OpenAI 密钥。从[安装](zh-CN/installation.md)了解 Keychain、Vaultwarden、明确选择的 env 模式、免费诊断和按需付费审查。
+安装 rebut-mcp，配置本地供应商密钥，再运行 rebut setup --client codex。已有 endpoint 配置保持 Worker。[安装](zh-CN/installation.md)介绍 Keychain、Vaultwarden、env 和可选 Worker。
 
 | 指南                                        | 内容                                                           |
 | ------------------------------------------- | -------------------------------------------------------------- |

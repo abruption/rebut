@@ -4,13 +4,11 @@
 
 [Rebut](../../../README.en.md) · [User guide](../en.md)
 
-## Local CLI configuration
 
-Install with `npm install -g rebut-mcp`; set the Worker with `rebut set endpoint https://YOUR_HOST/mcp`. macOS defaults to Keychain: `rebut set token` uses hidden interactive input; `rebut set token --stdin` explicitly accepts a protected pipe. Never pass bearer values in argv or tracked files. Select an existing Vaultwarden workflow with `rebut set secret-store vaultwarden`; its default item is `Rebut — MCP Access Token`, configurable with `rebut set vaultwarden-item NAME`. On non-macOS, explicitly use `rebut set secret-store env` and supply `REBUT_TOKEN` via a secure execution environment. There is no automatic backend fallback.
+## Local profiles and budget scope
 
-For the `env` backend, Codex setup stores only `env_vars = ['REBUT_TOKEN']` (the variable name), never its value. Supply the token in the secure execution environment of the actual Codex host; setting it only for the setup command does not make it available to later Codex sessions.
+New settings use local mode; endpoint-only legacy settings remain Worker. `rebut set api-key` stores a local OpenAI key in Keychain, while Worker `set token` and `set admin-token` store different credentials. env uses REBUT_OPENAI_API_KEY locally, REBUT_TOKEN/REBUT_ADMIN_TOKEN for Worker. Vaultwarden local keys use vaultwarden-api-key-item. `rebut profile list/set/remove` targets the selected backend; local profile changes require no Worker admin token. Local profiles, revisions and metadata are stored in private SQLite. Limits apply to one data directory, not all devices or the OpenAI account. Use a shared Worker for a central ledger. A mode switch does not migrate uncertain requests or release reservations.
 
-`rebut setup --client codex` uses `CODEX_HOME` or `~/.codex`; `--codex-home PATH` selects another home. It registers `rebut mcp`, preserves other MCP entries, and requires `--replace` to migrate an existing private `rebut` bridge. `rebut doctor` shows sanitized local configuration/credential availability; `rebut doctor --connect` checks remote `tools/list` for free. Neither performs a paid review. See [installation](installation.md).
 
 ## Model and reasoning preferences
 
@@ -25,6 +23,10 @@ rebut set profile PROFILE_ID
 `MODEL_ID`, `EFFORT`, and `PROFILE_ID` are placeholders. Model/reasoning preferences resolve an allowlisted server profile; they do not grant arbitrary model access. An explicit collector `--profile` overrides local preferences. With no preferences the default remains `astra-medium`. `rebut review` respects the profile embedded in the frozen bundle and does not rewrite it using current preferences.
 
 ## Owner-managed server profiles
+
+Worker mode only: local profile management does not require these admin credentials.
+
+The owner/admin instructions in this section apply only to Worker mode. Local profile commands use OS ownership and the local SQLite registry.
 
 `rebut profile list` makes an authenticated, read-only GET to list server profiles, models, reasoning settings, output limits, rates, and revisions. It does not call the provider or start a paid review.
 

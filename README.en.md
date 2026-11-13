@@ -2,56 +2,64 @@
 
 # Rebut
 
-**Independent, evidence-grounded reviews through the OpenAI Responses API.**
+**Local-first independent code review MCP. Cloudflare Worker is optional.**
 
 [한국어](README.md) · **English** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
-**An authenticated Cloudflare Worker MCP that reviews the frozen material you explicitly provide.**
-
 </div>
 
-Rebut is a code review tool you deploy with your own Cloudflare account and OpenAI key.
+Rebut reviews code using your own OpenAI API key. New installations run a local stdio server without a Cloudflare account or a separate HTTP daemon.
+
+Review material is sent to the OpenAI API; the local ledger stores only request and usage metadata.
+
+The tested release targets macOS/Linux; Windows behavior and ACLs are not validated.
 
 ## Quick start
 
-Requires **Node.js 24 or later**. Install the npm CLI and configure your own deployed Worker:
+Use Node.js 24 or later. This example uses macOS Keychain.
 
 ```sh
 npm install -g rebut-mcp
-rebut set endpoint https://YOUR_HOST/mcp
-rebut set token
+rebut set api-key
 rebut setup --client codex
-rebut doctor
 rebut doctor --connect
 ```
 
-On macOS, `rebut set token` uses a hidden interactive prompt and stores the bearer in Keychain by default. Never pass a token as an argument. See [installation](docs/guide/en/installation.md) for explicit Vaultwarden/env backends and Codex migration options.
+`rebut set api-key` accepts hidden OpenAI API key input and stores it in Keychain. On Linux and other environments, select `rebut set secret-store env` and supply `REBUT_OPENAI_API_KEY` through the actual MCP host’s secure environment. Setup records the variable name only; never put keys in arguments or tracked files.
 
-`rebut-mcp` (initial CLI version `0.1.0`, executable `rebut`) is a client and stdio bridge for a **self-hosted Worker**. Deploy Worker/D1 from a GitHub source checkout with your own Cloudflare account and OpenAI key. Public source or the npm package grants no access to a personal Worker or credits. The package contains no real endpoint, private config, bearer, provider key, or reviews. These instructions target CLI `0.1.0`.
+## Optional Worker
 
-Keep developer validation in the source checkout:
+Choose a self-hosted Worker when multiple machines need a shared budget and request ledger. `rebut set endpoint URL` selects Worker mode. On macOS, `rebut set token` stores the separate Worker access token. The OpenAI API key, Worker access token and admin token are different credentials.
 
 ```sh
-npm ci
-npm run typecheck
-npm run build
-npm test
+rebut set endpoint https://YOUR_HOST/mcp
+rebut setup --client codex --replace
 ```
 
-Automated tests mock the provider and make no paid model calls. Actual API tests use **gpt-6-luna**; production uses **gpt-6-astra / medium**. Luna results do not establish Astra availability or equivalent review quality. Worker deployment requires D1 and the secrets `OPENAI_API_KEY`, `REBUT_CONFIG`, and `AUTH_TOKENS`; follow [installation and private deployment](docs/guide/en/installation.md).
-
-Choose local defaults with `rebut set model MODEL_ID`, `rebut set reasoning EFFORT`, or `rebut set profile PROFILE_ID`. Preferences resolve server-allowlisted profiles for new collection; explicit `collect --profile` wins, and `review` keeps the frozen bundle profile. With no preferences the default is `astra-medium`. `rebut profile list` reads authenticated server model/rate metadata without a provider call. Owners can manage profiles in D1 after a one-time Worker upgrade, migration `0002`, and separate admin credential setup; see [configuration](docs/guide/en/configuration.md).
+Existing endpoint configurations remain in Worker mode. Switch explicitly with `rebut set mode local`; failures never trigger automatic backend fallback. Switching does not move existing requests or reservations.
 
 ## What it does
 
-- Collects explicitly allowed text sources, removes common secret patterns, and hashes frozen evidence. Inspect redaction before sending.
-- Checks authentication, an allowlisted profile, duplicate request IDs and a deployment-wide atomic budget reservation before one bounded Responses call.
-- Returns structured findings with supplied file/line evidence, model identity, token usage and estimated cost.
-- Exposes `review` and metadata-only `review_status`. After timeout/unknown, keep the same request ID; the server never automatically creates a replacement paid call.
+- Collect, redact and freeze explicitly supplied files, diffs and requirements, then make one provider call.
+- Use atomic budget reservations and deduplication in local SQLite or Worker D1. Source, reviews and keys are not stored in the ledger.
+- Return structured findings with supplied file/line evidence, model identity, usage and estimated cost.
+- Expose review and metadata-only review_status. Keep the same ID after uncertainty and do not replay an unknown on another backend.
 
-The example limits are **$6.66 per UTC day**, **$200 per UTC month**, one pending/unknown request at a time, and 100 new review requests/day. The ledger tracks Rebut, not the account-wide credit balance. Unknown execution retains its reservation. Review bodies are not replayable; save the initial response locally.
+Example defaults are $6.66/day and $200/month in UTC, one pending/unknown request, and 100 new requests/day. **Local limits cover only that device’s data directory**: they do not aggregate another Mac, Worker, external API usage or the OpenAI account balance. Worker users share that deployment’s ledger. Estimates are not invoices; uncertain executions keep their reservations and slots.
 
-The reviewer cannot clone repositories, fetch arbitrary URLs, execute commands/tests, edit files, or create pull requests. Source, review bodies and keys are not stored in D1 or Worker logs. `store:false` is not a zero-retention guarantee for the provider.
+The provider waiting ceiling is 30 minutes, with corresponding HTTP/MCP and Codex deadlines. Local profile changes require OS ownership; Worker changes use separate admin authentication. See [installation](docs/guide/en/installation.md) and [configuration](docs/guide/en/configuration.md) for credentials, models, budgets and optional Worker deployment.
+
+## Developer validation
+
+```sh
+npm ci --ignore-scripts
+npm run typecheck
+npm run build
+npm test
+npm run test:package
+```
+
+Automated tests and package smoke tests mock the provider. Default real API tests use gpt-6-luna; production uses gpt-6-astra / medium. Luna success does not establish Astra review quality.
 
 ## Documentation
 

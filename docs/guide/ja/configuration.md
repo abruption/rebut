@@ -4,13 +4,11 @@
 
 [Rebut](../../../README.ja.md) · [ユーザーガイド](../ja.md)
 
-## ローカル CLI 設定
 
-`npm install -g rebut-mcp` でインストールし、`rebut set endpoint https://YOUR_HOST/mcp` で Worker を設定します。macOS の既定は Keychain です。`rebut set token` は入力を隠す対話型プロンプトを使い、`rebut set token --stdin` は保護されたパイプ入力を明示的に受け付けます。Bearer 値を引数や追跡対象ファイルに入れないでください。既存の Vaultwarden ワークフローは `rebut set secret-store vaultwarden` で明示的に選びます。既定の項目は `Rebut — MCP Access Token` で、`rebut set vaultwarden-item NAME` で変更できます。macOS 以外では `rebut set secret-store env` を明示し、安全な実行環境から `REBUT_TOKEN` を渡します。バックエンドは自動で代替されません。
+## ローカルプロファイルと予算範囲
 
-`env` バックエンドの場合、Codex 設定は値を保存せず、変数名だけを `env_vars = ['REBUT_TOKEN']` として保存します。トークンは実際に Codex を実行するホストの安全な実行環境で渡してください。設定コマンドにだけ渡した環境変数は、後の Codex セッションでは利用できません。
+新規設定はローカル、既存endpoint設定はWorkerを維持します。set api-keyはローカルOpenAIキーで、Workerのset token／set admin-tokenとは別です。envはローカルREBUT_OPENAI_API_KEY、WorkerはREBUT_TOKEN／REBUT_ADMIN_TOKENを使い、Vaultwardenのローカル項目はvaultwarden-api-key-itemです。profile list/set/removeは選択backendに適用し、ローカルではWorker管理者トークン不要です。プロファイル・リビジョン・メタデータはprivate SQLiteへ保存し、予算はそのディレクトリだけを対象として別端末やOpenAI全体を合算しません。中央台帳にはWorkerを共有してください。切り替えで不確かな要求の移行や予約解除はしません。
 
-`rebut setup --client codex` は `CODEX_HOME` または `~/.codex` を使用し、`--codex-home PATH` で別の保存先を指定します。`rebut mcp` を登録し、他の MCP エントリを保持します。既存の非公開 `rebut` ブリッジの移行には `--replace` が必要です。`rebut doctor` は機密値を除いたローカル設定と認証情報の利用可否を表示し、`rebut doctor --connect` は無料でリモートの `tools/list` を確認します。いずれも有料レビューは実行しません。[インストール](installation.md)を参照してください。
 
 ## モデルと推論の設定
 
@@ -25,6 +23,8 @@ rebut set profile PROFILE_ID
 `MODEL_ID`、`EFFORT`、`PROFILE_ID` はプレースホルダーです。モデルと推論の設定はサーバーの許可リスト内のプロファイルに解決され、任意のモデルへのアクセスは付与しません。コレクターの明示的な `--profile` がローカル設定より優先されます。設定がなければ既定は `astra-medium` のままです。`rebut review` は確定済みバンドルに含まれるプロファイルを使い、現在の設定で書き換えません。
 
 ## 所有者によるサーバープロファイル管理
+
+Worker専用です。ローカルプロファイル管理にはこの管理者資格情報は不要です。
 
 `rebut profile list` は認証付きの読み取り専用 GET で、サーバーのプロファイル、モデル、推論設定、出力上限、料金、リビジョンを一覧表示します。プロバイダーの呼び出しや有料レビューは行いません。
 
@@ -102,3 +102,5 @@ SHA-256 は、マスキング後の正規化された `{schema_version,task_kind
 OpenAI リクエストは `store:false` を使用します。これはプロバイダーによる保持がゼロであることを保証せず、組織のデータポリシーに代わるものでも**ありません**。[OpenAI のデータ管理](https://developers.openai.com/api/docs/guides/your-data)を参照してください。認証情報と非公開のデプロイ識別子は、公開ソースやログに含めないでください。
 
 結果が `invalid_output` の場合、`invalid_output_reason` により、ソースやレビュー本文を保持せずに失敗した検証段階を識別できます。途中の `commentary` メッセージは除外し、`final_answer` または phase のない従来形式のメッセージだけを構造化レビューとして解析します。複数の最終出力、不正な JSON やスキーマ、提供された証拠の範囲外を指す指摘は、引き続きエラーになります。
+
+この節の所有者／管理者手順はWorkerモード専用です。ローカルプロファイルはOS所有権とSQLiteを使います。

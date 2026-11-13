@@ -4,6 +4,15 @@
 
 [Rebut](../../../README.en.md) · [User guide](../en.md)
 
+## Local and Worker execution
+
+New installations use local stdio MCP → the shared review service → private SQLite reservation → one OpenAI Responses call → validation and metadata settlement. No Cloudflare account, local HTTP port or daemon is required. Explicit Worker mode retains authenticated HTTP MCP → D1 → the same provider adapter.
+
+src/service.ts owns hash/profile selection, request ownership and settlement; src/review.ts owns provider and evidence validation; src/local.ts adapts Node SQLite and stdio; src/worker.ts retains HTTP authentication and D1 bindings. Local provider keys, Worker access tokens and admin tokens are separate. Neither ledger stores source, review bodies or keys. Local budgets and IDs cover only one local directory; Worker principals share one deployment. Switching backends does not migrate history or authorize replay of an uncertain request.
+
+The existing Worker-specific path and references follow.
+
+
 Client explicit allowlist → redact/freeze/hash → authenticated Streamable HTTP MCP → validated profile/hash → atomic D1 reservation → one bounded Responses call → schema/evidence/usage validation → metadata settlement → return review to client.
 
 The host-independent contract and provider adapter live in `src/contracts.ts` and `src/review.ts`; `src/worker.ts` supplies MCP/authentication and `src/ledger.ts` supplies the D1 adapter. Cloudflare's per-request `createMcpHandler` uses MCP SDK v2 and supports legacy stateless clients. Stateful sessions, background tasks, OAuth, model-driven tools, repository access, and persisted review replay are outside this MVP.

@@ -4,53 +4,46 @@
 
 [Rebut](../../../README.md) · [사용자 가이드](../ko.md)
 
-## npm CLI 설치
 
-Node.js **24 이상**과 npm을 사용합니다. 직접 호스팅한 Worker의 클라이언트·stdio 브리지를 설치합니다.
+**Node.js 24 이상**을 사용합니다. 새 설치는 로컬 stdio MCP 서버가 기본이며 Cloudflare 계정·Worker endpoint·별도 HTTP 데몬이 필요하지 않습니다.
 
 ```sh
 npm install -g rebut-mcp
 ```
 
-## 클라이언트 설정
+## 로컬 설정
 
-자신의 엔드포인트를 설정한 뒤 bearer 토큰을 저장합니다. macOS 기본값은 Keychain이며 `rebut set token`은 입력을 숨기는 프롬프트를 사용합니다. `rebut set token --stdin`은 보호된 파이프 입력을 명시적으로 받습니다. 토큰 값을 인자나 추적되는 파일에 넣지 마세요.
-
-```sh
-rebut set endpoint https://YOUR_HOST/mcp
-rebut set token
-```
-
-기존 Vaultwarden 설치를 사용하려면 백엔드를 명시적으로 선택합니다. `bw-get`과 기본 항목 `Rebut — MCP Access Token`을 사용하며 필요하면 항목명을 변경합니다.
+macOS의 `rebut set api-key`는 OpenAI API 키를 숨김 입력으로 받아 로그인 Keychain에 저장합니다. 서비스 `com.abruption.rebut`의 `openai-api-key` 계정을 사용하며 Worker 접속·관리자 토큰과 분리됩니다. `--stdin`은 보호된 파이프 입력용이며 자격증명을 명령 인자로 넣지 마세요.
 
 ```sh
-rebut set secret-store vaultwarden
-rebut set vaultwarden-item NAME
+rebut set api-key
 ```
 
-macOS 외 환경에서는 `env`를 명시적으로 선택하고 안전한 실행 환경으로 `REBUT_TOKEN`을 제공합니다. 추적되는 파일이나 명령 인자에 쓰지 마세요. 백엔드는 자동으로 대체되지 않습니다. 클라이언트에는 OpenAI 공급자 키가 필요하지 않습니다.
+환경변수 방식은 `rebut set secret-store env`를 선택하고 실제 MCP 호스트의 안전한 환경에 `REBUT_OPENAI_API_KEY`를 제공합니다. 등록에는 변수명만 기록합니다. Vaultwarden은 `rebut set secret-store vaultwarden`, `rebut set vaultwarden-api-key-item NAME`을 사용하며 기본 로컬 항목은 `Rebut — OpenAI API Key`입니다. 기존 bw-get 로그인이 필요하고 자격증명·backend 자동 대체는 없습니다.
 
-`env` 백엔드에서 Codex 설정은 값 없이 변수명만 `env_vars = ['REBUT_TOKEN']`로 저장합니다. 토큰은 실제 Codex 호스트의 안전한 실행 환경에 제공해야 합니다. 설정 명령에만 제공한 환경 변수는 이후 Codex 세션에 전달되지 않습니다.
-
-```sh
-rebut set secret-store env
-```
-
-## Codex 연결 및 설정 확인
+## 연결 및 확인
 
 ```sh
 rebut setup --client codex
-rebut doctor
 rebut doctor --connect
 ```
 
-설정은 `CODEX_HOME` 또는 `~/.codex`를 사용하며 `--codex-home PATH`로 경로를 명시할 수 있습니다. `rebut mcp`를 stdio 서버로 등록하고 다른 MCP 항목을 보존합니다. 기존 비공개 `rebut` 브리지를 이전하려면 `--replace`가 필요합니다.
+`rebut setup --client codex`는 CODEX_HOME 또는 ~/.codex에 rebut mcp를 등록하며 --codex-home PATH로 대상을 지정합니다. 호스트가 서버를 자동 실행합니다. `doctor --connect`는 로컬 키 사용 가능 여부·SQLite·실제 MCP 도구 등록을 확인하고 공급자를 호출하지 않습니다. API 계정 접근 권한 검증은 아닙니다. 로컬 env 방식은 REBUT_OPENAI_API_KEY 변수명만 전달합니다. 기존 등록을 교체할 때 사용자 지정 REBUT_CONFIG_DIR을 보존하세요.
 
-`rebut doctor`는 민감한 값을 제거한 로컬 설정과 자격증명 사용 가능 여부를 표시합니다. `rebut doctor --connect`는 무료 원격 `tools/list` 확인을 수행합니다. 두 명령 모두 유료 검토를 시작하지 않습니다.
+## 선택적 Worker 모드
+
+endpoint 설정은 Worker 모드를 명시적으로 선택합니다. endpoint만 있는 기존 설정도 업그레이드 시 Worker 모드로 유지됩니다. Worker에서는 로컬 OpenAI 키가 아닌 별도 MCP 접속 토큰을 사용합니다. macOS는 `rebut set token`, env는 REBUT_TOKEN, Vaultwarden은 vaultwarden-item을 사용합니다. 관리자 작업은 별도 관리자 자격증명이 필요합니다. Worker 생성이 필요하면 아래 비공개 배포 절차를 따르세요.
+
+```sh
+rebut set endpoint https://YOUR_HOST/mcp
+rebut setup --client codex --replace
+```
+
+`rebut set mode local`로 명시적으로 전환합니다. 장애 시 자동 대체하지 않습니다. backend 간 요청 기록·예약·예산은 공유·이전되지 않으므로 unknown을 다른 backend로 우회 재실행하지 마세요. 로컬 SQLite는 ~/.local/share/rebut/local/ledger.sqlite 또는 사용자 지정 REBUT_CONFIG_DIR 아래 local/에 저장합니다. 기본 UTC 하루 $6.66·월 $200은 이 데이터 디렉터리에만 적용됩니다. 로컬 예산 명령은 `set daily-budget`, `set monthly-budget`, `set request-budget`이며 USD 소수 금액을 받습니다. Worker 한도는 배포 설정으로 관리합니다.
 
 ## 소스 체크아웃 및 개발자 검증
 
-npm 패키지는 호스팅된 검토 서비스가 아닌 클라이언트입니다. Worker/D1은 GitHub 소스 체크아웃에서 Workers/D1 권한이 있는 자신의 Cloudflare 계정과 OpenAI Responses API 키로 배포합니다. 공개 소스/npm은 개인 Worker나 크레딧 접근 권한을 주지 않습니다. 패키지에는 실제 엔드포인트, 비공개 설정, bearer, 공급자 키, 검토 본문이 포함되지 않습니다. 이 안내는 CLI `0.1.0`을 대상으로 합니다.
+이 안내는 CLI 0.2.0 대상입니다. npm 패키지는 로컬 서버와 선택적 Worker 브리지를 실행하며 호스팅 검토 서비스나 API 크레딧을 제공하지 않습니다. Cloudflare 계정·소스 체크아웃은 선택적 Worker 배포에만 필요합니다. 실제 endpoint·비공개 설정·자격증명·리뷰 본문은 패키지에 포함하지 않습니다.
 
 ```sh
 npm ci
@@ -102,3 +95,9 @@ rebut status request-001
 배포를 업그레이드하거나 제거하기 전에 [운영 가이드](operations.md)에 따라 D1 원장을 보존하고 대기 중인 실행을 대조하여 정리하세요. 소스 공개와 개인 유료 배포는 별개의 작업입니다.
 
 업데이트 순서는 **CLI 설치 → 기존 옵션을 보존해 Codex 등록 갱신 → Codex/MCP 재시작 → Worker 배포**입니다. Worker를 먼저 늘리면 구 CLI가 65초에 연결을 끊을 수 있습니다. 사용자 지정 `REBUT_CONFIG_DIR` 등 기존 등록 옵션을 유지하세요. Node HTTP 전송 계층의 헤더·본문 제한도 MCP 도구 제한에 맞춥니다. 30분은 애플리케이션 상한이며 모든 네트워크·호스트가 30분 연결을 보장한다는 뜻은 아닙니다. 절전·종료·연결 단절로 실행이 중단되면 `reserved` 또는 `unknown` 예약이 남을 수 있습니다. 같은 요청 ID로 확인하며 자동 재실행하거나 예약을 해제하지 않습니다.
+
+모드·자격증명 backend·로컬 예산 변경 후에는 필요에 따라 `rebut setup --client codex --replace`로 등록을 갱신하고 MCP 호스트를 재시작하세요. 기존 프로세스는 시작 시 설정을 유지하며 doctor가 재로딩하지 않습니다. 사용자 지정 REBUT_CONFIG_DIR은 setup을 다시 실행할 때도 같은 환경변수로 제공해 보존합니다. secret-store 선택은 모든 자격증명 역할에 적용하되 역할별 계정·항목은 분리됩니다.
+
+로컬 env 기본값은 REBUT_OPENAI_API_KEY로, Codex나 다른 프로그램의 키를 조용히 재사용하지 않습니다. 의도적으로 OPENAI_API_KEY를 공유하려면 `rebut set api-key-env OPENAI_API_KEY` 후 등록을 갱신하고 재시작합니다. 두 변수 간 fallback은 없습니다. 일·월·요청 한도는 독립적이며 하나를 바꿔도 다른 한도가 자동 확대되지 않습니다. 사용자 한도는 업그레이드 후에도 유지합니다. 도구 설명은 시작 시 힌트이며 실행은 명시된 요청 프로필을 동적으로 확인합니다.
+
+검증 대상은 macOS/Linux이며 Windows 동작·ACL은 확인하지 않았습니다.

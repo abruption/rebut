@@ -4,13 +4,11 @@
 
 [Rebut](../../../README.md) · [사용자 가이드](../ko.md)
 
-## 로컬 CLI 설정
 
-`npm install -g rebut-mcp`로 설치하고 `rebut set endpoint https://YOUR_HOST/mcp`로 Worker를 설정합니다. macOS 기본값은 Keychain입니다. `rebut set token`은 입력을 숨기는 대화형 프롬프트, `rebut set token --stdin`은 명시적인 보호된 파이프 입력을 사용합니다. bearer 값을 인자나 추적되는 파일에 넣지 마세요. 기존 Vaultwarden 작업 흐름은 `rebut set secret-store vaultwarden`으로 선택합니다. 기본 항목은 `Rebut — MCP Access Token`이며 `rebut set vaultwarden-item NAME`으로 변경합니다. macOS 외 환경은 `rebut set secret-store env`를 명시하고 안전한 실행 환경으로 `REBUT_TOKEN`을 제공합니다. 백엔드 자동 대체는 없습니다.
+## 로컬 프로필과 예산 범위
 
-`env` 백엔드에서 Codex 설정은 값 없이 변수명만 `env_vars = ['REBUT_TOKEN']`로 저장합니다. 토큰은 실제 Codex 호스트의 안전한 실행 환경에 제공해야 합니다. 설정 명령에만 제공한 환경 변수는 이후 Codex 세션에 전달되지 않습니다.
+새 설정은 로컬 모드를 사용하고 endpoint만 있던 기존 설정은 Worker로 유지합니다. `rebut set api-key`는 로컬 OpenAI 키를 Keychain에 저장하며 Worker의 set token·set admin-token과 다른 자격증명입니다. env 방식은 로컬 REBUT_OPENAI_API_KEY, Worker REBUT_TOKEN/REBUT_ADMIN_TOKEN을 사용합니다. Vaultwarden 로컬 키는 vaultwarden-api-key-item을 지정합니다. `rebut profile list/set/remove`는 선택한 backend를 대상으로 하며 로컬에서는 Worker 관리자 토큰이 필요 없습니다. 프로필·리비전·메타데이터는 private SQLite에 저장합니다. 예산은 해당 데이터 디렉터리 한 곳에만 적용되며 다른 기기나 OpenAI 계정 전체 사용량을 합산하지 않습니다. 중앙 장부가 필요하면 Worker를 공유합니다. 모드 전환은 불확실한 요청을 이전하거나 예약을 해제하지 않습니다.
 
-`rebut setup --client codex`는 `CODEX_HOME` 또는 `~/.codex`를 사용하며 `--codex-home PATH`로 경로를 지정합니다. `rebut mcp`를 등록하고 다른 MCP 항목을 보존합니다. 기존 비공개 `rebut` 브리지 이전에는 `--replace`가 필요합니다. `rebut doctor`는 민감한 값을 제거한 로컬 설정과 자격증명 사용 가능 여부를, `rebut doctor --connect`는 무료 원격 `tools/list`를 확인합니다. 유료 검토는 수행하지 않습니다. [설치](installation.md)를 참고하세요.
 
 ## 모델 및 추론 환경설정
 
@@ -25,6 +23,10 @@ rebut set profile PROFILE_ID
 `MODEL_ID`, `EFFORT`, `PROFILE_ID`는 자리표시자입니다. 모델·추론 환경설정은 서버 허용 목록의 프로필로 해석되며 임의 모델 접근 권한을 주지 않습니다. 수집기의 명시적 `--profile`이 로컬 환경설정보다 우선합니다. 환경설정이 없으면 기본값은 `astra-medium`입니다. `rebut review`는 고정 번들에 포함된 프로필을 유지하며 현재 환경설정으로 바꾸지 않습니다.
 
 ## 소유자 서버 프로필 관리
+
+Worker 모드 전용입니다. 로컬 프로필 관리에는 이 관리자 자격증명이 필요하지 않습니다.
+
+이 절의 소유자·관리자 설명은 Worker 모드에만 적용됩니다. 로컬 프로필 명령은 OS 소유권과 로컬 SQLite 레지스트리를 사용합니다.
 
 `rebut profile list`는 인증된 읽기 전용 GET으로 서버 프로필, 모델, 추론 설정, 출력 한도, 요금, 리비전을 조회합니다. 공급자를 호출하거나 유료 검토를 시작하지 않습니다.
 
