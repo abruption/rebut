@@ -5,6 +5,7 @@
   "license": "MIT",
   "scripts": {
     "test": "vitest run",
+    "test:package": "node scripts/package-smoke.mjs",
     "typecheck": "tsc --noEmit",
     "dev": "wrangler dev",
     "build": "npm run build:cli && npm run build:worker",
