@@ -6,7 +6,7 @@
 
 ## Local CLI configuration
 
-Install with `npm install -g rebut-mcp`; set the Worker with `rebut set endpoint https://YOUR_HOST/mcp`. macOS defaults to Keychain: `rebut set token` uses hidden interactive input; `rebut set token --stdin` explicitly accepts a protected pipe. Never pass bearer values in argv or tracked files. Select an existing Vaultwarden workflow with `rebut set secret-store vaultwarden`; its default item is `Rebut — MCP Access Token`, configurable with `rebut set vaultwarden-item NAME`. On non-macOS, explicitly use `rebut set secret-store env` and supply `REBUT_TOKEN` via a secure execution environment. There is no automatic backend fallback.
+Install with `npm install -g rebut`; set the Worker with `rebut set endpoint https://YOUR_HOST/mcp`. macOS defaults to Keychain: `rebut set token` uses hidden interactive input; `rebut set token --stdin` explicitly accepts a protected pipe. Never pass bearer values in argv or tracked files. Select an existing Vaultwarden workflow with `rebut set secret-store vaultwarden`; its default item is `Rebut — MCP Access Token`, configurable with `rebut set vaultwarden-item NAME`. On non-macOS, explicitly use `rebut set secret-store env` and supply `REBUT_TOKEN` via a secure execution environment. There is no automatic backend fallback.
 
 For the `env` backend, Codex setup stores only `env_vars = ['REBUT_TOKEN']` (the variable name), never its value. Supply the token in the secure execution environment of the actual Codex host; setting it only for the setup command does not make it available to later Codex sessions.
 

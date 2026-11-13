@@ -17,7 +17,7 @@ Rebut は**明示的に選択して利用するレビュアー**です。既存�
 **Node.js 24 以降**が必要です。npm CLI をインストールし、自分でデプロイした Worker を設定します。
 
 ```sh
-npm install -g rebut-mcp
+npm install -g rebut
 rebut set endpoint https://YOUR_HOST/mcp
 rebut set token
 rebut setup --client codex
@@ -27,7 +27,7 @@ rebut doctor --connect
 
 macOS の `rebut set token` は入力を隠す対話型プロンプトを使い、既定では Bearer トークンを Keychain に保存します。トークンを引数で渡さないでください。Vaultwarden/env バックエンドの明示的な選択と Codex 移行オプションは[インストール手順](docs/guide/ja/installation.md)を参照してください。
 
-`rebut-mcp`（初期 CLI バージョン `0.1.0`、実行コマンド `rebut`）は**セルフホストした Worker**のクライアントと stdio ブリッジです。Worker/D1 は引き続き GitHub のソースチェックアウトから、自分の Cloudflare アカウントと OpenAI キーでデプロイします。公開ソースや npm パッケージは、個人の Worker やクレジットへのアクセスを付与しません。パッケージに実際のエンドポイント、非公開設定、Bearer、プロバイダーキー、レビュー本文は含まれません。この手順は CLI `0.1.0` を対象としています。
+`rebut`（初期 CLI バージョン `0.1.0`、実行コマンド `rebut`）は**セルフホストした Worker**のクライアントと stdio ブリッジです。Worker/D1 は引き続き GitHub のソースチェックアウトから、自分の Cloudflare アカウントと OpenAI キーでデプロイします。公開ソースや npm パッケージは、個人の Worker やクレジットへのアクセスを付与しません。パッケージに実際のエンドポイント、非公開設定、Bearer、プロバイダーキー、レビュー本文は含まれません。この手順は CLI `0.1.0` を対象としています。
 
 開発者向けの検証はソースチェックアウトで実行します。
 
