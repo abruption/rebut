@@ -50,11 +50,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/abruption/rebut-mcp.git"
+    "url": "git+https://github.com/abruption/rebut.git"
   },
-  "homepage": "https://github.com/abruption/rebut-mcp",
+  "homepage": "https://github.com/abruption/rebut",
   "bugs": {
-    "url": "https://github.com/abruption/rebut-mcp/issues"
+    "url": "https://github.com/abruption/rebut/issues"
   },
   "publishConfig": {
     "access": "public"
