@@ -4,53 +4,46 @@
 
 [Rebut](../../../README.en.md) · [User guide](../en.md)
 
-## npm CLI installation
 
-Use Node.js **24 or later** and npm. Install the client/stdio bridge for your self-hosted Worker with:
+Use Node.js **24 or later**. New installations default to a local stdio MCP server. No Cloudflare account, Worker endpoint or HTTP daemon is required.
 
 ```sh
 npm install -g rebut-mcp
 ```
 
-## Configure the client
+## Local setup
 
-Set your own endpoint, then store your bearer token. On macOS the default is Keychain; `rebut set token` prompts with hidden input. `rebut set token --stdin` explicitly accepts a protected pipe. Never supply token values as arguments or in tracked files.
-
-```sh
-rebut set endpoint https://YOUR_HOST/mcp
-rebut set token
-```
-
-For an existing Vaultwarden installation, select the backend explicitly. It uses `bw-get` and the default item `Rebut — MCP Access Token`; customize the item name if needed:
+On macOS, `rebut set api-key` takes hidden OpenAI API key input and stores it in the login Keychain. The provider account is `openai-api-key` under `com.abruption.rebut`, separate from the Worker access/admin accounts. `--stdin` accepts a protected pipe; never use credential values as command arguments.
 
 ```sh
-rebut set secret-store vaultwarden
-rebut set vaultwarden-item NAME
+rebut set api-key
 ```
 
-On non-macOS, explicitly select `env` and supply `REBUT_TOKEN` through a secure execution environment. Do not write it to tracked files or command arguments. Backends never fall back automatically. The client needs no OpenAI provider key.
+For environment-backed credentials, select `rebut set secret-store env` and provide `REBUT_OPENAI_API_KEY` in the secure environment of the actual MCP host. Setup records only that variable name. For Vaultwarden, use `rebut set secret-store vaultwarden` and `rebut set vaultwarden-api-key-item NAME`; the default local item is `Rebut — OpenAI API Key`. Existing bw-get login is required. There is no automatic credential or backend fallback.
 
-For the `env` backend, Codex setup stores only `env_vars = ['REBUT_TOKEN']` (the variable name), never its value. Supply the token in the secure execution environment of the actual Codex host; setting it only for the setup command does not make it available to later Codex sessions.
-
-```sh
-rebut set secret-store env
-```
-
-## Connect Codex and check configuration
+## Connect and verify
 
 ```sh
 rebut setup --client codex
-rebut doctor
 rebut doctor --connect
 ```
 
-Setup uses `CODEX_HOME` or `~/.codex`; use `--codex-home PATH` for an explicit destination. It registers `rebut mcp` as the stdio server, preserves other MCP entries, and requires `--replace` to migrate an existing private `rebut` bridge.
+`rebut setup --client codex` registers `rebut mcp` using CODEX_HOME or ~/.codex; select another home with --codex-home PATH. The host starts the server automatically. `doctor --connect` checks local credential availability, SQLite and real MCP tool registration without making a provider call; it does not prove API account access. Local env setup forwards REBUT_OPENAI_API_KEY by name only. Preserve custom REBUT_CONFIG_DIR when replacing a registration.
 
-`rebut doctor` reports sanitized local configuration and credential availability. `rebut doctor --connect` makes a free remote `tools/list` check; neither command starts a paid review.
+## Optional Worker mode
+
+Setting an endpoint explicitly selects Worker mode. Existing endpoint-only configurations keep Worker mode on upgrade. Worker mode uses its separate MCP access token, not the local OpenAI key: on macOS store it with `rebut set token`; env mode reads REBUT_TOKEN and Vaultwarden uses vaultwarden-item. Admin operations use the separate admin credential. Use the private deployment section below if you need to create a Worker.
+
+```sh
+rebut set endpoint https://YOUR_HOST/mcp
+rebut setup --client codex --replace
+```
+
+Use `rebut set mode local` to switch explicitly. No automatic fallback occurs. Backends do not share or migrate request history, reservations or budgets: never replay an unknown against another backend. Local SQLite lives at ~/.local/share/rebut/local/ledger.sqlite, or local/ under a custom REBUT_CONFIG_DIR. Defaults are UTC $6.66/day and $200/month for this data directory only; local budget commands are `set daily-budget`, `set monthly-budget`, and `set request-budget` with decimal USD values. Worker limits remain deployment configuration.
 
 ## Source checkout and developer validation
 
-The npm package is a client, not a hosted review service. Deploy Worker/D1 from a GitHub source checkout using your own Cloudflare account with Workers/D1 permissions and your own OpenAI Responses API key. Public source/npm grants no access to a personal Worker or credits. The package includes no real endpoint, private config, bearer, provider key, or reviews. These instructions target CLI `0.1.0`.
+This guide targets CLI 0.2.0. The npm package runs the local server and optional Worker bridge; it is not a hosted review service and grants no API credits. Only optional Worker deployment needs a Cloudflare account and source checkout. Packages contain no real endpoint, private settings, credentials or review bodies.
 
 ```sh
 npm ci
@@ -102,3 +95,9 @@ Save the initial response locally with restrictive permissions; the server store
 Use the [operations guide](operations.md) to preserve the D1 ledger and reconcile pending executions before upgrading or removing a deployment. Source publication and a private paid deployment are separate actions.
 
 Upgrade in this order: **install the CLI → refresh Codex registration with existing options preserved → restart Codex/MCP → deploy the Worker**. Deploying the longer Worker deadline first can let the old CLI disconnect at 65 seconds. Preserve custom registration options such as `REBUT_CONFIG_DIR`. Node HTTP headers/body deadlines also match the MCP tool deadline. Thirty minutes is an application upper bound, not a guarantee from every network or host. Sleep, termination or disconnection can leave a request reserved or unknown; query its original ID without automatic replay or reservation release.
+
+After changing mode, credential backend or local budgets, refresh registration with `rebut setup --client codex --replace` when needed and restart MCP hosts. Existing processes keep their startup settings; doctor does not reload them. Preserve custom `REBUT_CONFIG_DIR` (for example, provide the same environment variable when rerunning setup). The chosen secret-store backend applies to all credential roles, which use separate accounts/items.
+
+Local env mode defaults to REBUT_OPENAI_API_KEY so a key belonging to Codex or another application is not silently reused. To deliberately share OPENAI_API_KEY, run `rebut set api-key-env OPENAI_API_KEY`, refresh registration and restart. There is no fallback between these variables. Daily, monthly and per-request ceilings are independent; changing one does not scale the others. Custom limits are retained across upgrades. Tool descriptions are startup hints; execution resolves the explicit request profile dynamically.
+
+The tested release targets macOS/Linux; Windows behavior and ACLs are not validated.

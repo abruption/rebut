@@ -19,6 +19,8 @@ export interface CodexSetupOptions {
   nodePath?: string;
   replace?: boolean;
   forwardTokenEnv?: boolean;
+  forwardApiKeyEnv?: boolean;
+  apiKeyEnv?: "REBUT_OPENAI_API_KEY" | "OPENAI_API_KEY";
   configDir?: string;
 }
 
@@ -65,7 +67,11 @@ function desired(options: CodexSetupOptions): Table {
     startup_timeout_sec: 60,
     tool_timeout_sec: CODEX_TOOL_TIMEOUT_SECONDS,
     enabled_tools: ["review", "review_status"],
-    ...(options.forwardTokenEnv ? { env_vars: ["REBUT_TOKEN"] } : {}),
+    ...(options.forwardApiKeyEnv
+      ? { env_vars: [options.apiKeyEnv ?? "REBUT_OPENAI_API_KEY"] }
+      : options.forwardTokenEnv
+        ? { env_vars: ["REBUT_TOKEN"] }
+        : {}),
     ...(options.configDir !== undefined
       ? { env: { REBUT_CONFIG_DIR: resolve(options.configDir) } }
       : {}),

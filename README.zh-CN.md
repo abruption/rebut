@@ -2,56 +2,64 @@
 
 # Rebut
 
-**通过 OpenAI Responses API 提供独立、基于证据的审查。**
+**默认本地运行的独立代码审查 MCP，可选 Cloudflare Worker。**
 
 [한국어](README.md) · [English](README.en.md) · **简体中文** · [日本語](README.ja.md)
 
-**一个经过身份验证的 Cloudflare Worker MCP，仅审查您明确提供并已冻结的材料。**
-
 </div>
 
-Rebut 是一个使用您自己的 Cloudflare 账户和 OpenAI 密钥部署的代码审查工具。
+Rebut 使用您自己的 OpenAI API 密钥审查代码。新安装默认运行本地 stdio 服务器，无需 Cloudflare 账户或独立 HTTP 守护进程。
+
+审查资料会发送至 OpenAI API；本地账本仅存储请求和用量元数据。
+
+验证目标为 macOS/Linux，Windows 行为与 ACL 未验证。
 
 ## 快速开始
 
-需要 **Node.js 24 或更高版本**。安装 npm CLI，并配置您自行部署的 Worker：
+需要 Node.js 24 或更高版本。以下示例使用 macOS Keychain。
 
 ```sh
 npm install -g rebut-mcp
-rebut set endpoint https://YOUR_HOST/mcp
-rebut set token
+rebut set api-key
 rebut setup --client codex
-rebut doctor
 rebut doctor --connect
 ```
 
-在 macOS 上，`rebut set token` 使用隐藏输入的交互式提示，默认将 Bearer 令牌保存在 Keychain 中。绝不要将令牌作为参数传递。明确选择 Vaultwarden/env 后端及 Codex 迁移选项见[安装指南](docs/guide/zh-CN/installation.md)。
+`rebut set api-key` 隐藏输入 OpenAI API 密钥并存入 Keychain。Linux 等环境请选择 `rebut set secret-store env`，通过实际 MCP 宿主的安全环境提供 `REBUT_OPENAI_API_KEY`。配置仅记录变量名，不要把密钥写入参数或受版本控制的文件。
 
-`rebut-mcp`（初始 CLI 版本 `0.1.0`，命令 `rebut`）是**自托管 Worker**的客户端和 stdio 桥接程序。Worker/D1 仍需从 GitHub 源代码检出目录使用您自己的 Cloudflare 账户和 OpenAI 密钥部署。公开源代码或 npm 包不会授予个人 Worker 或额度的访问权限。包中不包含真实端点、私有配置、Bearer 令牌、提供商密钥或审查正文。这些说明适用于 CLI `0.1.0`。
+## 可选 Worker
 
-开发者验证仍在源代码检出目录中执行：
+多台设备需要共享预算和请求账本时，可选择自托管 Worker。`rebut set endpoint URL` 会选择 Worker 模式。macOS 可通过 `rebut set token` 保存独立的 Worker 访问令牌。OpenAI API 密钥、Worker 访问令牌和管理员令牌是不同凭据。
 
 ```sh
-npm ci
-npm run typecheck
-npm run build
-npm test
+rebut set endpoint https://YOUR_HOST/mcp
+rebut setup --client codex --replace
 ```
 
-自动化测试模拟提供商，不会进行付费模型调用。真实 API 测试使用 **gpt-6-luna**，生产使用 **gpt-6-astra / medium**。Luna 结果不能证明 Astra 可用或审查质量相当。Worker 部署需要 D1 及 `OPENAI_API_KEY`、`REBUT_CONFIG`、`AUTH_TOKENS` 三个 Secret；请按照[安装与私有部署](docs/guide/zh-CN/installation.md)操作。
-
-使用 `rebut set model MODEL_ID`、`rebut set reasoning EFFORT` 或 `rebut set profile PROFILE_ID` 选择本地默认值。新收集时偏好会匹配服务器允许列表的配置方案；显式 `collect --profile` 优先，`review` 保留冻结输入包中的配置方案。无偏好时默认为 `astra-medium`。`rebut profile list` 无需调用提供商即可读取经过身份验证的服务器模型/费率元数据。所有者完成一次 Worker 升级、迁移 `0002` 及单独管理凭据设置后，可在 D1 中管理配置方案；见[配置](docs/guide/zh-CN/configuration.md)。
+已有 endpoint 配置继续使用 Worker 模式。通过 `rebut set mode local` 明确切换；失败不会自动切换后端。切换不会迁移已有请求或预留。
 
 ## 功能
 
-- 收集明确允许的文本来源，移除常见的秘密信息模式，并对冻结的证据计算哈希。发送前请检查脱敏结果。
-- 在进行一次受限的 Responses 调用之前，检查身份验证、允许列表中的配置、重复请求 ID，以及部署范围内的原子预算预留。
-- 返回结构化发现，包含所提供文件和行的证据、模型身份、令牌用量及估算费用。
-- 提供 `review` 和仅返回元数据的 `review_status`。超时或结果未知后，请保留同一个请求 ID；服务器绝不会自动创建替代的付费调用。
+- 仅收集、脱敏并冻结明确提供的文件、diff 和要求，再调用供应商一次。
+- 在本地 SQLite 或 Worker D1 中进行原子预算预留和去重；账本不存储源码、审查正文或密钥。
+- 返回结构化发现、给定文件及行号证据、模型标识、用量与预估成本。
+- 提供 review 和仅元数据的 review_status。不确定后保留同一 ID，不在另一后端重放 unknown 请求。
 
-示例限制为：**每个 UTC 日 $6.66**、**每个 UTC 月 $200**、同一时间仅允许一个待处理/结果未知的请求，以及每天 100 个新的审查请求。账本仅跟踪 Rebut，不代表整个账户的余额。执行结果未知时会保留预算预留。审查正文无法重放；请将首次响应保存在本地。
+默认示例为 UTC 每日 $6.66、每月 $200、一个 pending/unknown 请求及每日 100 个新请求。**本地限额仅覆盖该设备的数据目录**，不汇总另一台 Mac、Worker、外部 API 或 OpenAI 账户余额。Worker 用户共享该部署的账本。预估不是账单；不确定的执行继续占用预留和并发槽。
 
-审查器不能克隆仓库、获取任意 URL、执行命令或测试、编辑文件，也不能创建拉取请求。源代码、审查正文和密钥不会存储在 D1 或 Worker 日志中。`store:false` 不保证提供商零保留数据。
+供应商等待上限为 30 分钟，并配套调整 HTTP/MCP 和 Codex 期限。本地配置方案由 OS 所有者管理；Worker 变更需要独立管理员认证。凭据、模型、预算与可选部署见[安装](docs/guide/zh-CN/installation.md)和[配置](docs/guide/zh-CN/configuration.md)。
+
+## 开发者验证
+
+```sh
+npm ci --ignore-scripts
+npm run typecheck
+npm run build
+npm test
+npm run test:package
+```
+
+自动化测试与包 smoke 测试模拟供应商。默认真实 API 测试使用 gpt-6-luna，生产使用 gpt-6-astra / medium。Luna 成功不证明 Astra 的审查质量。
 
 ## 文档
 

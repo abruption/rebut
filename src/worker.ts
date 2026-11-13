@@ -1,11 +1,11 @@
+import { handleReview, metadata, sha256 } from "./service.js";
+export { handleReview, sha256 } from "./service.js";
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
-import { ReviewInputSchema, inputHash } from "./contracts.js";
-import { estimateReservation, runReview } from "./review.js";
+import { ReviewInputSchema } from "./contracts.js";
 import { Ledger } from "./ledger.js";
 import { parseConfig } from "./config.js";
-import { ProfileRegistry } from "./profiles.js";
 import { profileApi } from "./profile-api.js";
 export interface Env {
   DB: D1Database;
@@ -18,15 +18,6 @@ const PrincipalSchema = z.record(
   z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
   z.string().regex(/^[a-f0-9]{64}$/),
 );
-export async function sha256(value: string) {
-  return Array.from(
-    new Uint8Array(
-      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
-    ),
-  )
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 async function authenticate(request: Request, env: Env) {
   const authorization = request.headers.get("authorization");
   if (!authorization?.startsWith("Bearer ") || authorization.length > 520)
@@ -37,90 +28,6 @@ async function authenticate(request: Request, env: Env) {
   return (
     Object.entries(principals).find(([, hash]) => hash === digest)?.[0] ?? null
   );
-}
-function metadata(row: {
-  state: string;
-  input_sha256: string;
-  metadata: string | null;
-}) {
-  return {
-    status: row.state,
-    input_sha256: row.input_sha256,
-    result_replay_available: false,
-    ...(row.metadata ? JSON.parse(row.metadata) : {}),
-  };
-}
-export async function handleReview(raw: unknown, principal: string, env: Env) {
-  const input = ReviewInputSchema.parse(raw),
-    config = parseConfig(env.REBUT_CONFIG);
-  if ((await inputHash(input)) !== input.input_sha256)
-    return { status: "input_hash_mismatch" };
-  const ledger = new Ledger(env.DB);
-  const fingerprint = await sha256(
-    JSON.stringify({
-      input_sha256: input.input_sha256,
-      profile: input.profile,
-    }),
-  );
-  const existing = await ledger.get(principal, input.request_id);
-  if (existing)
-    return existing.fingerprint === fingerprint
-      ? metadata(existing)
-      : { status: "conflict" };
-  const selected = await new ProfileRegistry(env.DB, config.profiles).resolve(
-    input.profile,
-  );
-  if (!selected) return { status: "profile_not_allowed" };
-  const profile = selected.profile;
-  const snapshot = {
-    requested_model: profile.model,
-    requested_reasoning: profile.reasoning,
-    profile_revision: selected.revision,
-    price_version: profile.priceVersion,
-  };
-  const reserved = await ledger.reserve(
-    principal,
-    input.request_id,
-    fingerprint,
-    input.input_sha256,
-    input.profile,
-    estimateReservation(input, profile),
-    config.limits,
-    new Date(),
-    snapshot,
-  );
-  if (reserved.status === "existing") return metadata(reserved.row);
-  if (reserved.status !== "acquired") return { status: reserved.status };
-  let outcome;
-  try {
-    outcome = await runReview(input, profile, env.OPENAI_API_KEY);
-  } catch {
-    outcome = {
-      status: "unknown" as const,
-      requested_model: profile.model,
-      price_version: profile.priceVersion,
-    };
-  }
-  const { review, ...outcomeInfo } = outcome;
-  const info = {
-    ...outcomeInfo,
-    requested_reasoning: profile.reasoning,
-    profile_revision: selected.revision,
-  };
-  await ledger.finish(
-    principal,
-    input.request_id,
-    reserved.row.claim,
-    outcome.status,
-    outcome.estimated_cost_microusd,
-    info,
-  );
-  return {
-    ...info,
-    review,
-    input_sha256: input.input_sha256,
-    result_replay_available: false,
-  };
 }
 function toolResult(result: object) {
   return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
@@ -220,7 +127,7 @@ export default {
         return new Response("Invalid request", { status: 400 });
       const handler = createMcpHandler(
         () => {
-          const server = new McpServer({ name: "rebut", version: "0.1.1" });
+          const server = new McpServer({ name: "rebut", version: "0.2.0" });
           server.registerTool(
             "review",
             {

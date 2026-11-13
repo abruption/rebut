@@ -1,3 +1,4 @@
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { readFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
@@ -6,6 +7,8 @@ import {
   readSettings,
   writeSettings,
   settingsPath,
+  executionMode,
+  providerEnvName,
 } from "./client/settings.js";
 import { loadToken, storeToken } from "./client/secrets.js";
 import {
@@ -22,12 +25,29 @@ import {
   listProfiles,
   resolveProfile,
   safeProfileError,
+  price,
 } from "./client/profiles.js";
-const HELP = `Rebut: opt-in independent review MCP client
+import {
+  openLocalRuntime,
+  serveLocalStdio,
+  localMcpServer,
+  localConfig,
+  localDirectory,
+  type LocalRuntime,
+} from "./local.js";
+const HELP = `Rebut: local-first independent review MCP server
 
-rebut set endpoint URL
+rebut set mode local|worker
+rebut set api-key-env REBUT_OPENAI_API_KEY|OPENAI_API_KEY
+rebut set max-concurrent N      Local capacity, 1–10; uncertain reservations remain held
+rebut set api-key [--stdin]      Hidden OpenAI API key input
+rebut set endpoint URL          Select optional Worker mode
 rebut set secret-store keychain|vaultwarden|env
 rebut set vaultwarden-item NAME
+rebut set vaultwarden-api-key-item NAME
+rebut set daily-budget USD
+rebut set monthly-budget USD
+rebut set request-budget USD
 rebut set vaultwarden-admin-item NAME
 rebut set model MODEL
 rebut set reasoning EFFORT
@@ -39,14 +59,16 @@ rebut profile remove ID [--if-revision N]
 rebut set token [--stdin]        Hidden input; never pass a token as an argument
 rebut setup --client codex [--codex-home PATH] [--replace]
 rebut remove --client codex [--codex-home PATH]
-rebut mcp                       Start the stdio bridge
-rebut doctor [--connect]         Local check; --connect lists remote tools only
+rebut mcp                       Start the local server or Worker bridge
+rebut doctor [--connect]         Check selected backend; --connect lists tools, never calls a model
+rebut status --pending           Local reserved/unknown metadata only
 rebut status REQUEST_ID          Free metadata query
 rebut review                    Explicit paid review; JSON bundle on stdin
 rebut collect --root PATH --request-id ID --requirements TEXT [--profile ID] -- FILE...
 rebut --version
 
-Deploy your own Worker from the GitHub source first. No private endpoint is bundled.
+New installs run locally with your OpenAI API key. No Cloudflare account is required.
+Worker mode is optional; no private endpoint is bundled. Local budgets are per device.
 Production profile: astra-medium. Real API tests: luna-test only.
 `;
 class CliError extends Error {}
@@ -80,10 +102,12 @@ async function stdin(max = 160000): Promise<string> {
   }
   return Buffer.concat(chunks).toString("utf8");
 }
-async function hidden(): Promise<string> {
+async function hidden(label = "Bearer token"): Promise<string> {
   if (!process.stdin.isTTY)
-    throw new CliError("Token input requires a terminal, or explicit --stdin.");
-  process.stderr.write("Bearer token (hidden): ");
+    throw new CliError(
+      "Credential input requires a terminal, or explicit --stdin.",
+    );
+  process.stderr.write(label + " (hidden): ");
   const wasRaw = process.stdin.isRaw;
   process.stdin.setRawMode(true);
   process.stdin.resume();
@@ -132,20 +156,55 @@ export async function runCli(args: string[]): Promise<void> {
     return;
   }
   const settings = await readSettings();
+  const mode = executionMode(settings);
+  async function withLocal<T>(
+    action: (runtime: LocalRuntime) => Promise<T>,
+    handleSignals = false,
+  ): Promise<T> {
+    const runtime = await openLocalRuntime(settings);
+    const onInterrupt = () => {
+      process.exitCode = 130;
+      void runtime.close();
+    };
+    const onTerminate = () => {
+      process.exitCode = 143;
+      void runtime.close();
+    };
+    if (handleSignals) {
+      process.once("SIGINT", onInterrupt);
+      process.once("SIGTERM", onTerminate);
+    }
+    try {
+      return await action(runtime);
+    } finally {
+      if (handleSignals) {
+        process.off("SIGINT", onInterrupt);
+        process.off("SIGTERM", onTerminate);
+      }
+      await runtime.close();
+    }
+  }
   if (command === "set") {
     const [key, ...values] = rest;
-    if (key === "token" || key === "admin-token") {
+    if (key === "token" || key === "admin-token" || key === "api-key") {
       const parsed = options(values, { stdin: { type: "boolean" } });
       const token = (
-        parsed.values.stdin ? await stdin(1024) : await hidden()
+        parsed.values.stdin
+          ? await stdin(1024)
+          : await hidden(key === "api-key" ? "OpenAI API key" : "Bearer token")
       ).trim();
       await storeToken(
         token,
         settings,
-        key === "admin-token" ? "admin" : "review",
+        key === "api-key"
+          ? "provider"
+          : key === "admin-token"
+            ? "admin"
+            : "review",
       );
       process.stdout.write(
-        "Token saved and verified in macOS login Keychain.\n",
+        (key === "api-key" ? "API key" : "Token") +
+          " saved and verified in macOS login Keychain.\n",
       );
       return;
     }
@@ -154,7 +213,46 @@ export async function runCli(args: string[]): Promise<void> {
         "Expected one configuration value. Tokens must use hidden input.",
       );
     const value = values[0]!;
-    if (key === "endpoint") {
+    if (key === "mode") {
+      if (value !== "local" && value !== "worker")
+        throw new CliError("Expected mode local or worker.");
+      settings.mode = value;
+    } else if (key === "api-key-env") {
+      if (value !== "REBUT_OPENAI_API_KEY" && value !== "OPENAI_API_KEY")
+        throw new CliError("Expected REBUT_OPENAI_API_KEY or OPENAI_API_KEY.");
+      settings.apiKeyEnv = value;
+    } else if (key === "max-concurrent") {
+      if (mode !== "local")
+        throw new CliError("Concurrency commands configure local mode only.");
+      if (
+        !/^[0-9]+$/.test(value) ||
+        !Number.isSafeInteger(Number(value)) ||
+        Number(value) < 1 ||
+        Number(value) > 10
+      )
+        throw new CliError(
+          "Local concurrency must be an integer from 1 to 10.",
+        );
+      settings.localLimits = {
+        ...(await localConfig(settings)).limits,
+        maxConcurrent: Number(value),
+      };
+    } else if (
+      ["daily-budget", "monthly-budget", "request-budget"].includes(key!)
+    ) {
+      if (mode !== "local")
+        throw new CliError(
+          "Budget commands configure local mode only; Worker limits are managed separately.",
+        );
+      const config = await localConfig(settings);
+      const field =
+        key === "daily-budget"
+          ? "dailyMicrousd"
+          : key === "monthly-budget"
+            ? "monthlyMicrousd"
+            : "requestMicrousd";
+      settings.localLimits = { ...config.limits, [field]: price(value) };
+    } else if (key === "endpoint") {
       try {
         validateEndpoint(value);
       } catch {
@@ -163,11 +261,14 @@ export async function runCli(args: string[]): Promise<void> {
         );
       }
       settings.endpoint = value;
+      delete settings.mode;
     } else if (key === "secret-store") {
       if (!["keychain", "vaultwarden", "env"].includes(value))
         throw new CliError("Unknown secret store.");
       settings.secretStore = value as typeof settings.secretStore;
-    } else if (key === "vaultwarden-item") settings.vaultwardenItem = value;
+    } else if (key === "vaultwarden-api-key-item")
+      settings.vaultwardenApiKeyItem = value;
+    else if (key === "vaultwarden-item") settings.vaultwardenItem = value;
     else if (key === "vaultwarden-admin-item")
       settings.vaultwardenAdminItem = value;
     else if (key === "model") {
@@ -188,7 +289,9 @@ export async function runCli(args: string[]): Promise<void> {
       delete settings.defaultReasoning;
     } else throw new CliError("Unknown configuration key.");
     await writeSettings(settings);
-    process.stdout.write("Configuration saved.\n");
+    process.stdout.write(
+      "Configuration saved. Re-run rebut setup --client codex --replace when changing mode or credential settings, then restart MCP hosts.\n",
+    );
     return;
   }
   if (command === "setup" || command === "remove") {
@@ -199,7 +302,7 @@ export async function runCli(args: string[]): Promise<void> {
     });
     if (parsed.values.client !== "codex")
       throw new CliError("Specify --client codex.");
-    if (command === "setup" && !settings.endpoint)
+    if (command === "setup" && mode === "worker" && !settings.endpoint)
       throw new CliError("Set the Worker endpoint first.");
     const entrypoint = realpathSync(
       process.argv[1] ||
@@ -209,7 +312,9 @@ export async function runCli(args: string[]): Promise<void> {
       codexHome: parsed.values["codex-home"] as string | undefined,
       entrypoint,
       replace: parsed.values.replace as boolean | undefined,
-      forwardTokenEnv: settings.secretStore === "env",
+      forwardTokenEnv: mode === "worker" && settings.secretStore === "env",
+      forwardApiKeyEnv: mode === "local" && settings.secretStore === "env",
+      apiKeyEnv: providerEnvName(settings),
       configDir: process.env.REBUT_CONFIG_DIR,
     };
     output(
@@ -257,14 +362,17 @@ export async function runCli(args: string[]): Promise<void> {
     return;
   }
   async function preferred() {
-    if (!settings.endpoint)
+    if (mode === "worker" && !settings.endpoint)
       throw new CliError(
         "Set the Worker endpoint before selecting server models.",
       );
-    const records = await listProfiles({
-      endpoint: settings.endpoint,
-      loadToken: () => loadToken(settings),
-    });
+    const records =
+      mode === "local"
+        ? await withLocal((runtime) => runtime.profiles.list())
+        : await listProfiles({
+            endpoint: settings.endpoint!,
+            loadToken: () => loadToken(settings),
+          });
     const model =
       settings.defaultModel ??
       records.find((r) => r.id === "astra-medium" && r.enabled)?.profile?.model;
@@ -283,6 +391,14 @@ export async function runCli(args: string[]): Promise<void> {
     };
   }
   if (command === "profile") {
+    if (mode === "local") {
+      output(
+        await withLocal((runtime) =>
+          profileCommand(rest, { registry: runtime.profiles }),
+        ),
+      );
+      return;
+    }
     if (!settings.endpoint)
       throw new CliError("Set the Worker endpoint first.");
     output(
@@ -298,11 +414,21 @@ export async function runCli(args: string[]): Promise<void> {
     const p = options(rest, { connect: { type: "boolean" } });
     let credentialAvailable = false;
     try {
-      await loadToken(settings);
+      await loadToken(settings, mode === "local" ? "provider" : "review");
       credentialAvailable = true;
     } catch {}
     const report: any = {
       configPath: settingsPath(),
+      mode,
+      ...(mode === "local" && settings.secretStore === "env"
+        ? { apiKeyEnv: providerEnvName(settings) }
+        : {}),
+      ...(mode === "local"
+        ? {
+            ledgerPath: join(resolve(localDirectory()), "ledger.sqlite"),
+            budgetScope: "this local data directory only",
+          }
+        : {}),
       endpointConfigured: !!settings.endpoint,
       secretStore: settings.secretStore,
       credentialAvailable,
@@ -311,12 +437,34 @@ export async function runCli(args: string[]): Promise<void> {
       defaultProfile: settings.defaultProfile,
     };
     if (p.values.connect) {
-      if (!settings.endpoint || !credentialAvailable)
+      if ((mode === "worker" && !settings.endpoint) || !credentialAvailable)
         throw new CliError(
           "Endpoint or credentials unavailable. Check your selected secret store.",
         );
+      if (mode === "local") {
+        report.localTools = await withLocal(async (runtime) => {
+          const server = await localMcpServer(runtime, settings);
+          const { Client } = await import("@modelcontextprotocol/client");
+          const { InMemoryTransport } =
+            await import("@modelcontextprotocol/server");
+          const [host, local] = InMemoryTransport.createLinkedPair();
+          const client = new Client({
+            name: "rebut-local-doctor",
+            version: "0.2.0",
+          });
+          try {
+            await Promise.all([client.connect(host), server.connect(local)]);
+            return (await client.listTools()).tools.map((t) => t.name);
+          } finally {
+            await client.close();
+            await server.close();
+          }
+        });
+        output(report);
+        return;
+      }
       const client = await connectRemote({
-        endpoint: settings.endpoint,
+        endpoint: settings.endpoint!,
         loadToken: () => loadToken(settings),
       });
       try {
@@ -330,13 +478,18 @@ export async function runCli(args: string[]): Promise<void> {
     output(report);
     return;
   }
-  if (!settings.endpoint) throw new CliError("Set the Worker endpoint first.");
+  if (mode === "worker" && !settings.endpoint)
+    throw new CliError("Set the Worker endpoint first.");
   const remote = {
-    endpoint: settings.endpoint,
+    endpoint: settings.endpoint!,
     loadToken: () => loadToken(settings),
   };
   if (command === "mcp") {
     if (rest.length) throw new CliError("Unexpected mcp arguments.");
+    if (mode === "local") {
+      await serveLocalStdio(settings);
+      return;
+    }
     let preferredProfile;
     let reviewUnavailable = false;
     if (
@@ -351,6 +504,15 @@ export async function runCli(args: string[]): Promise<void> {
       }
     }
     await serveStdio({ ...remote, preferredProfile, reviewUnavailable });
+    return;
+  }
+  if (command === "status" && rest.length === 1 && rest[0] === "--pending") {
+    if (mode !== "local")
+      throw new CliError("Pending request listing is local mode only.");
+    output({
+      backend: "local",
+      ...(await withLocal((runtime) => runtime.pending())),
+    });
     return;
   }
   if (command === "status" || command === "review") {
@@ -376,6 +538,24 @@ export async function runCli(args: string[]): Promise<void> {
         );
       }
     }
+    if (mode === "local") {
+      const value = await withLocal(
+        (runtime) =>
+          command === "status"
+            ? runtime.status(input.request_id as string)
+            : runtime.review(input),
+        command === "review",
+      );
+      output({
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ backend: "local", ...value }),
+          },
+        ],
+      });
+      return;
+    }
     const client = await connectRemote(remote);
     try {
       output(await client.callTool({ name: tool, arguments: input }));
@@ -393,17 +573,25 @@ export function safeError(error: unknown): string {
   if (profileError) return profileError;
   const code = error instanceof Error ? error.message : "";
   const known: Record<string, string> = {
+    LOCAL_STORAGE_UNSAFE:
+      "Local ledger path must be private, owned by you, and free of links.",
+    LOCAL_SCHEMA_UNSUPPORTED:
+      "Local ledger schema is newer than this CLI; preserve it and update the CLI.",
+    LOCAL_RUNTIME_CLOSED:
+      "Local review runtime has closed; query the original request ID.",
+    LOCAL_REVIEW_ABORTED:
+      "Local review cancelled before execution; query the original request ID.",
+    PROVIDER_KEY_UNAVAILABLE: "Configure an OpenAI API key for local mode.",
     SETTINGS_INVALID: "Invalid local settings file.",
     SETTINGS_UNSAFE: "Local settings path is unsafe.",
-    TOKEN_INVALID:
-      "Bearer token must contain 32–512 non-space ASCII characters.",
+    TOKEN_INVALID: "Credential must contain 32–512 non-space ASCII characters.",
     KEYCHAIN_UNSUPPORTED:
       "Keychain backend requires macOS. Select an explicit supported secret store.",
     KEYCHAIN_UNAVAILABLE:
       "Login Keychain unavailable. Authorize it locally or explicitly select the existing Vaultwarden backend.",
     KEYCHAIN_READBACK_FAILED: "Keychain readback verification failed.",
     TOKEN_STORAGE_REQUIRES_KEYCHAIN:
-      "This backend reads external credentials; set token stores only in macOS Keychain.",
+      "Hidden credential storage requires macOS Keychain; configure env or Vaultwarden credentials externally.",
     VAULTWARDEN_UNAVAILABLE:
       "Vaultwarden CLI session unavailable. Restore your existing bw-get session locally.",
   };

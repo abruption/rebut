@@ -15,21 +15,22 @@ export const ProfileSchema = z
     priceVersion: z.string().min(1).max(100),
   })
   .strict();
+export const LimitsSchema = z
+  .object({
+    dailyMicrousd: SafeInt,
+    monthlyMicrousd: SafeInt,
+    requestMicrousd: SafeInt,
+    maxConcurrent: SafeInt.max(10),
+    dailyRequests: SafeInt.max(10000),
+  })
+  .strict();
 const ConfigSchema = z
   .object({
     profiles: z.record(
       z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
       ProfileSchema,
     ),
-    limits: z
-      .object({
-        dailyMicrousd: SafeInt,
-        monthlyMicrousd: SafeInt,
-        requestMicrousd: SafeInt,
-        maxConcurrent: SafeInt.max(10),
-        dailyRequests: SafeInt.max(10000),
-      })
-      .strict(),
+    limits: LimitsSchema,
     hostname: z.string().min(1).max(253),
   })
   .strict();

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import {
   chmod,
@@ -75,7 +76,7 @@ function bounded(promise, label) {
   ]).finally(() => clearTimeout(timer));
 }
 
-let server, client, transport;
+let server, client, transport, cliProcess;
 try {
   await mkdir(config, { recursive: true, mode: 0o700 });
   await writeFile(env.NPM_CONFIG_USERCONFIG, "", { mode: 0o600 });
@@ -255,7 +256,266 @@ try {
   console.log(
     "Packed artifact: isolated install, bin, stdio handshake, filtered tools, authenticated status and SIGTERM passed; no provider calls.",
   );
+
+  await client.close();
+  await transport.close();
+  const localKey = "synthetic-local-api-key-not-a-real-key-123456789";
+  const localEnv = { ...env, REBUT_OPENAI_API_KEY: localKey };
+  const preload = join(directory, "synthetic-provider.mjs");
+  await writeFile(
+    preload,
+    `
+    globalThis.fetch=async(input,init)=>{
+      const url=input instanceof Request?input.url:String(input);
+      if(url!=='https://api.openai.com/v1/responses')throw Error('Unexpected external request');
+      if(new Headers(init.headers).get('authorization')!=='Bearer '+process.env.REBUT_OPENAI_API_KEY)throw Error('Wrong credential role');
+      const body=JSON.parse(init.body);
+      if(process.env.REBUT_SMOKE_STALL==='1'){
+        const {writeFile}=await import('node:fs/promises');
+        await writeFile(process.env.REBUT_SMOKE_MARKER,'1');
+        return new Promise(()=>{});
+      }
+      return new Response(JSON.stringify({id:'resp_packaged_local',model:body.model,status:'completed',usage:{input_tokens:100,output_tokens:20,total_tokens:120,input_tokens_details:{cached_tokens:0},output_tokens_details:{reasoning_tokens:5}},output:[{type:'message',role:'assistant',status:'completed',phase:'final_answer',content:[{type:'output_text',text:JSON.stringify({summary:'Synthetic local package review',findings:[],additional_evidence:[]})}]}]}),{headers:{'x-request-id':'req_packaged_local'}});
+    };
+  `,
+    { mode: 0o600 },
+  );
+  await writeFile(
+    join(config, "config.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      secretStore: "env",
+      vaultwardenItem: "unused synthetic",
+    }),
+    { mode: 0o600 },
+  );
+  transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["--import", preload, entry, "mcp"],
+    cwd: directory,
+    env: localEnv,
+    stderr: "pipe",
+  });
+  let localStderr = "";
+  transport.stderr.on("data", (data) => {
+    localStderr += data;
+  });
+  client = new Client({ name: "local-package-smoke", version: "1" });
+  await bounded(client.connect(transport), "Local MCP initialize");
+  assert.deepEqual(
+    (await client.listTools()).tools.map((t) => t.name),
+    ["review", "review_status"],
+  );
+  const bundle = {
+    schema_version: 1,
+    task_kind: "code",
+    requirements: "Synthetic only",
+    files: [
+      { path: "sample.ts", start_line: 1, content: "export const value = 1;" },
+    ],
+    diff: "",
+  };
+  const frozen = {
+    ...bundle,
+    request_id: "local-package-smoke",
+    profile: "luna-test",
+    input_sha256: createHash("sha256")
+      .update(JSON.stringify(bundle))
+      .digest("hex"),
+  };
+  const localResult = await bounded(
+    client.callTool({ name: "review", arguments: frozen }),
+    "Local synthetic review",
+  );
+  const localOutcome = JSON.parse(localResult.content[0].text);
+  assert.equal(localOutcome.status, "completed");
+  assert.equal(localOutcome.actual_model, "gpt-6-luna");
+  const localStatus = JSON.parse(
+    (
+      await client.callTool({
+        name: "review_status",
+        arguments: { request_id: frozen.request_id },
+      })
+    ).content[0].text,
+  );
+  assert.equal(localStatus.status, "completed");
+  assert(!localStatus.review);
+  const localClosed = new Promise((resolve) => {
+    client.onclose = resolve;
+  });
+  const localPid = transport.pid;
+  process.kill(localPid, "SIGTERM");
+  await bounded(localClosed, "Local MCP shutdown");
+  assert.throws(() => process.kill(localPid, 0), { code: "ESRCH" });
+  assert(!localStderr.includes(localKey) && !localStderr.includes(token));
+  // Restarted status lookup needs no OpenAI key and cannot make a provider call.
+  const restart = spawnSync(
+    process.execPath,
+    [entry, "status", frozen.request_id],
+    { cwd: directory, env, encoding: "utf8", timeout: 15000 },
+  );
+  assert.equal(restart.status, 0);
+  assert.equal(
+    JSON.parse(JSON.parse(restart.stdout).content[0].text).status,
+    "completed",
+  );
+  // Exercise SIGTERM during provider execution in a real installed child.
+  const markerFile = join(directory, "synthetic-provider-entered");
+  transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["--import", preload, entry, "mcp"],
+    cwd: directory,
+    env: {
+      ...localEnv,
+      REBUT_SMOKE_STALL: "1",
+      REBUT_SMOKE_MARKER: markerFile,
+    },
+    stderr: "pipe",
+  });
+  transport.stderr.on("data", () => {});
+  client = new Client({ name: "local-interrupted-smoke", version: "1" });
+  await bounded(client.connect(transport), "Interrupted local initialize");
+  const interrupted = { ...frozen, request_id: "local-package-interrupted" };
+  const interruptedCall = client
+    .callTool({ name: "review", arguments: interrupted })
+    .then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    );
+  await bounded(
+    (async () => {
+      for (;;) {
+        try {
+          await readFile(markerFile);
+          return;
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      }
+    })(),
+    "Synthetic provider start",
+  );
+  const interruptedClosed = new Promise((resolve) => {
+    client.onclose = resolve;
+  });
+  const interruptedPid = transport.pid;
+  process.kill(interruptedPid, "SIGTERM");
+  await bounded(interruptedClosed, "In-flight local shutdown");
+  await bounded(interruptedCall, "Interrupted caller completion");
+  assert.throws(() => process.kill(interruptedPid, 0), { code: "ESRCH" });
+  const interruptedStatus = spawnSync(
+    process.execPath,
+    [entry, "status", interrupted.request_id],
+    { cwd: directory, env, encoding: "utf8", timeout: 15000 },
+  );
+  assert.equal(interruptedStatus.status, 0);
+  const recorded = JSON.parse(
+    JSON.parse(interruptedStatus.stdout).content[0].text,
+  );
+  assert.equal(recorded.status, "unknown");
+  assert.equal(recorded.unknown_reason, "execution_aborted");
+  assert.equal(
+    recorded.budget_accounted_microusd,
+    recorded.budget_reserved_microusd,
+  );
+  assert.equal((await readFile(markerFile, "utf8")).trim(), "1");
+  const cliConfig = join(home, "cli-interrupted-settings");
+  await mkdir(cliConfig, { mode: 0o700 });
+  await writeFile(
+    join(cliConfig, "config.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      secretStore: "env",
+      vaultwardenItem: "unused",
+    }),
+    { mode: 0o600 },
+  );
+  const cliMarker = join(directory, "synthetic-cli-provider-entered");
+  const cliEnv = {
+    ...localEnv,
+    REBUT_CONFIG_DIR: cliConfig,
+    REBUT_SMOKE_STALL: "1",
+    REBUT_SMOKE_MARKER: cliMarker,
+  };
+  cliProcess = spawn(process.execPath, ["--import", preload, entry, "review"], {
+    cwd: directory,
+    env: cliEnv,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  let cliOutput = "",
+    cliErrors = "";
+  cliProcess.stdout.on("data", (data) => {
+    cliOutput += data;
+  });
+  cliProcess.stderr.on("data", (data) => {
+    cliErrors += data;
+  });
+  const cliExit = new Promise((resolve, reject) => {
+    cliProcess.once("close", resolve);
+    cliProcess.once("error", reject);
+  });
+  const cliBundle = { ...frozen, request_id: "local-cli-interrupted" };
+  cliProcess.stdin.end(JSON.stringify(cliBundle));
+  await bounded(
+    (async () => {
+      for (;;) {
+        try {
+          await readFile(cliMarker);
+          return;
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      }
+    })(),
+    "CLI provider start",
+  );
+  cliProcess.kill("SIGTERM");
+  assert.equal(await bounded(cliExit, "In-flight CLI shutdown"), 143);
+  assert(!cliOutput.includes(localKey) && !cliErrors.includes(localKey));
+  const cliStatus = spawnSync(
+    process.execPath,
+    [entry, "status", cliBundle.request_id],
+    {
+      cwd: directory,
+      env: { ...env, REBUT_CONFIG_DIR: cliConfig },
+      encoding: "utf8",
+      timeout: 15000,
+    },
+  );
+  assert.equal(cliStatus.status, 0);
+  const cliRecorded = JSON.parse(JSON.parse(cliStatus.stdout).content[0].text);
+  assert.equal(cliRecorded.status, "unknown");
+  assert.equal(cliRecorded.unknown_reason, "execution_aborted");
+  assert.equal(
+    cliRecorded.budget_accounted_microusd,
+    cliRecorded.budget_reserved_microusd,
+  );
+  assert.equal((await readFile(cliMarker, "utf8")).trim(), "1");
+  const doctor = spawnSync(process.execPath, [entry, "doctor", "--connect"], {
+    cwd: directory,
+    env: localEnv,
+    encoding: "utf8",
+    timeout: 15000,
+  });
+  assert.equal(doctor.status, 0);
+  const health = JSON.parse(doctor.stdout);
+  assert.equal(health.mode, "local");
+  assert.deepEqual(health.localTools, ["review", "review_status"]);
+  const ledger = await readFile(join(config, "local", "ledger.sqlite"));
+  assert(!ledger.includes(Buffer.from(localKey)));
+  assert(!ledger.includes(Buffer.from("Synthetic local package review")));
+  console.log(
+    "Packed local artifact: no endpoint, isolated SQLite, synthetic API-key role, review/status, restart, in-flight MCP/CLI SIGTERM settlement and doctor passed; real provider calls: zero.",
+  );
 } finally {
+  if (
+    cliProcess &&
+    cliProcess.exitCode === null &&
+    cliProcess.signalCode === null
+  )
+    cliProcess.kill("SIGKILL");
   await client?.close();
   await transport?.close();
   if (server) {

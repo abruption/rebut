@@ -4,6 +4,11 @@
 
 [Rebut](../../../README.en.md) · [User guide](../en.md)
 
+## Local-first validation
+
+Local-mode tests use synthetic providers and temporary private SQLite directories. They cover restart/idempotency, concurrent connections, unknown reservation/slot retention, keyless metadata lookup, distinct credential roles, cancellation settlement and unsafe storage paths. Package smoke installs the actual tarball and verifies both optional Worker bridging and endpoint-free local stdio execution, synthetic review/status, restart and doctor. These mocks do not prove API access or model quality.
+
+
 - TypeScript check and Worker dry-run bundle succeeded.
 - 23 automated tests cover synthetic provider success/refusal/incomplete/malformed evidence and usage, timeout, response-size and source limits, real SQLite budget/claim isolation, and local Worker + D1 + MCP calls. Local simultaneous identical reviews dispatch exactly one mocked provider request.
 - A deployed authenticated Worker was reached through the official MCP TypeScript SDK v2 client using the existing password-manager wrapper. No OpenAI key was sent to the client.

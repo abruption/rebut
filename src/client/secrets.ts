@@ -1,11 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, delimiter, join } from "node:path";
-import type { Settings } from "./settings.js";
+import { providerEnvName, type Settings } from "./settings.js";
 const KEYCHAIN = String.raw`ObjC.import('Foundation');ObjC.import('Security');
 ObjC.bindFunction('SecItemCopyMatching',['int',['id','id*']]);ObjC.bindFunction('SecKeychainOpen',['int',['char*','id*']]);ObjC.bindFunction('SecKeychainGetStatus',['int',['id','unsigned int*']]);
 const input=JSON.parse(ObjC.unwrap($.NSString.alloc.initWithDataEncoding($.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile,$.NSUTF8StringEncoding)));
-if(input.service!=='com.abruption.rebut'||!['codex-mcp-bearer','codex-mcp-admin'].includes(input.account))throw Error('Invalid identity');
+if(input.service!=='com.abruption.rebut'||!['codex-mcp-bearer','codex-mcp-admin','openai-api-key'].includes(input.account))throw Error('Invalid identity');
 const ref=Ref();let stage='open',status=$.SecKeychainOpen(ObjC.unwrap($.NSHomeDirectory())+'/Library/Keychains/login.keychain-db',ref),value=null;
 function attrs(){const q=$.NSMutableDictionary.alloc.init;q.setObjectForKey($('genp'),$('class'));q.setObjectForKey($(input.service),$('svce'));q.setObjectForKey($(input.account),$('acct'));return q;}
 if(status===0){stage='status';const flags=Ref();status=$.SecKeychainGetStatus(ref[0],flags);}
@@ -20,7 +20,7 @@ export function validateToken(token: string): string {
 function keychain(
   action: "load" | "store",
   value?: string,
-  role: "review" | "admin" = "review",
+  role: "review" | "admin" | "provider" = "review",
 ): string | undefined {
   if (process.platform !== "darwin") throw new Error("KEYCHAIN_UNSUPPORTED");
   const result = spawnSync(
@@ -30,7 +30,12 @@ function keychain(
       input: JSON.stringify({
         action,
         service: "com.abruption.rebut",
-        account: role === "admin" ? "codex-mcp-admin" : "codex-mcp-bearer",
+        account:
+          role === "provider"
+            ? "openai-api-key"
+            : role === "admin"
+              ? "codex-mcp-admin"
+              : "codex-mcp-bearer",
         ...(value ? { value } : {}),
       }),
       encoding: "utf8",
@@ -52,7 +57,7 @@ function keychain(
 export async function storeToken(
   token: string,
   settings: Settings,
-  role: "review" | "admin" = "review",
+  role: "review" | "admin" | "provider" = "review",
 ): Promise<void> {
   validateToken(token);
   if (settings.secretStore !== "keychain")
@@ -63,13 +68,15 @@ export async function storeToken(
 }
 export async function loadToken(
   settings: Settings,
-  role: "review" | "admin" = "review",
+  role: "review" | "admin" | "provider" = "review",
 ): Promise<string> {
   if (settings.secretStore === "env")
     return validateToken(
-      (role === "admin"
-        ? process.env.REBUT_ADMIN_TOKEN
-        : process.env.REBUT_TOKEN) || "",
+      (role === "provider"
+        ? process.env[providerEnvName(settings)]
+        : role === "admin"
+          ? process.env.REBUT_ADMIN_TOKEN
+          : process.env.REBUT_TOKEN) || "",
     );
   if (settings.secretStore === "keychain")
     return keychain("load", undefined, role)!;
@@ -77,9 +84,11 @@ export async function loadToken(
   const result = spawnSync(
     executable,
     [
-      role === "admin"
-        ? settings.vaultwardenAdminItem
-        : settings.vaultwardenItem,
+      role === "provider"
+        ? (settings.vaultwardenApiKeyItem ?? "Rebut — OpenAI API Key")
+        : role === "admin"
+          ? settings.vaultwardenAdminItem
+          : settings.vaultwardenItem,
     ],
     {
       input: "",
