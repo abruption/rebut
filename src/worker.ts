@@ -1,4 +1,9 @@
-import { handleReview, metadata, sha256 } from "./service.js";
+import {
+  handleReview,
+  metadata,
+  sha256,
+  ProviderKeyUnavailable,
+} from "./service.js";
 export { handleReview, sha256 } from "./service.js";
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
@@ -11,7 +16,8 @@ export interface Env {
   DB: D1Database;
   REBUT_CONFIG: string;
   AUTH_TOKENS: string;
-  OPENAI_API_KEY: string;
+  OPENAI_API_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
   ADMIN_TOKEN_SHA256?: string;
 }
 const PrincipalSchema = z.record(
@@ -45,12 +51,7 @@ export default {
     if (url.pathname !== "/mcp" && !profileRoute)
       return new Response("Not found", { status: 404 });
     try {
-      if (
-        !env.DB ||
-        !env.REBUT_CONFIG ||
-        !env.AUTH_TOKENS ||
-        !env.OPENAI_API_KEY
-      )
+      if (!env.DB || !env.REBUT_CONFIG || !env.AUTH_TOKENS)
         return new Response("Service not configured", { status: 503 });
       const config = parseConfig(env.REBUT_CONFIG);
       if (url.hostname !== config.hostname)
@@ -127,7 +128,7 @@ export default {
         return new Response("Invalid request", { status: 400 });
       const handler = createMcpHandler(
         () => {
-          const server = new McpServer({ name: "rebut", version: "0.2.0" });
+          const server = new McpServer({ name: "rebut", version: "0.3.0" });
           server.registerTool(
             "review",
             {
@@ -138,7 +139,16 @@ export default {
             async (input) => {
               try {
                 return toolResult(await handleReview(input, principal, env));
-              } catch {
+              } catch (error) {
+                if (error instanceof ProviderKeyUnavailable)
+                  return {
+                    isError: true,
+                    ...toolResult({
+                      status: "provider_key_unavailable",
+                      message:
+                        "Configure the selected profile provider key on the Worker; query the original request ID before any paid invocation.",
+                    }),
+                  };
                 return {
                   isError: true,
                   ...toolResult({

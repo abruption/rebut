@@ -26,7 +26,7 @@ SIGINT/SIGTERM 尝试记录 unknown 并关闭。SIGKILL、崩溃或断网可能�
 
 ## 升级与密钥轮换
 
-按 **CLI → Codex 注册 → 重启宿主 → Worker** 更新。保留自定义目录，注册前备份整个 `config.toml`。参见[安装命令](installation.md#codex-注册与更新)。
+0.3.0 按[安装指南](installation.md#codex-注册与更新)的分步顺序更新。保留自定义目录，注册前备份整个 `config.toml`。参见[安装命令](installation.md#codex-注册与更新)。
 
 使用 0.2.0 专有字段前备份 `config.json`。0.1.0 会拒绝这些字段，Worker 用户降级也可能需要恢复旧设置。使用本地账本后降到 0.1.0 不等于恢复账本，不能为兼容设置而删除账本。
 
@@ -51,3 +51,9 @@ Worker 测试使用构建产物。自动测试/包 smoke 模拟供应商，不�
 手动 `publish.yml` 从 main 运行，验证标签/源码/版本，并在 `npm` Environment 获得所有者批准。构建和 smoke 没有 OIDC 写权限，只有已验证 tarball 的发布任务有。PR 合并或 GitHub Release 事件不自动发布。
 
 发布/验证出错时先检查原运行及注册表版本、完整性，再决定是否重试。不要重新发布已公开的版本。[韩语发布清单](../../releases/release-checklist.ko.md#github-actions-trusted-publisher)说明设置、批准和七天 artifact 保留期。此工作流不部署 Worker 或更新已有客户端。
+
+## 升级到 0.3.0
+
+新设置或 Anthropic 配置档可能导致 0.2.x 拒绝设置/配置档列表。升级前备份设置与已关闭的账本。回滚需评估在 0.3.0 中停用 Anthropic 配置档并恢复兼容设置；不能删除请求历史或 unknown 预留。更新器不重新序列化无关 Claude 配置，但运行中的宿主可能覆盖变更，故应停止后注册。
+
+普通 `rebut doctor` 不解析配置档或创建 SQLite，显示 `profileResolution: not_checked`。只有显式 `--connect`、`--provider` 才可能查询/初始化本地配置档存储。

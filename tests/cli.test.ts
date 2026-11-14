@@ -7,6 +7,7 @@ import {
   writeFile,
   rm,
   stat,
+  readdir,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -287,4 +288,279 @@ it("does not add new-only settings when updating a legacy Worker configuration",
       "vaultwardenApiKeyItem",
     ])
       expect(current).not.toHaveProperty(field);
+  }));
+
+it("configures the Claude provider and host independently without embedding keys", async () =>
+  fixture(async (dir) => {
+    expect(cli(dir, ["set", "provider", "anthropic"]).status).toBe(0);
+    expect(cli(dir, ["set", "secret-store", "env"]).status).toBe(0);
+    let settings = JSON.parse(
+      await readFile(join(dir, "settings/config.json"), "utf8"),
+    );
+    expect(settings).toMatchObject({
+      provider: "anthropic",
+      defaultProfile: "claude-medium",
+    });
+    expect(cli(dir, ["set", "api-key-env", "ANTHROPIC_API_KEY"]).status).toBe(
+      1,
+    );
+    expect(
+      cli(dir, ["set", "vaultwarden-api-key-item", "Synthetic Claude item"])
+        .status,
+    ).toBe(0);
+    settings = JSON.parse(
+      await readFile(join(dir, "settings/config.json"), "utf8"),
+    );
+    expect(settings.vaultwardenAnthropicApiKeyItem).toBe(
+      "Synthetic Claude item",
+    );
+    expect(settings.vaultwardenApiKeyItem).toBeUndefined();
+    const config = join(dir, "claude-user.json");
+    const setup = cli(dir, [
+      "setup",
+      "--client",
+      "claude",
+      "--claude-config",
+      config,
+    ]);
+    expect(setup.status, setup.stderr).toBe(0);
+    const entry = JSON.parse(await readFile(config, "utf8")).mcpServers.rebut;
+    expect(entry.timeout).toBe(1_860_000);
+    expect(entry.env).toMatchObject({
+      REBUT_ANTHROPIC_API_KEY: "${REBUT_ANTHROPIC_API_KEY:-}",
+      REBUT_CONFIG_DIR: join(dir, "settings"),
+    });
+    expect(JSON.stringify(entry)).not.toContain(fixtureToken);
+    expect(entry.env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(entry.env.REBUT_ADMIN_TOKEN).toBeUndefined();
+    expect(
+      cli(dir, ["remove", "--client", "claude", "--claude-config", config])
+        .status,
+    ).toBe(0);
+    expect(
+      JSON.parse(await readFile(config, "utf8")).mcpServers.rebut,
+    ).toBeUndefined();
+    expect(cli(dir, ["set", "model", "claude-opus-5-5"]).status).toBe(0);
+    expect(cli(dir, ["set", "provider", "anthropic"]).status).toBe(0);
+    settings = JSON.parse(
+      await readFile(join(dir, "settings/config.json"), "utf8"),
+    );
+    expect(settings.defaultModel).toBe("claude-opus-5-5");
+  }));
+it("collects a frozen Claude profile without loading a provider key", async () =>
+  fixture(async (dir) => {
+    expect(cli(dir, ["set", "provider", "anthropic"]).status).toBe(0);
+    await writeFile(join(dir, "fixture.ts"), "export const n = 1;");
+    const result = cli(dir, [
+      "collect",
+      "--root",
+      dir,
+      "--request-id",
+      "claude-collection",
+      "--requirements",
+      "Check code",
+      "--",
+      "fixture.ts",
+    ]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).profile).toBe("claude-medium");
+    expect(cli(dir, ["set", "mode", "worker"]).status).toBe(0);
+    const diagnostic = cli(dir, ["doctor", "--provider"]);
+    expect(diagnostic.status).toBe(1);
+    expect(diagnostic.stderr).toContain("local mode only");
+  }));
+
+it("preserves existing profile providers regardless of the selected key provider", async () =>
+  fixture(async (dir) => {
+    expect(cli(dir, ["set", "provider", "anthropic"]).status).toBe(0);
+    const flags = [
+      "--reasoning",
+      "medium",
+      "--max-output-tokens",
+      "8192",
+      "--input-usd-per-million",
+      "4",
+      "--output-usd-per-million",
+      "20",
+      "--price-version",
+      "fixture",
+    ];
+    let r = cli(dir, [
+      "profile",
+      "set",
+      "astra-medium",
+      "--model",
+      "gpt-6-astra",
+      ...flags,
+      "--if-revision",
+      "0",
+    ]);
+    expect(r.status, r.stderr).toBe(0);
+    expect(JSON.parse(r.stdout).record.profile.provider).toBeUndefined();
+    r = cli(dir, [
+      "profile",
+      "set",
+      "claude-medium",
+      "--model",
+      "claude-opus-5-5",
+      ...flags,
+      "--if-revision",
+      "0",
+    ]);
+    expect(r.status, r.stderr).toBe(0);
+    expect(JSON.parse(r.stdout).record.profile.provider).toBe("anthropic");
+    r = cli(dir, [
+      "profile",
+      "set",
+      "fresh-legacy-default",
+      "--model",
+      "gpt-6-astra",
+      ...flags,
+    ]);
+    expect(r.status, r.stderr).toBe(0);
+    expect(JSON.parse(r.stdout).record.profile.provider).toBeUndefined();
+  }));
+it("applies reasoning overrides after selecting a provider and forwards the effective profile key", async () =>
+  fixture(async (dir) => {
+    expect(cli(dir, ["set", "provider", "anthropic"]).status).toBe(0);
+    expect(cli(dir, ["set", "secret-store", "env"]).status).toBe(0);
+    const profile = cli(dir, [
+      "profile",
+      "set",
+      "claude-high",
+      "--provider",
+      "anthropic",
+      "--model",
+      "claude-opus-5-5",
+      "--reasoning",
+      "high",
+      "--max-output-tokens",
+      "8192",
+      "--input-usd-per-million",
+      "4",
+      "--output-usd-per-million",
+      "20",
+      "--price-version",
+      "fixture",
+    ]);
+    expect(profile.status, profile.stderr).toBe(0);
+    expect(cli(dir, ["set", "reasoning", "high"]).status).toBe(0);
+    await writeFile(join(dir, "sample.ts"), "return 1;");
+    const result = cli(dir, [
+      "collect",
+      "--root",
+      dir,
+      "--request-id",
+      "override",
+      "--requirements",
+      "Check",
+      "--",
+      "sample.ts",
+    ]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).profile).toBe("claude-high");
+    const codexHome = join(dir, "codex");
+    expect(
+      cli(dir, ["setup", "--client", "codex", "--codex-home", codexHome])
+        .status,
+    ).toBe(0);
+    expect(
+      (parse(await readFile(join(codexHome, "config.toml"), "utf8")) as any)
+        .mcp_servers.rebut.env_vars,
+    ).toEqual(["REBUT_ANTHROPIC_API_KEY"]);
+    expect(cli(dir, ["set", "profile", "astra-medium"]).status).toBe(0);
+    const health = cli(dir, ["doctor", "--connect"], undefined, {
+      REBUT_OPENAI_API_KEY: "synthetic-openai-actual-key-not-real-123456789",
+      REBUT_ANTHROPIC_API_KEY: "",
+    });
+    expect(health.status, health.stderr).toBe(0);
+    expect(JSON.parse(health.stdout)).toMatchObject({
+      provider: "openai",
+      keyConfigurationProvider: "anthropic",
+      credentialAvailable: true,
+      apiKeyEnv: "REBUT_OPENAI_API_KEY",
+    });
+    const config = join(dir, "effective-claude.json");
+    expect(
+      cli(dir, ["setup", "--client", "claude", "--claude-config", config])
+        .status,
+    ).toBe(0);
+    expect(
+      JSON.parse(await readFile(config, "utf8")).mcpServers.rebut.env
+        .REBUT_OPENAI_API_KEY,
+    ).toBe("${REBUT_OPENAI_API_KEY:-}");
+  }));
+
+it("plain doctor does not initialize SQLite and collection binds an explicit profile supplier", async () =>
+  fixture(async (dir) => {
+    expect(cli(dir, ["set", "secret-store", "env"]).status).toBe(0);
+    const env = {
+      REBUT_OPENAI_API_KEY: "synthetic-doctor-key-not-real-123456789",
+    };
+    const beforeNames = await readdir(join(dir, "settings"));
+    const beforeSettings = await readFile(
+      join(dir, "settings/config.json"),
+      "utf8",
+    );
+    const beforeMtime = (await stat(join(dir, "settings/config.json"))).mtimeMs;
+    const report = cli(dir, ["doctor"], undefined, env);
+    expect(report.status, report.stderr).toBe(0);
+    expect(JSON.parse(report.stdout).profileResolution).toBe("not_checked");
+    expect(await readdir(join(dir, "settings"))).toEqual(beforeNames);
+    expect(await readFile(join(dir, "settings/config.json"), "utf8")).toBe(
+      beforeSettings,
+    );
+    expect((await stat(join(dir, "settings/config.json"))).mtimeMs).toBe(
+      beforeMtime,
+    );
+    await expect(
+      stat(join(dir, "settings/local/ledger.sqlite")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    const connected = cli(dir, ["doctor", "--connect"], undefined, env);
+    expect(connected.status, connected.stderr).toBe(0);
+    expect(
+      (await stat(join(dir, "settings/local/ledger.sqlite"))).isFile(),
+    ).toBe(true);
+    await writeFile(join(dir, "pin.ts"), "return 1;");
+    const collected = cli(dir, [
+      "collect",
+      "--root",
+      dir,
+      "--request-id",
+      "pin-cli",
+      "--requirements",
+      "Check",
+      "--profile",
+      "claude-medium",
+      "--",
+      "pin.ts",
+    ]);
+    expect(collected.status, collected.stderr).toBe(0);
+    expect(JSON.parse(collected.stdout)).toMatchObject({
+      schema_version: 2,
+      provider: "anthropic",
+      profile: "claude-medium",
+    });
+    expect(cli(dir, ["set", "provider", "anthropic"]).status).toBe(0);
+    expect(cli(dir, ["set", "model", "missing-default-model"]).status).toBe(0);
+    expect(cli(dir, ["set", "reasoning", "high"]).status).toBe(0);
+    const explicit = cli(dir, [
+      "collect",
+      "--root",
+      dir,
+      "--request-id",
+      "explicit-pin",
+      "--requirements",
+      "Check",
+      "--profile",
+      "astra-medium",
+      "--",
+      "pin.ts",
+    ]);
+    expect(explicit.status, explicit.stderr).toBe(0);
+    expect(JSON.parse(explicit.stdout)).toMatchObject({
+      schema_version: 2,
+      provider: "openai",
+      profile: "astra-medium",
+    });
   }));

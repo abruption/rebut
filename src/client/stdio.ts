@@ -11,12 +11,12 @@ import {
 } from "./connection.js";
 
 const REVIEW_GUIDANCE =
-  "Use only when the user explicitly opts in to an OpenAI review; do not replace a Claude/Gemini policy or add a third reviewer automatically. Production: astra-medium (gpt-6-astra / medium). Real API tests: luna-test (gpt-6-luna). Retain the original request_id after any uncertain execution and query review_status before another paid invocation.";
+  "Use only when the user explicitly opts in to a review using the frozen profile provider. Keep the original request_id and backend after uncertainty and query review_status before another paid invocation. Do not automatically change reviewers, providers, or keys. Project default real API tests: luna-test (gpt-6-luna).";
 
 /** Runs until stdin closes or the process receives SIGINT/SIGTERM. */
 export async function serveStdio(options: RemoteOptions): Promise<void> {
   const remote = await connectRemote(options);
-  const server = new McpServer({ name: "rebut-mcp", version: "0.2.0" });
+  const server = new McpServer({ name: "rebut-mcp", version: "0.3.0" });
   let finish!: () => void;
   const finished = new Promise<void>((resolve) => {
     finish = resolve;

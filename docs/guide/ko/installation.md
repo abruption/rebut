@@ -43,7 +43,7 @@ rebut doctor --connect
 
 등록은 `CODEX_HOME` 또는 `~/.codex`를 사용합니다. 별도 경로는 `--codex-home PATH`를 지정하세요. `setup --replace` 전 `config.toml`을 백업하고, 사용자 지정 `REBUT_CONFIG_DIR`은 setup을 실행하는 셸에도 같은 값으로 제공하세요. 등록 갱신 뒤 호스트를 재시작해야 합니다. 실행 중인 프로세스는 설정을 다시 읽지 않습니다.
 
-Worker 사용자의 업데이트 순서는 **CLI → 등록 → 호스트 재시작 → Worker**입니다. 공급자/HTTP 클라이언트/Codex 도구 제한은 각각 1,800/1,830/1,860초이며 네트워크·호스트의 연결 유지를 보장하지 않습니다. 다른 호스트도 긴 검토를 지원하는 제한을 설정해야 합니다.
+0.2.x → 0.3.0 Worker 업데이트는 **기존 OpenAI 설정을 유지해 Worker 코드 먼저 → CLI·등록·호스트 재시작 → Claude 키·프로필 추가** 순서입니다. 0.1.x 사용자는 먼저 CLI를 0.2.x로 올려 긴 대기 제한을 적용하세요. 공급자/HTTP 클라이언트/Codex 도구 제한은 각각 1,800/1,830/1,860초이며 네트워크·호스트의 연결 유지를 보장하지 않습니다. 다른 호스트도 긴 검토를 지원하는 제한을 설정해야 합니다.
 
 등록 제거는 `rebut remove --client codex`입니다. 설정·키·장부는 삭제하지 않습니다. 백업·다운그레이드는 [운영](operations.md)을 따르세요.
 
@@ -89,3 +89,23 @@ rebut doctor --connect
 ```
 
 endpoint 설정은 Worker 모드를 선택합니다. 로컬 OpenAI 키 대신 Worker 접속 토큰을 사용합니다. 환경변수·Vaultwarden 항목과 관리자 토큰은 [설정](configuration.md)을 참고하세요. Worker 배포는 npm 업데이트와 별도입니다.
+
+## Claude API와 Claude Code — 0.3.0
+
+0.3.0 이상에서 검토 공급자와 MCP 호스트를 별도로 선택합니다. 다음은 로컬·macOS Keychain 예시입니다.
+
+```sh
+rebut set mode local
+rebut set provider anthropic
+rebut set api-key
+rebut setup --client claude
+rebut doctor --connect
+```
+
+명령으로 공급자를 바꿀 때 기본 프로필을 선택하고 모델/추론 오버라이드를 지웁니다. 같은 공급자를 다시 선택하면 유지합니다. 기존 OpenAI 키·프로필·장부는 삭제하지 않습니다.
+
+Claude Code를 종료한 뒤 설정 파일을 백업하고 등록하세요. 사용자 범위의 `~/.claude.json`에서 Rebut 항목만 갱신합니다. 다른 파일은 `--claude-config PATH`로 명시하며 `CLAUDE_CONFIG_DIR`이 있으면 이 옵션이 필요합니다. 기존 다른 Rebut 등록은 `--replace`로만 교체합니다. 프로젝트/관리 설정이 같은 이름을 가리면 별도로 확인하세요. 등록 파일은 0600으로 원자적 교체하며 ACL/xattr는 보존하지 않습니다. 등록 후 Claude Code를 재시작해 `/mcp`에서 확인합니다.
+
+환경변수는 `rebut set secret-store env`와 실제 호스트의 `REBUT_ANTHROPIC_API_KEY`를 사용합니다. Claude Code 자체 인증을 바꾸지 않도록 공유 `ANTHROPIC_API_KEY` 선택은 지원하지 않습니다. Keychain·Vaultwarden은 별도 env 키를 등록하지 않습니다. env setup도 프로필 조회 시 로컬 SQLite를 초기화할 수 있습니다. env 등록은 현재 기본 프로필의 공급자 변수를 전달합니다. 다른 공급자의 고정 번들에 필요한 env 키가 없으면 예약 전에 실패합니다. `doctor`의 `provider`는 기본 프로필, `keyConfigurationProvider`는 `set api-key`의 대상을 표시합니다. 공급자·백엔드·env 변경 뒤에는 사용하는 각 호스트에 `setup --replace`를 다시 실행하고 재시작하세요.
+
+선택 사항인 `rebut doctor --provider`는 로컬 키로 모델 메타데이터만 조회하며 생성·검토 예약·사용량 기록을 추가하지 않습니다. 프로필 조회 과정에서 로컬 SQLite를 초기화할 수 있습니다. `doctor --connect`는 계속 MCP 연결 확인용입니다. 메타데이터 조회 성공은 생성 권한·잔액·geo·구조화 출력·품질을 보장하지 않습니다.

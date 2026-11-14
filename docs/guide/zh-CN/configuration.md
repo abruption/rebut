@@ -72,9 +72,25 @@ rebut profile remove PROFILE_ID --if-revision N
 | diff / 要求       | 100,000 / 16,000 字符 |
 | 传输封套          | 160,000 字节          |
 
-SHA-256 覆盖屏蔽后的 `{schema_version,task_kind,requirements,files,diff}`，文件键顺序为 `{path,start_line,content}`。ID 和配置档不属于证据哈希。参见[完整 schema](../../../src/contracts.ts)。
+SHA-256 覆盖屏蔽后的 `{schema_version,provider,task_kind,requirements,files,diff}`，文件键顺序为 `{path,start_line,content}`。ID 和配置档不属于证据哈希。参见[完整 schema](../../../src/contracts.ts)。
 
 - `review` 审查冻结材料。只有 `completed` 表示成功；返回文件/diff 行证据、模型、输入哈希、用量和估算费用。空 findings 不保证正确。
 - `review_status` 查询原 principal 的元数据。相同 ID 不触发新供应商调用，更改哈希/配置档会冲突；不重放正文。
 
 账本仅保留请求/用量元数据，不存代码、审查正文或密钥。材料发送至 OpenAI，`store:false` 不保证供应商零保留。提示词要求模型将材料内的指令视为审查数据。模型没有仓库/URL 获取、shell、测试、编辑或 PR 工具。
+
+## Claude 供应商 — 0.3.0
+
+先执行 `rebut set provider anthropic`，再用原有 `rebut set api-key` 设置一个密钥。Keychain 服务/账户为 `com.abruption.rebut` / `anthropic-api-key`。Vaultwarden 的 `rebut set vaultwarden-api-key-item NAME` 设置所选供应商项目，默认 `Rebut — Anthropic API Key`。不添加账户别名、密钥轮换或供应商回退。
+
+`claude-medium` 使用 Claude Opus 5.5 / medium。创建 Anthropic 配置档需显式加 `--provider anthropic`。省略时保留已有活动配置档供应商，新/停用配置档默认 OpenAI，不继承密钥选择偏好。旧配置档没有 provider 时仍为 OpenAI。冻结材料的配置档决定实际供应商与密钥，偏好改变后保留原材料/ID。
+
+每个本地/Worker 账本在同一预算和并发限制下合计两个供应商。新请求在预留、完成和错误路径保留 `requested_provider`，旧行不改写。未报告 thinking 时省略 `reasoning_tokens`。缓存读取按完整基础输入费率保守估算，未请求的缓存写入或非标准用量保留 unknown。
+
+Claude 使用 standard tier/global geo 的 Messages API，无工具或提示缓存。workspace 地区政策可能拒绝请求，不改用其他密钥重试。先保留 OpenAI 配置部署 Worker 代码，再更新客户端，最后添加 `ANTHROPIC_API_KEY` 秘密和 Anthropic 配置档。管理员令牌不传给宿主。
+
+API 费用及信用额资格见 [Claude Console 计费说明](https://support.claude.com/en/articles/8977456-how-do-i-pay-for-my-claude-api-usage)，不要混淆 Rebut API 调用与 Claude Code 订阅用量。
+
+新 schema 2 材料固定供应商并将其纳入哈希。收集时读取所选后端的配置档元数据，因此 Worker 需要接入令牌。首次提交若配置档供应商已改变，会在读取密钥/预留前返回 `provider_mismatch`。旧 schema 1 的新请求仅允许 OpenAI，已提交 ID 仍用原材料查询元数据。确认供应商变化后再收集新材料。
+
+本地收集可能初始化配置档存储。schema 1 哈希省略 provider，保持原顺序。

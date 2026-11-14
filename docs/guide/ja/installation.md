@@ -43,7 +43,7 @@ rebut doctor --connect
 
 登録先は `CODEX_HOME` または `~/.codex`、別の場所は `--codex-home PATH` で指定します。`setup --replace` 前に `config.toml` 全体をバックアップし、カスタム `REBUT_CONFIG_DIR` は setup を実行するシェルにも同じ値を渡してください。登録後はホストを再起動します。起動中プロセスは設定を再読み込みしません。
 
-Worker の更新順は **CLI → 登録 → ホスト再起動 → Worker** です。プロバイダー/HTTP クライアント/Codex ツールの期限は 1,800/1,830/1,860 秒で、接続の維持を保証しません。他のホストも長いレビューに対応する期限が必要です。
+0.2.x → 0.3.0 は **OpenAI 設定を維持して Worker コード → CLI/登録/ホスト再起動 → Claude キーとプロファイル有効化** の順です。0.1.x は先に CLI を 0.2.x に更新して長い期限に対応してください。プロバイダー/HTTP クライアント/Codex ツールの期限は 1,800/1,830/1,860 秒で、接続の維持を保証しません。他のホストも長いレビューに対応する期限が必要です。
 
 `rebut remove --client codex` は登録だけを外し、設定・キー・台帳は削除しません。バックアップとダウングレードは[運用](operations.md)を参照してください。
 
@@ -89,3 +89,23 @@ rebut doctor --connect
 ```
 
 endpoint 設定は Worker モードを選び、ローカル OpenAI キーではなく接続トークンを使います。env/Vaultwarden 項目と管理者認証は[設定](configuration.md)を参照してください。Worker デプロイと npm 更新は別の操作です。
+
+## Claude API と Claude Code — 0.3.0
+
+0.3.0 以降はレビューのプロバイダーと MCP ホストを別々に選択します。ローカル macOS Keychain の例：
+
+```sh
+rebut set mode local
+rebut set provider anthropic
+rebut set api-key
+rebut setup --client claude
+rebut doctor --connect
+```
+
+プロバイダーを切り替えると既定プロファイルを選び、モデル/推論オーバーライドを解除します。同じ選択の繰り返しでは維持します。既存の OpenAI キー・プロファイル・台帳は削除しません。
+
+登録前に Claude Code を止め、設定をバックアップします。`~/.claude.json` の Rebut ユーザー項目だけを更新します。別ファイルは `--claude-config PATH`、`CLAUDE_CONFIG_DIR` 使用時は必須です。異なる Rebut 登録は `--replace` が必要です。プロジェクト/管理設定の同名上書きは別途確認し、登録ファイルは 0600 で原子的に置換し、ACL/xattr は維持しません。再起動後 `/mcp` を確認してください。
+
+env は `rebut set secret-store env` と実際のホスト環境の `REBUT_ANTHROPIC_API_KEY` を使います。Claude Code 認証を変えないため共有 `ANTHROPIC_API_KEY` の選択は非対応です。Keychain/Vaultwarden 登録はキー用 env プレースホルダーを追加しません。env setup もプロファイル取得時にローカル SQLite を初期化する場合があります。 env 登録は現在の既定プロファイルの変数を渡します。他プロバイダーの固定バンドルでキーがなければ予約前に失敗します。doctor の `provider` は既定プロファイル、`keyConfigurationProvider` は `set api-key` の対象です。変更後は各ホストで `setup --replace` と再起動を行います。
+
+任意のローカル専用 `rebut doctor --provider` はモデルメタデータだけを取得し、生成・レビュー予約・使用量記録は追加しません。プロファイル取得時にローカル SQLite を初期化する場合があります。`doctor --connect` は引き続き MCP 確認です。メタデータ到達は生成権限・残高・geo・構造化出力・品質の証明ではありません。

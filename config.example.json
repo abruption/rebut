@@ -15,6 +15,15 @@
       "inputMicrousdPerMillion": 100000,
       "outputMicrousdPerMillion": 500000,
       "priceVersion": "openai-standard-2026-11-12"
+    },
+    "claude-medium": {
+      "provider": "anthropic",
+      "model": "claude-opus-5-5",
+      "reasoning": "medium",
+      "maxOutputTokens": 8192,
+      "inputMicrousdPerMillion": 4000000,
+      "outputMicrousdPerMillion": 20000000,
+      "priceVersion": "anthropic-standard-2026-11-14"
     }
   },
   "limits": {

@@ -12,7 +12,9 @@
 
 </div>
 
-An MCP for reviewing supplied code and diffs through the OpenAI API. Review material is sent to OpenAI.
+An MCP for reviewing supplied code and diffs through OpenAI or Claude APIs. Review material is sent to the selected provider.
+
+On 0.3.0+, select Claude with `rebut set provider anthropic`, then `rebut set api-key` and `rebut setup --client claude`. Host and provider are independent.
 
 ## Quick start
 

@@ -12,7 +12,9 @@
 
 </div>
 
-通过 OpenAI API 审查所提供代码和 diff 的 MCP。审查材料会发送至 OpenAI。
+通过 OpenAI 或 Claude API 审查所提供代码和 diff 的 MCP。材料发送至所选供应商。
+
+0.3.0+ 的 Claude 支持按 `rebut set provider anthropic` → `rebut set api-key` → `rebut setup --client claude` 设置；宿主与供应商分别选择。
 
 ## 快速开始
 
