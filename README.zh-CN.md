@@ -2,6 +2,10 @@
 
 # Rebut
 
+[![npm version](https://img.shields.io/npm/v/rebut-mcp)](https://www.npmjs.com/package/rebut-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/rebut-mcp)](https://www.npmjs.com/package/rebut-mcp)
+[![MIT license](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/abruption/rebut/blob/main/LICENSE)
+
 **默认本地运行的独立代码审查 MCP，可选 Cloudflare Worker。**
 
 [한국어](README.md) · [English](README.en.md) · **简体中文** · [日本語](README.ja.md)

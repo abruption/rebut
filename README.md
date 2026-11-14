@@ -2,6 +2,10 @@
 
 # Rebut
 
+[![npm version](https://img.shields.io/npm/v/rebut-mcp)](https://www.npmjs.com/package/rebut-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/rebut-mcp)](https://www.npmjs.com/package/rebut-mcp)
+[![MIT license](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/abruption/rebut/blob/main/LICENSE)
+
 **로컬에서 바로 실행하는 독립 코드 검토 MCP. Cloudflare Worker는 선택 사항입니다.**
 
 **한국어** · [English](README.en.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)

@@ -2,6 +2,10 @@
 
 # Rebut
 
+[![npm version](https://img.shields.io/npm/v/rebut-mcp)](https://www.npmjs.com/package/rebut-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/rebut-mcp)](https://www.npmjs.com/package/rebut-mcp)
+[![MIT license](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/abruption/rebut/blob/main/LICENSE)
+
 **Local-first independent code review MCP. Cloudflare Worker is optional.**
 
 [한국어](README.md) · **English** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
