@@ -10,7 +10,6 @@
 
 ## Worker
 
-
 使用 Cloudflare 支持的导出/Time Travel 机制备份仅存元数据的 D1 账本。不要为了清除棘手的待处理请求而删除账本：这样会丢失支出记录和重复调用防护。只要客户端可能重用某个 ID，就应保留其请求行；清理这些行会使旧 ID 可以再次执行。
 
 使用原主体通过 `rebut status REQUEST_ID` 免费查询元数据。`rebut doctor` 检查已清理敏感值的本地配置及凭据可用性；`rebut doctor --connect` 免费检查远程 `tools/list`。这些命令均不会启动付费审查。结果不确定后保留请求 ID 及预算预留。
@@ -49,3 +48,7 @@
 容量上限为 10；若全部不确定，应停止并等待有证据的人工结算，不删除历史或假定未计费。独立核实结算后，将临时容量降回正常值（默认 1）并重启。
 
 容量应按待处理数加明确允许的新并行数选择（最大 10），不要把示例 2 直接覆盖已有自定义值。容量／预算命令保留完整本地限额快照。若原 ID 丢失，在第 1 步前先执行 status --pending。
+
+## 维护者发布 npm 包
+
+手动 `publish.yml` 工作流通过 OIDC Trusted Publishing 发布，无需保存 npm 令牌。仅允许从 main 运行，稳定版本标签必须指向工作流的同一源码提交，并在 GitHub Environment `npm` 中由所有者 `abruption` 批准。构建和测试没有 OIDC 写入权限，只有发布已验证 tarball 的任务拥有该权限。PR 合并或 GitHub Release 事件不会自动发布。发布后若注册表处理或校验失败，应先检查原始运行与制品，再决定是否重试。这不部署 Worker，也不更新已有客户端。[维护者发布清单（韩语）](../../releases/release-checklist.ko.md#github-actions-trusted-publisher)包含设置和操作步骤；首次使用前须合并工作流并配置 npm trust。

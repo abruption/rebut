@@ -81,9 +81,16 @@ try {
   await mkdir(config, { recursive: true, mode: 0o700 });
   await writeFile(env.NPM_CONFIG_USERCONFIG, "", { mode: 0o600 });
   await writeFile(env.NPM_CONFIG_GLOBALCONFIG, "", { mode: 0o600 });
+  const suppliedDirectory = process.env.REBUT_SMOKE_ARTIFACT_DIR
+    ? resolve(root, process.env.REBUT_SMOKE_ARTIFACT_DIR)
+    : undefined;
   const [pack] = JSON.parse(
-    run([npm, "pack", "--json", "--pack-destination", directory]),
+    suppliedDirectory
+      ? await readFile(join(suppliedDirectory, "pack.json"), "utf8")
+      : run([npm, "pack", "--json", "--pack-destination", directory]),
   );
+  assert(/^rebut-mcp-[0-9]+\.[0-9]+\.[0-9]+\.tgz$/.test(pack.filename));
+  const tarball = join(suppliedDirectory ?? directory, pack.filename);
   const files = pack.files.map((file) => file.path);
   for (const file of [
     "bin/rebut.mjs",
@@ -112,7 +119,7 @@ try {
       "--omit=dev",
       "--no-audit",
       "--no-fund",
-      join(directory, pack.filename),
+      tarball,
     ],
     directory,
   );
