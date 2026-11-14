@@ -501,7 +501,8 @@ it("persists safe unknown diagnostics without releasing budget or invoking the p
 
 it("routes a Claude profile through its own Worker secret with persistent deduplication", async () => {
   const input = {
-    schema_version: 1 as const,
+    schema_version: 2 as const,
+    provider: "anthropic" as const,
     task_kind: "code" as const,
     requirements: "Synthetic Claude",
     files: [{ path: "fixture.ts", start_line: 1, content: "return 1;" }],
@@ -586,7 +587,11 @@ it("keeps Worker metadata available without a provider key and never reserves a 
         .filter(Boolean))
         await db.prepare(statement).run();
       const raw = {
-        schema_version: 1 as const,
+        schema_version: 2 as const,
+        provider:
+          missing === "astra-medium"
+            ? ("openai" as const)
+            : ("anthropic" as const),
         request_id: "missing-provider-key",
         profile: missing,
         input_sha256: "",

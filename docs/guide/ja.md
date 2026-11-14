@@ -1,20 +1,9 @@
-# Rebut ユーザーガイド
+# Rebut ガイド
 
 [한국어](ko.md) · [English](en.md) · [简体中文](zh-CN.md) · **日本語**
 
-[Rebut](../../README.ja.md)
+[README](../../README.ja.md)
 
-Rebutは自分のOpenAIまたはClaude APIキーを使う、ローカル標準・明示選択型コードレビューMCPです。新規はローカルstdio、中央台帳用のCloudflare Workerは任意です。指定した固定資料のみを扱い、モデルにリポジトリ・URL取得・シェル・テスト・編集・PRツールは与えません。
-
-rebut-mcpをインストールしローカルキーを設定後、rebut setup --client codexを実行します。既存endpoint設定はWorkerを維持します。Keychain・Vaultwarden・env・任意Workerは[インストール](ja/installation.md)を参照してください。
-
-| ガイド                                         | 内容                                                                                     |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| [インストール](ja/installation.md)             | 要件、ソースのセットアップ、入力の収集、非公開デプロイ、MCP クライアント                 |
-| [設定](ja/configuration.md)                    | プロファイル、モデルとテストの方針、UTC 予算、入力・ハッシュ・ツールの仕様、プライバシー |
-| [運用](ja/operations.md)                       | タイムアウトと結果不明の照合、台帳の保持、アップグレード、ローテーションと削除           |
-| [レビュアーの統合](ja/reviewer-integration.md) | 明示的なレビュアー選択、共通の確定済み証拠、Vaultwarden ラッパー、結果の確認             |
-| [アーキテクチャ](ja/architecture.md)           | MCP とプロバイダーの境界、アトミックな予約と重複防止                                     |
-| [検証](ja/validation.md)                       | モックテスト、実際の Luna スモークテスト、使用量と未検証の範囲                           |
-
-まずインストールと設定を確認してください。実行結果が不明なリクエストへの対応やデプロイの変更を行う前に、運用ガイドを読んでください。既存の Claude/Gemini の既定動作は、引き続きホスト側で管理します。
+- [インストール](ja/installation.md): 要件・認証・Codex 登録・収集・Worker デプロイ
+- [設定](ja/configuration.md): モード・プロファイル・予算・入出力契約
+- [運用](ja/operations.md): unknown 復旧・更新・開発・公開

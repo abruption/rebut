@@ -16,7 +16,8 @@ const profile: Profile = {
   priceVersion: "fixture",
 };
 const input: ReviewInput = {
-  schema_version: 1,
+  schema_version: 2,
+  provider: "anthropic",
   request_id: "anthropic-1",
   profile: "claude-medium",
   input_sha256: "a".repeat(64),

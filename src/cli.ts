@@ -401,27 +401,21 @@ export async function runCli(args: string[]): Promise<void> {
       throw new CliError(
         "Collect requires root, request-id, requirements and explicit source files.",
       );
-    let chosen = p.values.profile as string | undefined;
-    if (
-      !chosen &&
-      (settings.provider === "anthropic" ||
-        settings.defaultModel ||
-        settings.defaultReasoning ||
-        settings.defaultProfile)
-    )
-      chosen = (await preferred()).id;
+    // Resolve the current profile metadata while collecting, then freeze its supplier.
+    const chosen = await preferred(p.values.profile as string | undefined);
     output(
       await collect(
         p.values.root as string,
         p.positionals,
         p.values.requirements as string,
         p.values["request-id"] as string,
-        chosen,
+        chosen.id,
+        chosen.provider,
       ),
     );
     return;
   }
-  async function preferred() {
+  async function preferred(explicitProfile?: string) {
     if (mode === "worker" && !settings.endpoint)
       throw new CliError(
         "Set the Worker endpoint before selecting server models.",
@@ -442,13 +436,20 @@ export async function runCli(args: string[]): Promise<void> {
               ? "claude-medium"
               : "astra-medium") && r.enabled,
       )?.profile?.model;
-    const id = resolveProfile(records, {
-      provider: settings.provider,
-      profile: settings.defaultProfile,
-      model:
-        settings.defaultModel || settings.defaultReasoning ? model : undefined,
-      reasoning: settings.defaultReasoning,
-    });
+    const id = resolveProfile(
+      records,
+      explicitProfile !== undefined
+        ? { profile: explicitProfile }
+        : {
+            provider: settings.provider,
+            profile: settings.defaultProfile,
+            model:
+              settings.defaultModel || settings.defaultReasoning
+                ? model
+                : undefined,
+            reasoning: settings.defaultReasoning,
+          },
+    );
     const selected = records.find((r) => r.id === id)!;
     return {
       id,
@@ -488,7 +489,7 @@ export async function runCli(args: string[]): Promise<void> {
         "Provider metadata diagnostics are local mode only; Worker credentials stay on the Worker.",
       );
     let chosen: Awaited<ReturnType<typeof preferred>> | undefined;
-    if (mode === "local") {
+    if (mode === "local" && (p.values.connect || p.values.provider)) {
       try {
         chosen = await preferred();
       } catch {
@@ -511,7 +512,13 @@ export async function runCli(args: string[]): Promise<void> {
       mode,
       provider: activeProvider,
       ...(mode === "local"
-        ? { profileResolution: chosen ? "resolved" : "unavailable" }
+        ? {
+            profileResolution: !(p.values.connect || p.values.provider)
+              ? "not_checked"
+              : chosen
+                ? "resolved"
+                : "unavailable",
+          }
         : {}),
       keyConfigurationProvider: settings.provider ?? "openai",
       ...(mode === "local" && settings.secretStore === "env"

@@ -2,6 +2,7 @@ import {
   ReviewInputSchema,
   inputHash,
   profileProvider,
+  inputProvider,
   type Provider,
 } from "./contracts.js";
 import { parseConfig } from "./config.js";
@@ -60,6 +61,7 @@ export async function handleReview(
     JSON.stringify({
       input_sha256: input.input_sha256,
       profile: input.profile,
+      ...(input.schema_version === 2 ? { provider: input.provider } : {}),
     }),
   );
   const existing = await ledger.get(principal, input.request_id);
@@ -73,9 +75,16 @@ export async function handleReview(
   if (!selected) return { status: "profile_not_allowed" };
   const profile = selected.profile;
   const provider = profileProvider(profile);
+  if (inputProvider(input) !== provider)
+    return {
+      status: "provider_mismatch",
+      expected_provider: inputProvider(input),
+      profile_provider: provider,
+    };
   const body = JSON.stringify(buildReviewBody(input, profile));
   const snapshot = {
     requested_provider: provider,
+    bundle_schema_version: input.schema_version,
     requested_model: profile.model,
     requested_reasoning: profile.reasoning,
     profile_revision: selected.revision,
@@ -136,6 +145,7 @@ export async function handleReview(
   const info = {
     ...outcomeInfo,
     requested_provider: provider,
+    bundle_schema_version: input.schema_version,
     requested_reasoning: profile.reasoning,
     profile_revision: selected.revision,
   };

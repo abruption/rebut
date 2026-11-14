@@ -590,8 +590,22 @@ try {
   await bounded(client.connect(transport), "Claude MCP initialize");
   const claudeBundle = {
     ...frozen,
+    schema_version: 2,
+    provider: "anthropic",
     profile: "claude-medium",
     request_id: "packaged-claude",
+    input_sha256: createHash("sha256")
+      .update(
+        JSON.stringify({
+          schema_version: 2,
+          provider: "anthropic",
+          task_kind: bundle.task_kind,
+          requirements: bundle.requirements,
+          files: bundle.files,
+          diff: bundle.diff,
+        }),
+      )
+      .digest("hex"),
   };
   const reviewed = JSON.parse(
     (

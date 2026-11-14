@@ -1,5 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { mkdtemp, chmod, rm, readFile } from "node:fs/promises";
+import { DatabaseSync } from "node:sqlite";
+import { sha256 } from "../src/service.js";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { openLocalRuntime } from "../src/local.js";
@@ -30,7 +32,8 @@ async function input(
   profile = "claude-medium",
 ): Promise<ReviewInput> {
   const i: ReviewInput = {
-    schema_version: 1,
+    schema_version: 2,
+    provider: profile === "luna-test" ? "openai" : "anthropic",
     request_id: id,
     profile,
     input_sha256: "",
@@ -265,4 +268,142 @@ it("performs only bounded model metadata GETs with the proper provider identity"
     providerDiagnostic({ ...profile, model: ".." }, key, fetcher),
   ).rejects.toThrow();
   expect(fetcher).toHaveBeenCalledOnce();
+});
+
+it("rejects a first-submission supplier change before key loading, reservation or network", async () => {
+  const dir = await directory();
+  const keys = vi.fn(async () => "synthetic-key-not-real-1234567890123");
+  const fetcher = vi.fn<typeof fetch>();
+  const runtime = await openLocalRuntime(settings(), {
+    directory: dir,
+    loadApiKey: keys,
+    fetcher,
+  });
+  try {
+    const frozen = await input("not-submitted", "luna-test");
+    await runtime.profiles.set(
+      "luna-test",
+      runtime.config.profiles["claude-medium"]!,
+      0,
+    );
+    expect(await runtime.review(frozen)).toEqual({
+      status: "provider_mismatch",
+      expected_provider: "openai",
+      profile_provider: "anthropic",
+    });
+    expect(keys).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(await runtime.status(frozen.request_id)).toEqual({
+      status: "not_found",
+    });
+    expect((await runtime.pending()).requests).toEqual([]);
+  } finally {
+    await runtime.close();
+  }
+});
+it("hash-pins schema2 supplier intent and confines new legacy requests to OpenAI", async () => {
+  const dir = await directory();
+  const keys = vi.fn(async () => "synthetic-key-not-real-1234567890123");
+  const fetcher = vi.fn<typeof fetch>();
+  const runtime = await openLocalRuntime(settings(), {
+    directory: dir,
+    loadApiKey: keys,
+    fetcher,
+  });
+  try {
+    const pinned = await input("pin-tamper");
+    expect(
+      await runtime.review({ ...pinned, provider: "openai" }),
+    ).toMatchObject({ status: "input_hash_mismatch" });
+    const legacy = {
+      ...pinned,
+      schema_version: 1 as const,
+      request_id: "legacy-first",
+    };
+    delete legacy.provider;
+    legacy.input_sha256 = await inputHash(legacy);
+    expect(await runtime.review(legacy)).toMatchObject({
+      status: "provider_mismatch",
+      expected_provider: "openai",
+      profile_provider: "anthropic",
+    });
+    expect(keys).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(await runtime.status(legacy.request_id)).toEqual({
+      status: "not_found",
+    });
+  } finally {
+    await runtime.close();
+  }
+});
+it("preserves a previously submitted legacy Claude ID even without a supplier pin or key", async () => {
+  const dir = await directory();
+  const keys = vi.fn(async () => {
+    throw Error("must not load key");
+  });
+  const fetcher = vi.fn<typeof fetch>();
+  const runtime = await openLocalRuntime(settings(), {
+    directory: dir,
+    loadApiKey: keys,
+    fetcher,
+  });
+  try {
+    const legacy = {
+      ...(await input("legacy-record")),
+      schema_version: 1 as const,
+    };
+    delete legacy.provider;
+    legacy.input_sha256 = await inputHash(legacy);
+    const fingerprint = await sha256(
+      JSON.stringify({
+        input_sha256: legacy.input_sha256,
+        profile: legacy.profile,
+      }),
+    );
+    const db = new DatabaseSync(runtime.path);
+    db.prepare(
+      "INSERT INTO requests (principal,request_id,fingerprint,input_sha256,profile,claim,created_at,day,month,state,reserved_microusd,charged_microusd,metadata) VALUES (?,?,?,?,?,?,?,?,?,'completed',10,1,?)",
+    ).run(
+      "local",
+      legacy.request_id,
+      fingerprint,
+      legacy.input_sha256,
+      legacy.profile,
+      "fixture",
+      "2026-11-14T00:00:00Z",
+      "2026-11-14",
+      "2026-11",
+      JSON.stringify({
+        requested_provider: "anthropic",
+        requested_model: "claude-opus-5-5",
+      }),
+    );
+    db.close();
+    expect(await runtime.review(legacy)).toMatchObject({
+      status: "completed",
+      requested_provider: "anthropic",
+      result_replay_available: false,
+    });
+    expect(keys).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  } finally {
+    await runtime.close();
+  }
+});
+
+it("keeps the published schema1 evidence hash and fingerprint byte-for-byte stable", async () => {
+  const legacy = {
+    schema_version: 1 as const,
+    task_kind: "code" as const,
+    requirements: "golden",
+    files: [{ path: "a.ts", start_line: 1, content: "return 1;" }],
+    diff: "",
+  };
+  const hash = await inputHash(legacy);
+  expect(hash).toBe(
+    "3cafce2c62e8ef29da7733265ab53c558a01c58e9eaea7ee0e33b0522875e643",
+  );
+  expect(
+    await sha256(JSON.stringify({ input_sha256: hash, profile: "luna-test" })),
+  ).toBe("49d718f91ca792ef08d354c627dff7857beed18f528eb5964ec8e00fa4248633");
 });
