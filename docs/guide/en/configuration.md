@@ -1,106 +1,80 @@
-# Configuration and MCP contract
+# Configuration
 
 [한국어](../ko/configuration.md) · **English** · [简体中文](../zh-CN/configuration.md) · [日本語](../ja/configuration.md)
 
-[Rebut](../../../README.en.md) · [User guide](../en.md)
+[README](../../../README.en.md) · [Installation](installation.md) · [Operations](operations.md)
 
+## Modes and storage
 
-## Local profiles and budget scope
+| Mode                        | Selection                                                                        | Ledger scope                              |
+| --------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------- |
+| Local (new-install default) | `rebut set mode local`                                                           | Private SQLite in one data directory      |
+| Worker                      | `rebut set endpoint URL` or `rebut set mode worker` (existing endpoint required) | One deployment's D1 shared by its clients |
 
-New settings use local mode; endpoint-only legacy settings remain Worker. `rebut set api-key` stores a local OpenAI key in Keychain, while Worker `set token` and `set admin-token` store different credentials. env uses REBUT_OPENAI_API_KEY locally, REBUT_TOKEN/REBUT_ADMIN_TOKEN for Worker. Vaultwarden local keys use vaultwarden-api-key-item. `rebut profile list/set/remove` targets the selected backend; local profile changes require no Worker admin token. Local profiles, revisions and metadata are stored in private SQLite. Limits apply to one data directory, not all devices or the OpenAI account. Use a shared Worker for a central ledger. A mode switch does not migrate uncertain requests or release reservations.
+Existing endpoint settings remain Worker mode. There is no automatic backend fallback; switching neither migrates records nor releases reservations.
 
+On macOS/Linux, settings are `~/.config/rebut/config.json` and the local ledger is `~/.local/share/rebut/local/ledger.sqlite`. With `REBUT_CONFIG_DIR`, use `config.json` and `local/` inside that directory. Registration and status queries must use the same directory.
 
-## Model and reasoning preferences
+## Credentials
 
-Set local preferences for newly collected bundles, or select a server profile directly:
+`rebut set secret-store keychain|vaultwarden|env` selects the backend for every role without fallback. Keychain service: `com.abruption.rebut`.
+
+| Role                 | Keychain account / hidden-input command | Env                    | Default Vaultwarden item / setting key                |
+| -------------------- | --------------------------------------- | ---------------------- | ----------------------------------------------------- |
+| Local provider       | `openai-api-key` / `set api-key`        | `REBUT_OPENAI_API_KEY` | `Rebut — OpenAI API Key` / `vaultwarden-api-key-item` |
+| Worker access        | `codex-mcp-bearer` / `set token`        | `REBUT_TOKEN`          | `Rebut — MCP Access Token` / `vaultwarden-item`       |
+| Worker administrator | `codex-mcp-admin` / `set admin-token`   | `REBUT_ADMIN_TOKEN`    | `Rebut — MCP Admin Token` / `vaultwarden-admin-item`  |
+
+Prefix commands with `rebut`. Change a Vaultwarden item with `rebut set SETTING_KEY NAME`. Use `--stdin` only for an explicitly protected pipe instead of hidden input. `rebut set api-key-env OPENAI_API_KEY` explicitly changes the local env name; the two variables do not fall back to each other. Administrator tokens are not forwarded to MCP hosts.
+
+## Model profiles
 
 ```sh
+rebut profile list
 rebut set model MODEL_ID
 rebut set reasoning EFFORT
 rebut set profile PROFILE_ID
 ```
 
-`MODEL_ID`, `EFFORT`, and `PROFILE_ID` are placeholders. Model/reasoning preferences resolve an allowlisted server profile; they do not grant arbitrary model access. An explicit collector `--profile` overrides local preferences. With no preferences the default remains `astra-medium`. `rebut review` respects the profile embedded in the frozen bundle and does not rewrite it using current preferences.
+Preferences affect new collection. Explicit `collect --profile` wins; `review` retains the frozen bundle's profile. The default is `astra-medium`. Allowlisting does not grant provider model access.
 
-## Owner-managed server profiles
-
-Worker mode only: local profile management does not require these admin credentials.
-
-The owner/admin instructions in this section apply only to Worker mode. Local profile commands use OS ownership and the local SQLite registry.
-
-`rebut profile list` makes an authenticated, read-only GET to list server profiles, models, reasoning settings, output limits, rates, and revisions. It does not call the provider or start a paid review.
+The OS owner manages local profiles. Worker changes require migration `0002`, `ADMIN_TOKEN_SHA256`, and a separate administrator token. Listing profiles makes no paid model call.
 
 ```sh
-rebut profile list
-rebut set admin-token
-```
-
-Profile mutation requires a separate owner admin bearer. `rebut set admin-token` uses hidden interactive input; `rebut set admin-token --stdin` explicitly accepts a protected pipe. Never pass tokens as arguments or put them in tracked files. macOS Keychain uses service `com.abruption.rebut`, review account `codex-mcp-bearer`, and admin account `codex-mcp-admin`. The selected Vaultwarden backend can use a separate user-selected item: default `Rebut — MCP Admin Token`, configured with `rebut set vaultwarden-admin-item NAME`. The env backend reads `REBUT_ADMIN_TOKEN` from a secure execution environment. The admin token is never forwarded to Codex. There is no automatic backend fallback.
-
-After a one-time Worker upgrade, D1 migration `0002`, and `ADMIN_TOKEN_SHA256` secret setup described in [installation](installation.md), the owner can add/update a profile. This example uses the existing Astra/medium configuration and its dated 2026-11-12 Standard rates; verify the official [model](https://developers.openai.com/api/docs/models/gpt-6-astra) and [pricing](https://developers.openai.com/api/docs/pricing) documents before choosing values. For a new model, substitute the placeholder `MODEL_ID` with a verified Responses-compatible model ID and explicitly supply its supported reasoning setting, output limit, and official rates.
-
-```sh
-rebut profile set astra-medium --model gpt-6-astra --reasoning medium --max-output-tokens 8192 --input-usd-per-million 10 --output-usd-per-million 50 --price-version official-2026-11-12
-```
-
-Both prices and `--price-version` are required; the server uses them for budget reservations and cost estimates. Rebut does not automatically fetch prices or call a provider models endpoint. `--if-revision N` adds an explicit compare-and-swap revision condition to set/remove. A `409` conflict requires rereading `rebut profile list` and deciding what to change; never overwrite automatically.
-
-```sh
+rebut profile set PROFILE_ID --model MODEL_ID --reasoning medium --max-output-tokens 8192 --input-usd-per-million INPUT_USD --output-usd-per-million OUTPUT_USD --price-version PRICE_VERSION
 rebut profile remove PROFILE_ID --if-revision N
 ```
 
-Removal creates a disabling tombstone rather than deleting review history. Once Worker/D1 support is installed, these profile changes write D1 only: Responses-compatible new model IDs or reasoning values require no Worker build/deploy or npm upgrade. Existing requests retain their original model and revision after profile updates or removal. Changes never rerun requests or automatically release/refund reservations. The normal review bearer cannot mutate profiles; this owner API is not exposed as an MCP tool and cannot change budgets, authentication, or the provider URL.
+Replace uppercase placeholders with verified values. Check model/reasoning support and rates; both rates and the price version are required. `set` also accepts `--if-revision N`. On conflict, refresh the list and decide rather than automatically overwriting.
 
-## Server configuration
+Changes affect future requests. Removal leaves an inactive tombstone without deleting history or reviving seeded profiles. Existing IDs retain their model, revision, and reservation. Dynamic profile edits do not require Worker redeployment.
 
-[`config.example.json`](../../../config.example.json) defines the structure of the `REBUT_CONFIG` secret. Set `hostname` to the exact endpoint hostname, configure server-side profile IDs, and set deployment-wide limits. Clients choose profile IDs; they cannot override model names or the provider URL. The example is configuration, not a promise of account-level model access.
+## Budgets
 
-`REBUT_CONFIG` supplies seed profiles. D1 overrides and disabling tombstones take precedence; profile removal does not restore a seed with the same ID. The server freezes the resolved profile and revision for each reserved request.
+| Setting                        | Default | Local command                       |
+| ------------------------------ | ------- | ----------------------------------- |
+| UTC day                        | $6.66   | `rebut set daily-budget USD`        |
+| UTC month                      | $200    | `rebut set monthly-budget USD`      |
+| Per request                    | $6.66   | `rebut set request-budget USD`      |
+| Concurrent unresolved requests | 1       | `rebut set max-concurrent N` (1–10) |
+| New requests per day           | 100     | Deployment/initial configuration    |
 
-| Profile        | Model         | Reasoning | Maximum output tokens | Standard input/output per 1M tokens |
-| -------------- | ------------- | --------- | --------------------- | ----------------------------------- |
-| `astra-medium` | `gpt-6-astra` | `medium`  | 8,192                 | $10 / $50                           |
-| `luna-test`    | `gpt-6-luna`  | `medium`  | 2,048                 | $0.10 / $0.50                       |
+Local limits apply to one data directory; Worker limits apply across its deployment. They do not aggregate other devices, Workers, API usage, or OpenAI account balance. Manage Worker limits in `REBUT_CONFIG`. Daily, monthly, and request ceilings are independent; changing one does not increase the others. Restart hosts after settings changes.
 
-Output limits include reasoning tokens. The dated price table is `openai-standard-2026-11-12`; estimates apply no cached-input discount. Use **Luna for real API tests** and mocks for automated tests. The production profile remains Astra/medium; Luna results do not establish Astra runtime availability or equivalent review quality. Verify the official [Astra](https://developers.openai.com/api/docs/models/gpt-6-astra), [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), and [pricing](https://developers.openai.com/api/docs/pricing) documents before deploying.
+The service reserves conservatively for input and maximum output, then accounts for verified usage. Estimates are not invoices. Unknown keeps the full reservation and concurrency slot, including after date changes. Period accounting remains attached to the original UTC submission day/month.
 
-Requests pin `service_tier:default` and `prompt_cache_options.mode:explicit` with no breakpoints, disabling prompt caching for these profiles. No execution tools are supplied. Estimates are not invoices and do not account for other services sharing the key or project.
+## Input and result contract
 
-## Budget and concurrency
+| Item                  | Limit                       |
+| --------------------- | --------------------------- |
+| Canonical UTF-8 input | 128,000 bytes               |
+| Files                 | 40                          |
+| Diff / requirements   | 100,000 / 16,000 characters |
+| Transport envelope    | 160,000 bytes               |
 
-| Setting                             | Example value                      |
-| ----------------------------------- | ---------------------------------- |
-| UTC calendar day                    | $6.66 (`dailyMicrousd:6660000`)    |
-| UTC calendar month                  | $200 (`monthlyMicrousd:200000000`) |
-| Per request                         | $6.66 (`requestMicrousd:6660000`)  |
-| Concurrent pending/unknown requests | 1 (`maxConcurrent:1`)              |
-| New review requests per UTC day     | 100 (`dailyRequests:100`)          |
+SHA-256 covers masked `{schema_version,task_kind,requirements,files,diff}` with file keys ordered `{path,start_line,content}`. ID and profile are separate from the evidence hash. See [the full schema](../../../src/contracts.ts).
 
-These limits aggregate all principals in the deployment. Reserve before calling: serialized request bytes plus framing padding count as input tokens, and the maximum output budget is reserved. Validated usage settles conservatively at uncached Standard rates. Unknown execution or missing usage keeps the full reservation. A new UTC day/month resets that period's spend window; unresolved executions continue occupying concurrency. Budget windows follow the original submission date, not a subscription credit's grant or expiration date. This ledger cannot enforce an OpenAI account-wide limit across other consumers. Confirm your account/organization's credit eligibility separately.
+- `review` processes frozen material. Only `completed` means success; results include file/diff line evidence, model, input hash, usage, and estimated cost. Empty findings do not prove correctness.
+- `review_status` returns metadata for the original principal. Reusing an ID does not create another provider call; changing its hash/profile conflicts. Review bodies are not replayed.
 
-## Input limits and hashing
-
-| Material                                | Limit              |
-| --------------------------------------- | ------------------ |
-| Canonically serialized UTF-8 JSON input | 128,000 bytes      |
-| Files                                   | 40                 |
-| Diff                                    | 100,000 characters |
-| Requirements                            | 16,000 characters  |
-| Transport envelope                      | 160,000 bytes      |
-
-The SHA-256 covers canonical `{schema_version,task_kind,requirements,files,diff}` after redaction, with file key order `{path,start_line,content}`. Request IDs and profile names are separate from this frozen evidence hash. See [`ReviewInputSchema`](../../../src/contracts.ts) for the full contract. Preserve the same evidence for independent first-pass reviewers and keep their outputs separate.
-
-## MCP tools
-
-- `review`: choose an allowlisted profile ID and supply the frozen material. Returns status, validated findings, provider model/IDs, hash, usage and estimated microUSD. Only `completed` is a successful review. Refusal, incomplete generation, invalid output, and unknown execution remain distinct. Every finding must reference supplied file lines or supplied new-side diff lines. An empty findings array with a nonempty summary is valid; an empty or malformed response is not.
-- `review_status`: `{request_id}` returns only metadata for the caller's principal. It cannot replay the review body.
-
-After a timeout, query **the same request ID**. Repeating it never creates another provider execution. Reusing an ID with a changed input hash or profile returns `conflict`. A completed duplicate returns metadata rather than the review body: clients must save their initial response locally. See [operations](operations.md) for reconciliation; `not_found` after a transport failure is not by itself permission to use a new ID.
-
-## Storage and privacy
-
-The metadata-only D1 ledger retains request IDs, hashes, profile, status, reservation, sanitized provider IDs and usage. It never stores source or review text. Worker observability is disabled in the example. `AUTH_TOKENS` contains token digests, not bearer values; keep original bearer tokens in your password manager. See [installation](installation.md) for setup.
-
-The OpenAI request uses `store:false`; this does **not** promise zero provider retention or replace your organization's data policy. See [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data). Keep credentials and private deployment identifiers outside public source and logs.
-
-When the result is `invalid_output`, `invalid_output_reason` identifies the failed validation stage without retaining source or review text. Intermediate `commentary` messages are excluded; only `final_answer` (or a legacy message with no phase) is parsed as the structured review. Multiple final outputs, invalid JSON/schema, and findings outside supplied evidence remain errors.
+Ledgers retain request/usage metadata, not code, review text, or keys. Material is sent to OpenAI; `store:false` does not promise zero provider retention. The prompt instructs the model to treat instructions inside supplied material as review data. Models receive no repository/URL fetching, shell, test, editing, or PR tools.

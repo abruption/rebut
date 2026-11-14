@@ -1,54 +1,53 @@
-# 运维
+# 运维与恢复
 
 [한국어](../ko/operations.md) · [English](../en/operations.md) · **简体中文** · [日本語](../ja/operations.md)
 
-[Rebut](../../../README.zh-CN.md) · [用户指南](../zh-CN.md)
+[README](../../../README.zh-CN.md) · [安装](installation.md) · [配置](configuration.md)
 
-## 本地运维
+## unknown 恢复
 
-停止本地 MCP 进程后备份仅元数据 SQLite 账本和设置。不要为解除限额而删除记录／unknown 预留，或实时同步打开的账本。API 密钥留在所选凭据后端，不在 SQLite。SIGTERM 会尝试中止并记录不确定执行后关闭，但崩溃、SIGKILL 或断线仍可能留下 reserved。查询原 ID，不重放。rebut remove 仅移除注册，不删除账本或凭据。下方 D1 运维仅适用于 Worker。
+`reserved` 可能仍在运行或已中断；`unknown` 表示结果或用量不确定。两者均可能已计费，不自动重试、到期或退款。一个未解决请求就可能占用默认槽位并阻止新审查。
 
-## Worker
+1. 用相同后端、principal 和 `REBUT_CONFIG_DIR` 查询 `rebut status REQUEST_ID`。ID 丢失时，本地 `rebut status --pending` 最多列出 100 条并显示 `has_more`。本地查询无需 OpenAI 密钥，Worker 查询使用已有接入令牌；均不调用付费模型。
+2. 停止宿主，备份已关闭的本地 SQLite 和设置。Worker D1 使用 Cloudflare 导出/Time Travel 备份。
+3. 对照原 ID、输入哈希、配置档及可用的供应商请求/用量证据。仅 `not_found` 不证明未执行，不以其他后端或新 ID 重试。
+4. 不确定时保留行、全额记账预留和槽位。只有具有独立证据的操作者才可核对并结算对应 `(principal, request_id)`；应用没有强制释放、退款或删除工具。
+5. 明确要启动**另一项新审查**的操作者可用本地 `rebut set max-concurrent N` 增加必要容量（最多 10），保留原预留。这不是释放原请求或重放授权；金额上限继续生效，自定义限制快照不变，之后重启宿主。
 
-使用 Cloudflare 支持的导出/Time Travel 机制备份仅存元数据的 D1 账本。不要为了清除棘手的待处理请求而删除账本：这样会丢失支出记录和重复调用防护。只要客户端可能重用某个 ID，就应保留其请求行；清理这些行会使旧 ID 可以再次执行。
+`budget_reserved_microusd`、`budget_accounted_microusd` 是应用记账值，不是确认账单。十个槽位都不确定时，停止直到有证据结算。之后恢复预期容量并重启。删除行会丢失去重能力，不是恢复手段。
 
-使用原主体通过 `rebut status REQUEST_ID` 免费查询元数据。`rebut doctor` 检查已清理敏感值的本地配置及凭据可用性；`rebut doctor --connect` 免费检查远程 `tools/list`。这些命令均不会启动付费审查。结果不确定后保留请求 ID 及预算预留。
+## 诊断
 
-所有者配置方案变更使用修订版本：发生 `409` 冲突后，先重新读取 `rebut profile list`，再决定是否更新/移除。移除保留禁用墓碑记录。变更后现有请求仍保留原始模型/修订版本、主体范围内的 ID 和预算预留；不自动重新运行、退款或释放预留。一次完成 Worker 升级、D1 迁移 `0002` 及 `ADMIN_TOKEN_SHA256` 设置后，配置方案更新只需写入 D1。不要将单独的管理 Bearer 令牌放入 Codex/MCP 配置。
+`rebut doctor` 检查本地设置和凭据，`doctor --connect` 检查所选后端与工具列表；均不进行付费审查，也不验证供应商账户访问。区分 SSH 下 Keychain 失败和同一设备登录会话中的成功。
 
-## 超时、断线或结果未知
+新的 unknown 记录可能包含 `unknown_reason`、`provider_elapsed_ms`、供应商 ID 和 `upstream_status`，不保留正文或异常字符串。HTTP 错误之后也可能在读正文时超时，需结合字段判断。耗时不证明执行/计费已完成，也不补回历史缺失字段。
 
-`reserved` 表示某次执行已预留，可能仍在运行，也可能已被中断；它不能证明这是一次未计费的失败。`unknown` 表示无法验证结果或用量。这两种状态都不会自动重试、过期或退款。在人工审查之前，两者都会无限期占用并发名额。这是有意设计的：无法核对执行时，停止进一步支出。
+SIGINT/SIGTERM 尝试记录 unknown 并关闭。SIGKILL、崩溃或断网可能留下 reserved。任何路径都不自动重放。
 
-1. 保留原始请求 ID、主体、输入哈希、配置方案及提供商 ID（如有）。
-2. 使用该主体查询 `review_status`。传输失败后返回 `not_found`，本身不足以支持用新 ID 提交：请先核对服务器处理情况及原始请求。
-3. 对照提供商项目用量和请求诊断信息。使用 `store:false` 时，可能无法检索响应；不保证可以重放审查。
-4. 只有持有独立证据的运维人员才能更新准确的 `(principal, request_id)` 行；除非权威用量表明应采用其他费用，否则必须保留其已计费/预留金额，并设置核对后的终态。应用程序不提供重置/退款/删除工具。请私下记录证据。绝不要悄悄将结果未知的执行转换成新的付费调用。
+## 升级与密钥轮换
 
-预留金额计入原始提交的 UTC 日/月，核对完成后也不改变归属。跨日或跨月不会重置结果未知的请求所占用的并发名额。请求金额不能超过每日/每月汇总限额的剩余额度。速率限制适用于新预留的审查 ID（示例为每天 100 个），不适用于免费的元数据调用；如有需要，请在前端部署网络层滥用防护。
+按 **CLI → Codex 注册 → 重启宿主 → Worker** 更新。保留自定义目录，注册前备份整个 `config.toml`。参见[安装命令](installation.md#codex-注册与更新)。
 
-## 升级
+使用 0.2.0 专有字段前备份 `config.json`。0.1.0 会拒绝这些字段，Worker 用户降级也可能需要恢复旧设置。使用本地账本后降到 0.1.0 不等于恢复账本，不能为兼容设置而删除账本。
 
-运行 `npm ci`、类型检查、构建及测试。先审查迁移 SQL，再对同一 D1 数据库应用新迁移，并使用私有配置部署。现有的 `(principal, request_id)` 行必须在升级后保留。修改允许列表中的配置方案不会重新执行已完成的 ID；只有在核对后有意开展新的审查时，才使用新 ID。更改主体 ID 会失去对其现有状态行的访问权限，因此轮换 Bearer 令牌时应保持 ID 稳定。
+Worker 保持相同 D1，只应用未完成迁移。轮换 bearer 时更新 `AUTH_TOKENS` 摘要和客户端凭据存储，保留 principal ID。单独轮换 `OPENAI_API_KEY`。管理员令牌不放入 MCP 配置。`rebut remove` 仅删除注册。
 
-## 轮换或移除
+## 开发验证
 
-生成新的随机值，并替换 `AUTH_TOKENS` 中对应主体的摘要，再更新授权客户端由密码管理器支持的配置，即可轮换令牌。不要仅为轮换令牌而更改主体 ID。轮换 OpenAI 密钥时，只更新 `OPENAI_API_KEY`；共享该密钥的其他使用方需要另行协调。删除 Worker 可停止新请求。在单独移除 D1 之前，请导出并审查账本；删除不可逆，并会使去重历史无法访问。
+```sh
+npm ci --ignore-scripts
+npm run typecheck
+npm run build
+npm test
+npm run test:package
+```
 
-## 本地恢复与受限容量扩展
+Worker 测试使用构建产物。自动测试/包 smoke 模拟供应商，不证明付费 API 权限或模型质量。实际 API 测试默认 `luna-test`，运行默认 `astra-medium`；Luna 成功不证明 Astra 可用性或质量。历史详情见 [0.2.0 源码记录](https://github.com/abruption/rebut/tree/v0.2.0/docs/guide/zh-CN)。
 
-1. 停止 MCP 宿主，使用 rebut status REQUEST_ID 检查原请求，不重放。
-2. 备份关闭的本地账本与设置，检查可用供应商证据。budget_reserved_microusd／budget_accounted_microusd 是应用记账值，不是 unknown 的已确认账单。
-3. 仍不确定时保留记录、全额记账预留和原 ID，不假定未计费、不删除、不伪造完成结果。
-4. 明确接受保留记账后，操作员可为有意的新审查增加容量。一个不确定请求占用默认唯一槽时，rebut set max-concurrent 2 增加一个槽（范围 1–10）。它不释放旧槽、不退款，也不授权重试原输入。
-5. 重启 MCP 宿主；日／月／单请求限额仍适用于总记账用量。实际结算需要独立证据与针对该记录的人工审查，不自动执行。
+源码边界：`service.ts` 负责哈希、配置档和预留/记账；`review.ts` 负责供应商/证据验证；`local.ts` 提供 stdio/SQLite；`worker.ts` 提供 HTTP 认证/D1。本地按目录记账，Worker 共享部署账本。
 
-若遗失 ID，先运行 rebut status --pending：无需密钥或供应商调用，最多列出 100 条本地 reserved/unknown 元数据，更多时显示 has_more。这是诊断快照，不授权新付费调用。即使无待处理记录，金额或每日请求上限仍可能导致 limit_exceeded。
+## npm 发布
 
-容量上限为 10；若全部不确定，应停止并等待有证据的人工结算，不删除历史或假定未计费。独立核实结算后，将临时容量降回正常值（默认 1）并重启。
+手动 `publish.yml` 从 main 运行，验证标签/源码/版本，并在 `npm` Environment 获得所有者批准。构建和 smoke 没有 OIDC 写权限，只有已验证 tarball 的发布任务有。PR 合并或 GitHub Release 事件不自动发布。
 
-容量应按待处理数加明确允许的新并行数选择（最大 10），不要把示例 2 直接覆盖已有自定义值。容量／预算命令保留完整本地限额快照。若原 ID 丢失，在第 1 步前先执行 status --pending。
-
-## 维护者发布 npm 包
-
-手动 `publish.yml` 工作流通过 OIDC Trusted Publishing 发布，无需保存 npm 令牌。仅允许从 main 运行，稳定版本标签必须指向工作流的同一源码提交，并在 GitHub Environment `npm` 中由所有者 `abruption` 批准。构建和测试没有 OIDC 写入权限，只有发布已验证 tarball 的任务拥有该权限。PR 合并或 GitHub Release 事件不会自动发布。发布后若注册表处理或校验失败，应先检查原始运行与制品，再决定是否重试。这不部署 Worker，也不更新已有客户端。[维护者发布清单（韩语）](../../releases/release-checklist.ko.md#github-actions-trusted-publisher)包含设置和操作步骤；首次使用前须合并工作流并配置 npm trust。
+发布/验证出错时先检查原运行及注册表版本、完整性，再决定是否重试。不要重新发布已公开的版本。[韩语发布清单](../../releases/release-checklist.ko.md#github-actions-trusted-publisher)说明设置、批准和七天 artifact 保留期。此工作流不部署 Worker 或更新已有客户端。
