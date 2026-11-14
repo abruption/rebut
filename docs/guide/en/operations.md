@@ -10,7 +10,6 @@ Stop local MCP processes before backing up the metadata-only SQLite ledger and i
 
 ## Worker
 
-
 Back up the metadata-only D1 ledger using Cloudflare's supported export/Time Travel mechanisms. Do not delete the ledger to clear an inconvenient pending request: doing so loses spend and duplicate protection. Retain request rows for the lifetime of IDs clients may reuse; pruning permits old IDs to execute again.
 
 Use `rebut status REQUEST_ID` for a free metadata lookup under the original principal. `rebut doctor` checks sanitized local configuration and credential availability; `rebut doctor --connect` performs a free remote `tools/list` check. None of these commands starts a paid review. Preserve the request ID and reservation after any uncertain result.
@@ -49,3 +48,7 @@ If the ID is missing, start with `rebut status --pending`: it lists up to 100 lo
 Capacity is capped at 10. If all slots remain uncertain, stop for evidence-based operator reconciliation rather than deleting history or mislabelling unknown as unbilled. Once independently reconciled, reduce temporary capacity back to the intended normal limit (default 1) and restart.
 
 Choose capacity from the pending count plus the deliberately allowed new parallel requests (maximum 10), rather than copying the example 2 over an existing custom limit. Capacity/budget commands retain a complete local-limit snapshot. If the original ID is missing, run status --pending before step 1.
+
+## Maintainer npm publication
+
+The manual `publish.yml` workflow uses npm Trusted Publishing (OIDC) without a stored npm token. It runs only from main for a stable tag naming the exact workflow source commit, then requires the `abruption` owner's approval in the `npm` GitHub Environment. Building and testing have no OIDC write permission; only publishing the verified tarball has it. PR merges and GitHub release events do not publish packages. Registry visibility failures after publication require inspecting the original run and artifact before retrying. This does not deploy Workers or update installed clients. The [maintainer release checklist (Korean)](../../releases/release-checklist.ko.md#github-actions-trusted-publisher) records setup and operation; the workflow must be merged and the npm trust configured before first use.
