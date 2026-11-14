@@ -104,7 +104,7 @@ jobs:
           const index = a.findIndex((value, i) => value !== b[i]);
           assert(index >= 0 && a[index] > b[index], 'Version must still advance latest after approval');
           JS
-          npm publish "release-artifact/rebut-mcp-$VERSION.tgz" --access public --tag latest --provenance --ignore-scripts --registry=https://registry.npmjs.org/
+          npm publish "./release-artifact/rebut-mcp-$VERSION.tgz" --access public --tag latest --provenance --ignore-scripts --registry=https://registry.npmjs.org/
       - name: Verify the public registry artifact
         env:
           VERSION: ${{ needs.build.outputs.version }}
