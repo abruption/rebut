@@ -12,7 +12,9 @@
 
 </div>
 
-OpenAI API로 제공한 코드·diff를 검토하는 MCP입니다. 검토 자료는 OpenAI로 전송합니다.
+OpenAI 또는 Claude API로 제공한 코드·diff를 검토하는 MCP입니다. 자료는 선택한 공급자로 전송합니다.
+
+Claude 지원은 0.3.0 이상에서 `rebut set provider anthropic` → `rebut set api-key` → `rebut setup --client claude` 순서로 설정합니다. 호스트와 공급자는 별도 선택입니다.
 
 ## 빠른 시작
 

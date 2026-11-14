@@ -43,7 +43,7 @@ rebut doctor --connect
 
 Registration uses `CODEX_HOME` or `~/.codex`; use `--codex-home PATH` for another location. Back up `config.toml` before `setup --replace`. Supply the same custom `REBUT_CONFIG_DIR` in the setup shell. Restart the host after registration; running processes do not reload settings.
 
-Worker upgrade order: **CLI → registration → host restart → Worker**. Provider/HTTP client/Codex tool limits are 1,800/1,830/1,860 seconds. They do not guarantee connection survival; other hosts also need suitable tool limits.
+For 0.2.x → 0.3.0, use **Worker code with existing OpenAI configuration → CLI/registration/host restart → Claude key/profile enablement**. From 0.1.x, upgrade the CLI to 0.2.x first for the long deadlines. Provider/HTTP client/Codex tool limits are 1,800/1,830/1,860 seconds. They do not guarantee connection survival; other hosts also need suitable tool limits.
 
 `rebut remove --client codex` removes registration, not settings, credentials, or the ledger. Follow [operations](operations.md) for backups and downgrades.
 
@@ -89,3 +89,23 @@ rebut doctor --connect
 ```
 
 Setting an endpoint selects Worker mode, using an access token instead of a local OpenAI key. See [configuration](configuration.md) for env/Vaultwarden roles and administrator credentials. Worker deployment is separate from npm updates.
+
+## Claude API and Claude Code — 0.3.0
+
+Version 0.3.0+ selects the review provider and MCP host separately. Local macOS Keychain example:
+
+```sh
+rebut set mode local
+rebut set provider anthropic
+rebut set api-key
+rebut setup --client claude
+rebut doctor --connect
+```
+
+Switching providers selects its default profile and clears model/reasoning overrides; selecting the same provider preserves them. Existing OpenAI keys, profiles, and ledger history are not deleted.
+
+Stop Claude Code and back up its config before registration. Only the Rebut user entry in `~/.claude.json` is updated. Use `--claude-config PATH` for another file; this is required when `CLAUDE_CONFIG_DIR` is set. A conflicting Rebut entry requires `--replace`. Project/managed same-name overrides must be checked separately. Registration atomically replaces the file with mode 0600; ACLs/xattrs are not retained. Restart Claude Code and inspect `/mcp`.
+
+For env storage, select `rebut set secret-store env` and supply `REBUT_ANTHROPIC_API_KEY` to the actual host. Shared `ANTHROPIC_API_KEY` selection is not supported, avoiding changes to Claude Code authentication. Keychain/Vaultwarden registration adds no provider env placeholder. Env setup may also initialize local SQLite while resolving profiles. Env registration forwards the current default profile provider variable. A frozen other-provider bundle without its env key fails before reservation. Doctor reports the default profile provider in `provider`, and the `set api-key` target in `keyConfigurationProvider`. Re-register each host with `setup --replace` and restart after provider/backend/env changes.
+
+Optional local-only `rebut doctor --provider` retrieves model metadata without generation, review reservations, or usage records. Resolving profiles may initialize local SQLite. `doctor --connect` remains an MCP check. Metadata reachability does not prove generation access, balance, geo, structured-output support, or quality.

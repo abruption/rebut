@@ -26,7 +26,7 @@ SIGINT/SIGTERM attempt to record unknown and close. SIGKILL, crashes, and networ
 
 ## Upgrades and key rotation
 
-Update **CLI → Codex registration → host restart → Worker**. Retain custom directories and back up all of `config.toml` before registration. See [installation commands](installation.md#codex-registration-and-updates).
+For 0.3.0, follow the staged order in [installation](installation.md#codex-registration-and-updates). Retain custom directories and back up all of `config.toml` before registration. See [installation commands](installation.md#codex-registration-and-updates).
 
 Back up `config.json` before using 0.2.0-only fields. Version 0.1.0 rejects them, including for Worker users, so a downgrade may need the older settings backup. Downgrading to 0.1.0 after using a local ledger is not ledger recovery. Never delete the ledger to restore settings compatibility.
 
@@ -51,3 +51,9 @@ Source boundaries: `service.ts` owns hashing, profiles, reservation/accounting; 
 Manual `publish.yml` runs from main, validates tag/source/version, and requires owner approval in the `npm` Environment. Building/smoke testing has no OIDC write permission; only publishing the verified tarball has it. PR merges and GitHub Release events do not publish.
 
 After publication/verification problems, inspect the original run and registry version/integrity before deciding whether to retry. Do not republish an already published version. The [Korean release checklist](../../releases/release-checklist.ko.md#github-actions-trusted-publisher) covers setup, approval, and seven-day artifact retention. The workflow does not deploy Workers or update installed clients.
+
+## Upgrading to 0.3.0
+
+New settings or Anthropic profiles may cause 0.2.x to reject settings/profile lists. Back up settings and the closed ledger before upgrading. Review a rollback procedure that disables Anthropic profiles using 0.3.0 and restores compatible settings; never delete request history or unknown reservations. The updater does not reserialize unrelated Claude configuration, but a running host can overwrite changes, so stop it before registration.
+
+Plain `rebut doctor` does not resolve profiles or initialize SQLite and reports `profileResolution: not_checked`. Explicit `--connect` or `--provider` may inspect/initialize the local profile store.

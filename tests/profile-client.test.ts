@@ -210,7 +210,7 @@ describe("remote profile client", () => {
     expect(f.deps.loadReviewToken).not.toHaveBeenCalled();
     expect(JSON.stringify(output)).not.toContain("synthetic-admin");
   });
-  it("reads revision for removal and supports explicit revision without a snapshot", async () => {
+  it("reads revision for removal and supports explicit provider/revision without a snapshot", async () => {
     const f = await fixture();
     expect(await profileCommand(["remove", "astra-medium"], f.deps)).toEqual({
       status: "updated",
@@ -218,7 +218,13 @@ describe("remote profile client", () => {
     });
     expect(f.requests[1]?.body).toEqual({ expected_revision: 1 });
     await profileCommand(
-      [...setArgs("astra-medium"), "--if-revision", "2"],
+      [
+        ...setArgs("astra-medium"),
+        "--if-revision",
+        "2",
+        "--provider",
+        "openai",
+      ],
       f.deps,
     );
     expect(f.requests.map((request) => request.method)).toEqual([
@@ -440,4 +446,33 @@ describe("profile resolution", () => {
     ).toThrow("exactly one");
     expect(() => resolveProfile(records.slice(1), {})).toThrow("Default");
   });
+});
+
+it("does not inherit a disabled record's retained provider on local or remote mutation", async () => {
+  const previous: ProfileRecord = {
+    id: "disabled-retained",
+    revision: 2,
+    enabled: false,
+    profile: { ...profile, provider: "anthropic", model: "claude-opus-5-5" },
+  };
+  const localSet = vi.fn(
+    async (
+      id: string,
+      value: import("../src/contracts.js").Profile,
+      revision: number,
+    ) => ({
+      status: "updated" as const,
+      record: { id, revision: revision + 1, enabled: true, profile: value },
+    }),
+  );
+  const local = {
+    list: async () => [previous],
+    set: localSet,
+  } as unknown as import("../src/profiles.js").ProfileRegistry;
+  await profileCommand(setArgs(previous.id), { registry: local });
+  expect(localSet.mock.calls[0]?.[1].provider).toBeUndefined();
+  const f = await fixture();
+  f.records.set(previous.id, previous);
+  await profileCommand(setArgs(previous.id), f.deps);
+  expect(f.records.get(previous.id)?.profile?.provider).toBeUndefined();
 });

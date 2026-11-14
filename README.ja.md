@@ -12,7 +12,9 @@
 
 </div>
 
-提供したコードと diff を OpenAI API でレビューする MCP です。レビュー資料は OpenAI に送信します。
+提供したコードと diff を OpenAI または Claude API でレビューする MCP です。資料は選択したプロバイダーに送信します。
+
+0.3.0 以降の Claude 対応は `rebut set provider anthropic` → `rebut set api-key` → `rebut setup --client claude` の順です。ホストとプロバイダーは別々に選びます。
 
 ## クイックスタート
 

@@ -43,7 +43,7 @@ rebut doctor --connect
 
 注册使用 `CODEX_HOME` 或 `~/.codex`，其他位置用 `--codex-home PATH`。执行 `setup --replace` 前备份整个 `config.toml`，并在 setup 所在 shell 提供相同的自定义 `REBUT_CONFIG_DIR`。注册后重启宿主；运行中的进程不会重载设置。
 
-Worker 用户按 **CLI → 注册 → 重启宿主 → Worker** 更新。供应商/HTTP 客户端/Codex 工具限制分别为 1,800/1,830/1,860 秒，不保证网络连接持续存在；其他宿主也需设置适合长审查的期限。
+0.2.x → 0.3.0 按 **保持 OpenAI 配置更新 Worker 代码 → CLI/注册/重启宿主 → 启用 Claude 密钥和配置档** 更新。0.1.x 用户先升级 CLI 到 0.2.x 以获得较长的期限。供应商/HTTP 客户端/Codex 工具限制分别为 1,800/1,830/1,860 秒，不保证网络连接持续存在；其他宿主也需设置适合长审查的期限。
 
 `rebut remove --client codex` 仅删除注册，不删除设置、凭据或账本。备份与降级见[运维](operations.md)。
 
@@ -89,3 +89,23 @@ rebut doctor --connect
 ```
 
 设置 endpoint 会选择 Worker 模式，使用接入令牌而非本地 OpenAI 密钥。env/Vaultwarden 项目及管理员凭据见[配置](configuration.md)。Worker 部署与 npm 更新是独立操作。
+
+## Claude API 与 Claude Code — 0.3.0
+
+0.3.0+ 将审查供应商和 MCP 宿主分别选择。本地 macOS Keychain 示例：
+
+```sh
+rebut set mode local
+rebut set provider anthropic
+rebut set api-key
+rebut setup --client claude
+rebut doctor --connect
+```
+
+切换供应商会选择其默认配置档并清除模型/推理覆盖；重复选择同一供应商则保留。已有 OpenAI 密钥、配置档和账本不删除。
+
+注册前停止 Claude Code 并备份配置。仅更新 `~/.claude.json` 中的 Rebut 用户项。其他文件用 `--claude-config PATH`，设置 `CLAUDE_CONFIG_DIR` 时必须提供此选项。冲突的 Rebut 项需 `--replace`。项目/管理级同名覆盖需另外检查。注册通过原子替换生成 0600 文件，不保留 ACL/xattr。重启 Claude Code 后查看 `/mcp`。
+
+env 方式使用 `rebut set secret-store env`，向实际宿主提供 `REBUT_ANTHROPIC_API_KEY`。不支持选择共享 `ANTHROPIC_API_KEY`，避免改变 Claude Code 认证。Keychain/Vaultwarden 注册不添加供应商 env 占位符。env setup 解析配置档时也可能初始化本地 SQLite。 env 注册传递当前默认配置档的供应商变量，其他供应商冻结材料缺少对应 env 密钥时会在预留前失败。doctor 的 `provider` 表示默认配置档供应商，`keyConfigurationProvider` 表示 `set api-key` 目标。供应商/后端/env 改变后，为每个宿主重跑 `setup --replace` 并重启。
+
+可选、本地专用 `rebut doctor --provider` 仅查询模型元数据，不生成内容、预留审查费用或新增用量记录。解析配置档时可能初始化本地 SQLite。`doctor --connect` 仍只检查 MCP。元数据可达不证明生成权限、余额、geo、结构化输出支持或质量。

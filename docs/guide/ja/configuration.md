@@ -72,9 +72,25 @@ rebut profile remove PROFILE_ID --if-revision N
 | diff / 要件       | 100,000 / 16,000 文字 |
 | 転送エンベロープ  | 160,000 bytes         |
 
-SHA-256 はマスク後の `{schema_version,task_kind,requirements,files,diff}`、ファイルキー順は `{path,start_line,content}` です。ID とプロファイルは証拠ハッシュとは別です。[完全なスキーマ](../../../src/contracts.ts)を参照してください。
+SHA-256 はマスク後の `{schema_version,provider,task_kind,requirements,files,diff}`、ファイルキー順は `{path,start_line,content}` です。ID とプロファイルは証拠ハッシュとは別です。[完全なスキーマ](../../../src/contracts.ts)を参照してください。
 
 - `review` は固定資料を検討します。成功は `completed` のみで、ファイル/diff 行の根拠、モデル、入力ハッシュ、使用量、推定費用を返します。空の findings は正しさの証明ではありません。
 - `review_status` は元の principal のメタデータを照会します。同じ ID は追加呼び出しを作らず、ハッシュ/プロファイル変更は競合になります。本文は再取得しません。
 
 台帳にはリクエスト/使用量メタデータだけを残し、コード・レビュー本文・キーは保存しません。資料は OpenAI に送信し、`store:false` はプロバイダーのゼロ保持を保証しません。プロンプトは資料内の指示をレビューデータとして扱うようモデルに指示します。モデルにリポジトリ/URL 取得、シェル、テスト、編集、PR ツールは与えません。
+
+## Claude プロバイダー — 0.3.0
+
+`rebut set provider anthropic` 後、既存の `rebut set api-key` でキー 1 つを設定します。Keychain サービス/アカウントは `com.abruption.rebut` / `anthropic-api-key`。Vaultwarden は `rebut set vaultwarden-api-key-item NAME` で選択中の項目を指定し、既定は `Rebut — Anthropic API Key`。アカウント別名・キー循環・プロバイダーフォールバックは追加しません。
+
+`claude-medium` は Claude Opus 5.5 / medium です。Anthropic プロファイル新規作成時は `--provider anthropic` を明示します。省略時は既存の有効プロファイルを維持し、新規/無効な項目は OpenAI と扱い、キー選択設定は継承しません。provider のない旧プロファイルは OpenAI です。固定バンドルのプロファイルが実際のプロバイダーとキーを決めるため、設定変更後も元のバンドル/ID を保持します。
+
+各ローカル/Worker 台帳で両プロバイダーの予算・同時実行を合算します。新規リクエストの `requested_provider` は予約・完了・エラーでも維持し、旧行は変更しません。thinking 詳細がなければ `reasoning_tokens` を省略します。キャッシュ読み込みは基本入力料金全額で保守的に計上し、要求していないキャッシュ書き込みや非標準使用量は unknown として保持します。
+
+Claude は standard tier/global geo の Messages API を使い、ツールやプロンプトキャッシュはありません。workspace の地域制約で拒否される場合も他キーで再試行しません。既存 OpenAI 設定のまま Worker コードを更新し、クライアント更新後に `ANTHROPIC_API_KEY` シークレットと Anthropic プロファイルを追加します。管理者トークンをホストへ渡しません。
+
+API 費用・クレジット適用は [Claude Console 請求案内](https://support.claude.com/en/articles/8977456-how-do-i-pay-for-my-claude-api-usage)で確認し、Rebut API 呼び出しと Claude Code サブスクリプション使用量を区別してください。
+
+新規 schema 2 バンドルはプロバイダーを固定してハッシュに含めます。収集時に選択したバックエンドのプロファイルを参照するため、Worker では接続トークンが必要です。提出時に供給先が変わっていればキー読み込み・予約前に `provider_mismatch` で拒否します。旧 schema 1 の新規要求は OpenAI のみとし、提出済み ID は元のバンドルでメタデータを照会できます。変更を確認してから新バンドルを収集してください。
+
+ローカル収集はプロファイルストアを初期化する場合があります。schema 1 のハッシュは provider を含めず旧順序を維持します。

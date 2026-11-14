@@ -1,8 +1,14 @@
-import { ReviewInputSchema, inputHash } from "./contracts.js";
+import {
+  ReviewInputSchema,
+  inputHash,
+  profileProvider,
+  inputProvider,
+  type Provider,
+} from "./contracts.js";
 import { parseConfig } from "./config.js";
 import { Ledger } from "./ledger.js";
 import { ProfileRegistry } from "./profiles.js";
-import { estimateReservation, runReview } from "./review.js";
+import { buildReviewBody, estimateReservation, runReview } from "./review.js";
 export class ProviderKeyUnavailable extends Error {
   constructor() {
     super("PROVIDER_KEY_UNAVAILABLE");
@@ -12,9 +18,10 @@ export interface ReviewEnvironment {
   DB: D1Database;
   REBUT_CONFIG: string;
   OPENAI_API_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
 }
 export interface ReviewExecutionOptions {
-  loadApiKey?: () => Promise<string>;
+  loadApiKey?: (provider: Provider) => Promise<string>;
   fetcher?: typeof fetch;
   signal?: AbortSignal;
 }
@@ -54,6 +61,7 @@ export async function handleReview(
     JSON.stringify({
       input_sha256: input.input_sha256,
       profile: input.profile,
+      ...(input.schema_version === 2 ? { provider: input.provider } : {}),
     }),
   );
   const existing = await ledger.get(principal, input.request_id);
@@ -66,7 +74,17 @@ export async function handleReview(
   );
   if (!selected) return { status: "profile_not_allowed" };
   const profile = selected.profile;
+  const provider = profileProvider(profile);
+  if (inputProvider(input) !== provider)
+    return {
+      status: "provider_mismatch",
+      expected_provider: inputProvider(input),
+      profile_provider: provider,
+    };
+  const body = JSON.stringify(buildReviewBody(input, profile));
   const snapshot = {
+    requested_provider: provider,
+    bundle_schema_version: input.schema_version,
     requested_model: profile.model,
     requested_reasoning: profile.reasoning,
     profile_revision: selected.revision,
@@ -76,8 +94,10 @@ export async function handleReview(
   let apiKey: string | undefined;
   try {
     apiKey = options.loadApiKey
-      ? await options.loadApiKey()
-      : env.OPENAI_API_KEY;
+      ? await options.loadApiKey(provider)
+      : provider === "anthropic"
+        ? env.ANTHROPIC_API_KEY
+        : env.OPENAI_API_KEY;
   } catch {
     throw new ProviderKeyUnavailable();
   }
@@ -89,7 +109,7 @@ export async function handleReview(
     fingerprint,
     input.input_sha256,
     input.profile,
-    estimateReservation(input, profile),
+    estimateReservation(input, profile, body),
     config.limits,
     new Date(),
     snapshot,
@@ -105,6 +125,7 @@ export async function handleReview(
       apiKey,
       options.fetcher,
       options.signal,
+      body,
     );
   } catch {
     outcome = {
@@ -123,6 +144,8 @@ export async function handleReview(
   const { review, ...outcomeInfo } = outcome;
   const info = {
     ...outcomeInfo,
+    requested_provider: provider,
+    bundle_schema_version: input.schema_version,
     requested_reasoning: profile.reasoning,
     profile_revision: selected.revision,
   };

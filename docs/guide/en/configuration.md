@@ -72,9 +72,25 @@ The service reserves conservatively for input and maximum output, then accounts 
 | Diff / requirements   | 100,000 / 16,000 characters |
 | Transport envelope    | 160,000 bytes               |
 
-SHA-256 covers masked `{schema_version,task_kind,requirements,files,diff}` with file keys ordered `{path,start_line,content}`. ID and profile are separate from the evidence hash. See [the full schema](../../../src/contracts.ts).
+SHA-256 covers masked `{schema_version,provider,task_kind,requirements,files,diff}` with file keys ordered `{path,start_line,content}`. ID and profile are separate from the evidence hash. See [the full schema](../../../src/contracts.ts).
 
 - `review` processes frozen material. Only `completed` means success; results include file/diff line evidence, model, input hash, usage, and estimated cost. Empty findings do not prove correctness.
 - `review_status` returns metadata for the original principal. Reusing an ID does not create another provider call; changing its hash/profile conflicts. Review bodies are not replayed.
 
 Ledgers retain request/usage metadata, not code, review text, or keys. Material is sent to OpenAI; `store:false` does not promise zero provider retention. The prompt instructs the model to treat instructions inside supplied material as review data. Models receive no repository/URL fetching, shell, test, editing, or PR tools.
+
+## Claude provider — 0.3.0
+
+Select `rebut set provider anthropic`, then use the existing `rebut set api-key` flow for one key. Keychain service/account: `com.abruption.rebut` / `anthropic-api-key`. For Vaultwarden, `rebut set vaultwarden-api-key-item NAME` sets the selected provider item; its default is `Rebut — Anthropic API Key`. No account aliases, key rotation, or provider fallback is added.
+
+`claude-medium` uses Claude Opus 5.5 / medium. Explicitly add `--provider anthropic` when creating an Anthropic profile. Omitting it preserves an existing active profile provider; new/disabled profiles default to OpenAI, independently of the key-selection preference. Legacy profiles without provider remain OpenAI. The frozen bundle profile determines the actual provider and key, so retain the original bundle/ID after preference changes.
+
+Each local/Worker ledger aggregates both providers under the same budget/concurrency limits. New requests retain `requested_provider` through reservation, completion, and errors; historical rows are unchanged. Missing thinking detail omits `reasoning_tokens`. Cache reads are conservatively charged at full base input rate; unexpected cache writes or nonstandard usage retain unknown reservations.
+
+Claude uses the Messages API with standard tier/global geo and no tools or prompt caching. Workspace regional policies may reject a request; do not retry another key. Deploy Worker code with its existing OpenAI configuration, update clients, and only then add the `ANTHROPIC_API_KEY` secret and Anthropic profiles. Never forward administrator tokens to hosts.
+
+Check [Claude Console billing](https://support.claude.com/en/articles/8977456-how-do-i-pay-for-my-claude-api-usage) for API costs and credit eligibility. Rebut API calls are distinct from Claude Code subscription usage.
+
+New schema 2 bundles freeze the provider and include it in the hash. Collection reads profile metadata from the selected backend, so Worker collection requires its access token. Submission rejects a changed profile supplier with `provider_mismatch` before key loading or reservation. New legacy schema 1 requests are OpenAI-only; previously submitted IDs retain metadata access with their original bundle. Confirm a supplier change before collecting a new bundle.
+
+Local collection may initialize the profile store. Schema 1 hashes omit provider and retain their original ordering.

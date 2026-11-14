@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ProfileSchema } from "../config.js";
-import type { Profile } from "../contracts.js";
+import { profileProvider, type Provider, type Profile } from "../contracts.js";
 import { validateEndpoint, type RemoteOptions } from "./connection.js";
 
 export interface ProfileRecord {
@@ -35,6 +35,7 @@ const SAFE_ERRORS = new Set([
   "Requested profile is unavailable or disabled.",
   "Model and reasoning must match exactly one enabled profile; select an explicit profile.",
   "Default astra-medium profile is unavailable; select a profile.",
+  "Default claude-medium profile is unavailable; select a profile.",
   "Expected a whole number.",
   "Expected a bounded whole number.",
   "Price requires positive decimal USD with at most six fractional digits.",
@@ -157,9 +158,23 @@ export async function listProfiles(
 
 export function resolveProfile(
   records: ProfileRecord[],
-  prefs: { profile?: string; model?: string; reasoning?: string },
+  prefs: {
+    profile?: string;
+    model?: string;
+    reasoning?: string;
+    provider?: Provider;
+  },
 ): string {
-  const enabled = records.filter((record) => record.enabled && record.profile);
+  const allEnabled = records.filter(
+    (record) => record.enabled && record.profile,
+  );
+  const enabled =
+    prefs.profile !== undefined
+      ? allEnabled
+      : allEnabled.filter(
+          (record) =>
+            profileProvider(record.profile!) === (prefs.provider ?? "openai"),
+        );
   if (prefs.profile !== undefined) {
     if (!enabled.some((record) => record.id === prefs.profile))
       throw new Error("Requested profile is unavailable or disabled.");
@@ -177,11 +192,13 @@ export function resolveProfile(
       );
     return matches[0]!.id;
   }
-  if (!enabled.some((record) => record.id === "astra-medium"))
+  const fallback =
+    prefs.provider === "anthropic" ? "claude-medium" : "astra-medium";
+  if (!enabled.some((record) => record.id === fallback))
     throw new Error(
-      "Default astra-medium profile is unavailable; select a profile.",
+      `Default ${fallback} profile is unavailable; select a profile.`,
     );
-  return "astra-medium";
+  return fallback;
 }
 
 function integer(value: string, allowZero = false): number {
@@ -234,6 +251,7 @@ export async function profileCommand(
     command === "remove"
       ? ["--if-revision"]
       : [
+          "--provider",
           "--model",
           "--reasoning",
           "--max-output-tokens",
@@ -261,9 +279,31 @@ export async function profileCommand(
     if (value === undefined) throw new Error("Missing required profile flag.");
     return value;
   };
+  const explicit = flags.get("--if-revision");
+  let revision = explicit === undefined ? undefined : integer(explicit, true);
+  let currentRecords: ProfileRecord[] | undefined;
+  const records = async () =>
+    (currentRecords ??=
+      "registry" in deps
+        ? await deps.registry.list()
+        : await listProfiles({
+            endpoint: deps.endpoint,
+            loadToken: deps.loadAdminToken,
+          }));
   let profile: Profile | undefined;
   if (command === "set") {
-    const parsed = ProfileSchema.safeParse({
+    const explicitProvider = flags.get("--provider");
+    if (
+      explicitProvider !== undefined &&
+      explicitProvider !== "openai" &&
+      explicitProvider !== "anthropic"
+    )
+      throw new Error("Invalid profile configuration.");
+    // Validate every supplied field before any credential or metadata request.
+    const base = ProfileSchema.safeParse({
+      ...(explicitProvider === "anthropic"
+        ? { provider: explicitProvider }
+        : {}),
       model: required("--model"),
       reasoning: required("--reasoning"),
       maxOutputTokens: integer(required("--max-output-tokens")),
@@ -271,15 +311,35 @@ export async function profileCommand(
       outputMicrousdPerMillion: price(required("--output-usd-per-million")),
       priceVersion: required("--price-version"),
     });
+    if (!base.success) throw new Error("Invalid profile configuration.");
+    const previous =
+      explicitProvider === undefined
+        ? (await records()).find((record) => record.id === id)
+        : undefined;
+    const provider =
+      explicitProvider ??
+      (previous?.enabled && previous.profile
+        ? profileProvider(previous.profile)
+        : "openai");
+    const parsed = ProfileSchema.safeParse({
+      ...base.data,
+      ...(provider === "anthropic" ? { provider } : {}),
+    });
     if (!parsed.success) throw new Error("Invalid profile configuration.");
     profile = parsed.data;
   }
-  const explicit = flags.get("--if-revision");
-  let revision = explicit === undefined ? undefined : integer(explicit, true);
+  if (
+    currentRecords &&
+    revision !== undefined &&
+    revision !==
+      (currentRecords.find((record) => record.id === id)?.revision ?? 0)
+  )
+    throw new Error(
+      "Profile revision conflict; read current profiles before making another change.",
+    );
   if ("registry" in deps) {
     revision ??=
-      (await deps.registry.list()).find((record) => record.id === id)
-        ?.revision ?? 0;
+      (await records()).find((record) => record.id === id)?.revision ?? 0;
     const result = await (command === "set"
       ? deps.registry.set(id!, profile!, revision)
       : deps.registry.remove(id!, revision));
@@ -292,8 +352,7 @@ export async function profileCommand(
   const options = { endpoint: deps.endpoint, loadToken: deps.loadAdminToken };
   if (revision === undefined)
     revision =
-      (await listProfiles(options)).find((record) => record.id === id)
-        ?.revision ?? 0;
+      (await records()).find((record) => record.id === id)?.revision ?? 0;
   const payload = await request(
     options,
     `/admin/profiles/${encodeURIComponent(id!)}`,

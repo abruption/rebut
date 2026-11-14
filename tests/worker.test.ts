@@ -6,6 +6,7 @@ import { inputHash } from "../src/contracts.js";
 let mf: Miniflare,
   calls = 0;
 let malformedProviderBody = false;
+let anthropicCalls = 0;
 const token = "synthetic-test-token-not-a-secret";
 const cfg = JSON.parse(readFileSync("config.example.json", "utf8"));
 cfg.hostname = "127.0.0.1";
@@ -25,11 +26,40 @@ beforeAll(async () => {
               test: createHash("sha256").update(token).digest("hex"),
             }),
             OPENAI_API_KEY: "fake",
+            ANTHROPIC_API_KEY: "fake-anthropic",
             ADMIN_TOKEN_SHA256: createHash("sha256")
               .update("synthetic-admin-token-not-a-secret")
               .digest("hex"),
           },
           outboundService: async (req) => {
+            if (req.url === "https://api.anthropic.com/v1/messages") {
+              anthropicCalls++;
+              expect(req.headers.get("x-api-key")).toBe("fake-anthropic");
+              expect(req.headers.get("authorization")).toBeNull();
+              const body = (await req.json()) as any;
+              expect(body.model).toBe("claude-opus-5-5");
+              return new Response(
+                JSON.stringify({
+                  id: "msg_worker",
+                  type: "message",
+                  role: "assistant",
+                  model: body.model,
+                  stop_reason: "end_turn",
+                  usage: { input_tokens: 100, output_tokens: 20 },
+                  content: [
+                    {
+                      type: "text",
+                      text: JSON.stringify({
+                        summary: "Synthetic Claude Worker review",
+                        findings: [],
+                        additional_evidence: [],
+                      }),
+                    },
+                  ],
+                }),
+                { headers: { "request-id": "req_worker_claude" } },
+              );
+            }
             expect(req.url).toBe("https://api.openai.com/v1/responses");
             calls++;
             if (malformedProviderBody)
@@ -468,3 +498,144 @@ it("persists safe unknown diagnostics without releasing budget or invoking the p
       .run();
   }
 });
+
+it("routes a Claude profile through its own Worker secret with persistent deduplication", async () => {
+  const input = {
+    schema_version: 2 as const,
+    provider: "anthropic" as const,
+    task_kind: "code" as const,
+    requirements: "Synthetic Claude",
+    files: [{ path: "fixture.ts", start_line: 1, content: "return 1;" }],
+    diff: "",
+    request_id: "synthetic-claude-worker",
+    profile: "claude-medium",
+    input_sha256: "",
+  };
+  input.input_sha256 = await inputHash(input);
+  const before = anthropicCalls;
+  const result = JSON.parse(
+    (
+      await decode(
+        await rpc("tools/call", { name: "review", arguments: input }),
+      )
+    ).result.content[0].text,
+  );
+  expect(result).toMatchObject({
+    status: "completed",
+    requested_provider: "anthropic",
+    api_request_id: "req_worker_claude",
+  });
+  const replay = JSON.parse(
+    (
+      await decode(
+        await rpc("tools/call", { name: "review", arguments: input }),
+      )
+    ).result.content[0].text,
+  );
+  expect(replay.result_replay_available).toBe(false);
+  expect(anthropicCalls).toBe(before + 1);
+  const row = await (
+    await mf.getD1Database("DB")
+  )
+    .prepare("SELECT metadata FROM requests WHERE request_id=?")
+    .bind(input.request_id)
+    .first<any>();
+  expect(JSON.parse(row.metadata).requested_provider).toBe("anthropic");
+  expect(row.metadata).not.toContain("fake-anthropic");
+});
+
+it("keeps Worker metadata available without a provider key and never reserves a missing-key request", async () => {
+  for (const only of ["openai", "anthropic", "neither"]) {
+    const missing = only === "anthropic" ? "astra-medium" : "claude-medium";
+    let outbound = 0;
+    const isolated = new Miniflare(
+      convertV4MiniflareOptions({
+        workers: [
+          {
+            name: "missing-provider",
+            modules: [{ type: "ESModule", path: "dist/worker.js" }],
+            compatibilityDate: "2026-11-12",
+            compatibilityFlags: ["nodejs_compat"],
+            d1Databases: ["DB"],
+            bindings: {
+              REBUT_CONFIG: JSON.stringify(cfg),
+              AUTH_TOKENS: JSON.stringify({
+                test: createHash("sha256").update(token).digest("hex"),
+              }),
+              ...(only === "openai"
+                ? { OPENAI_API_KEY: "fake-openai" }
+                : only === "anthropic"
+                  ? { ANTHROPIC_API_KEY: "fake-anthropic" }
+                  : {}),
+            },
+            outboundService: async () => {
+              outbound++;
+              throw Error("must not call provider");
+            },
+          },
+        ],
+      }),
+    );
+    try {
+      const db = await isolated.getD1Database("DB");
+      for (const statement of (
+        readFileSync("migrations/0001_ledger.sql", "utf8") +
+        readFileSync("migrations/0002_profiles.sql", "utf8")
+      )
+        .split(";")
+        .map((x) => x.trim())
+        .filter(Boolean))
+        await db.prepare(statement).run();
+      const raw = {
+        schema_version: 2 as const,
+        provider:
+          missing === "astra-medium"
+            ? ("openai" as const)
+            : ("anthropic" as const),
+        request_id: "missing-provider-key",
+        profile: missing,
+        input_sha256: "",
+        task_kind: "code" as const,
+        requirements: "Synthetic",
+        files: [{ path: "a.ts", start_line: 1, content: "return 1;" }],
+        diff: "",
+      };
+      raw.input_sha256 = await inputHash(raw);
+      const request = async (method: string, params: unknown) =>
+        decode(
+          await isolated.dispatchFetch("http://127.0.0.1/mcp", {
+            method: "POST",
+            headers: {
+              Host: "127.0.0.1",
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+              Accept: "application/json, text/event-stream",
+              "MCP-Protocol-Version": "2025-03-26",
+            },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+          }),
+        );
+      const failure = await request("tools/call", {
+        name: "review",
+        arguments: raw,
+      });
+      expect(failure.result.isError).toBe(true);
+      expect(JSON.parse(failure.result.content[0].text).status).toBe(
+        "provider_key_unavailable",
+      );
+      const status = await request("tools/call", {
+        name: "review_status",
+        arguments: { request_id: raw.request_id },
+      });
+      expect(JSON.parse(status.result.content[0].text).status).toBe(
+        "not_found",
+      );
+      expect(
+        (await db.prepare("SELECT COUNT(*) AS n FROM requests").first<any>()).n,
+      ).toBe(0);
+      expect(outbound).toBe(0);
+    } finally {
+      await isolated.dispose();
+    }
+  }
+}, 20000);

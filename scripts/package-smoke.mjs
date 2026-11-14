@@ -47,10 +47,10 @@ const env = {
 };
 const npm = process.env.npm_execpath;
 assert(npm, "Run through npm run test:package so the npm CLI is explicit.");
-function run(args, cwd = root) {
+function run(args, cwd = root, extraEnv = {}) {
   const result = spawnSync(process.execPath, args, {
     cwd,
-    env,
+    env: { ...env, ...extraEnv },
     encoding: "utf8",
     timeout: 120_000,
     maxBuffer: 4 * 1024 * 1024,
@@ -515,6 +515,153 @@ try {
   assert(!ledger.includes(Buffer.from("Synthetic local package review")));
   console.log(
     "Packed local artifact: no endpoint, isolated SQLite, synthetic API-key role, review/status, restart, in-flight MCP/CLI SIGTERM settlement and doctor passed; real provider calls: zero.",
+  );
+  // Claude host registration and provider are exercised from the actual installed tarball.
+  const anthropicConfig = join(home, "anthropic-settings");
+  const anthropicKey = "synthetic-anthropic-package-key-not-real-123456789";
+  const anthropicEnv = {
+    REBUT_CONFIG_DIR: anthropicConfig,
+    REBUT_ANTHROPIC_API_KEY: anthropicKey,
+  };
+  run([entry, "set", "provider", "anthropic"], directory, anthropicEnv);
+  run([entry, "set", "secret-store", "env"], directory, anthropicEnv);
+  const claudeConfig = join(home, "claude-user.json");
+  run(
+    [entry, "setup", "--client", "claude", "--claude-config", claudeConfig],
+    directory,
+    anthropicEnv,
+  );
+  const registered = JSON.parse(await readFile(claudeConfig, "utf8")).mcpServers
+    .rebut;
+  assert.equal(registered.timeout, 1_860_000);
+  assert.equal(
+    registered.env.REBUT_ANTHROPIC_API_KEY,
+    "${REBUT_ANTHROPIC_API_KEY:-}",
+  );
+  assert(!JSON.stringify(registered).includes(anthropicKey));
+  assert(
+    !registered.env.ANTHROPIC_API_KEY && !registered.env.REBUT_ADMIN_TOKEN,
+  );
+  const anthroPreload = join(directory, "synthetic-anthropic.mjs");
+  const anthroMarker = join(directory, "anthropic-calls");
+  await writeFile(
+    anthroPreload,
+    `
+    import {appendFile} from 'node:fs/promises';
+    globalThis.fetch=async(input,init)=>{
+      const url=input instanceof Request?input.url:String(input);
+      const headers=new Headers(init?.headers);
+      if(headers.get('x-api-key')!==process.env.REBUT_ANTHROPIC_API_KEY)throw Error('Wrong provider credential');
+      if(url==='https://api.anthropic.com/v1/models/claude-opus-5-5' && init.method==='GET'){
+        await appendFile(${JSON.stringify(anthroMarker)},'metadata\\n');
+        return new Response(JSON.stringify({id:'claude-opus-5-5'}));
+      }
+      if(url!=='https://api.anthropic.com/v1/messages'||init.method!=='POST')throw Error('Unexpected external request');
+      await appendFile(${JSON.stringify(anthroMarker)},'review\\n');
+      const body=JSON.parse(init.body);
+      return new Response(JSON.stringify({id:'msg_packaged',type:'message',role:'assistant',model:body.model,stop_reason:'end_turn',usage:{input_tokens:100,output_tokens:20},content:[{type:'text',text:JSON.stringify({summary:'Synthetic Claude package review',findings:[],additional_evidence:[]})}]}),{headers:{'request-id':'req_packaged_claude'}});
+    };`,
+    { mode: 0o600 },
+  );
+  await client.close();
+  await transport.close();
+  transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["--import", anthroPreload, entry, "mcp"],
+    cwd: directory,
+    env: { ...env, ...anthropicEnv },
+    stderr: "pipe",
+  });
+  let anthropicStderr = "";
+  transport.stderr.on("data", (data) => {
+    anthropicStderr += data;
+  });
+  const fixtureSyntax = spawnSync(
+    process.execPath,
+    ["--check", anthroPreload],
+    { env, encoding: "utf8" },
+  );
+  assert.equal(
+    fixtureSyntax.status,
+    0,
+    "Synthetic Anthropic fixture syntax failed.",
+  );
+  client = new Client({ name: "anthropic-package-smoke", version: "1" });
+  await bounded(client.connect(transport), "Claude MCP initialize");
+  const claudeBundle = {
+    ...frozen,
+    schema_version: 2,
+    provider: "anthropic",
+    profile: "claude-medium",
+    request_id: "packaged-claude",
+    input_sha256: createHash("sha256")
+      .update(
+        JSON.stringify({
+          schema_version: 2,
+          provider: "anthropic",
+          task_kind: bundle.task_kind,
+          requirements: bundle.requirements,
+          files: bundle.files,
+          diff: bundle.diff,
+        }),
+      )
+      .digest("hex"),
+  };
+  const reviewed = JSON.parse(
+    (
+      await bounded(
+        client.callTool({ name: "review", arguments: claudeBundle }),
+        "Claude review",
+      )
+    ).content[0].text,
+  );
+  assert.equal(reviewed.status, "completed");
+  assert.equal(reviewed.requested_provider, "anthropic");
+  assert(!JSON.stringify(reviewed).includes(anthropicKey));
+  const replayed = JSON.parse(
+    (await client.callTool({ name: "review", arguments: claudeBundle }))
+      .content[0].text,
+  );
+  assert.equal(replayed.result_replay_available, false);
+  assert(!replayed.review);
+  await client.close();
+  await transport.close();
+  const saved = JSON.parse(
+    JSON.parse(
+      run([entry, "status", claudeBundle.request_id], directory, {
+        REBUT_CONFIG_DIR: anthropicConfig,
+      }),
+    ).content[0].text,
+  );
+  assert.equal(saved.requested_provider, "anthropic");
+  const metadata = JSON.parse(
+    run(
+      ["--import", anthroPreload, entry, "doctor", "--provider"],
+      directory,
+      anthropicEnv,
+    ),
+  );
+  assert.equal(metadata.providerDiagnostic.status, "metadata_reachable");
+  assert.equal(
+    (await readFile(anthroMarker, "utf8")).trim(),
+    "review\nmetadata",
+  );
+  run(
+    [entry, "remove", "--client", "claude", "--claude-config", claudeConfig],
+    directory,
+    anthropicEnv,
+  );
+  assert(!JSON.parse(await readFile(claudeConfig, "utf8")).mcpServers.rebut);
+  const anthroLedger = await readFile(
+    join(anthropicConfig, "local", "ledger.sqlite"),
+  );
+  assert(!anthroLedger.includes(Buffer.from(anthropicKey)));
+  assert(
+    !anthroLedger.includes(Buffer.from("Synthetic Claude package review")),
+  );
+  assert(!anthropicStderr.includes(anthropicKey));
+  console.log(
+    "Packed Claude artifact: isolated host registration/removal, provider review/status/dedup and metadata-only diagnostic passed; real provider calls: zero.",
   );
 } finally {
   if (

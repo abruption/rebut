@@ -72,9 +72,25 @@ rebut profile remove PROFILE_ID --if-revision N
 | diff / 요구사항   | 100,000자 / 16,000자 |
 | 전송 봉투         | 160,000바이트        |
 
-SHA-256 대상은 마스킹한 `{schema_version,task_kind,requirements,files,diff}`이며 파일 키 순서는 `{path,start_line,content}`입니다. ID·프로필은 증거 해시와 별개입니다. [전체 스키마](../../../src/contracts.ts)를 참고하세요.
+SHA-256 대상은 마스킹한 `{schema_version,provider,task_kind,requirements,files,diff}`이며 파일 키 순서는 `{path,start_line,content}`입니다. ID·프로필은 증거 해시와 별개입니다. [전체 스키마](../../../src/contracts.ts)를 참고하세요.
 
 - `review`: 고정 자료로 검토합니다. 성공 상태는 `completed`이며 파일·diff 행 근거, 모델·입력 해시·사용량·예상 비용을 반환합니다. 빈 findings만으로 정확성을 보장하지 않습니다.
 - `review_status`: 원래 인증 주체의 메타데이터만 조회합니다. 같은 ID 재제출은 새 공급자 호출을 만들지 않으며 해시·프로필을 바꾸면 conflict입니다. 본문은 재생하지 않습니다.
 
 장부는 요청·사용량 메타데이터만 보관합니다. 코드·리뷰 원문·키를 저장하지 않습니다. 자료는 OpenAI로 전송하며 `store:false`는 공급자의 보관 기간 0을 보장하지 않습니다. 프롬프트는 자료 속 지시를 검토 데이터로 취급하도록 모델에 지시하며, 모델에 저장소·URL 조회, 셸·테스트·편집·PR 도구는 제공하지 않습니다.
+
+## Claude 공급자 — 0.3.0
+
+`rebut set provider anthropic` 후 기존 `rebut set api-key`로 키 하나를 설정합니다. Keychain 서비스는 `com.abruption.rebut`, 계정은 `anthropic-api-key`입니다. Vaultwarden은 선택한 백엔드에서 `rebut set vaultwarden-api-key-item NAME`으로 항목을 지정하며 기본 이름은 `Rebut — Anthropic API Key`입니다. 계정 별칭·키 순환·공급자 fallback은 없습니다.
+
+`claude-medium`은 Claude Opus 5.5 / medium 프로필입니다. 새 Anthropic 프로필은 `profile set`에 `--provider anthropic`을 명시합니다. 생략하면 기존 활성 프로필의 공급자를 유지하며, 새/비활성 프로필은 OpenAI로 간주합니다. 키 선택 설정을 상속하지 않습니다. provider가 없는 기존 프로필은 OpenAI입니다. 고정 번들의 프로필이 실제 공급자와 키를 정하므로, 환경설정 변경 후에도 원래 번들·ID를 유지하세요.
+
+로컬/Worker 각각의 한 장부에서 두 공급자의 예산·동시성을 합산합니다. 새 요청의 `requested_provider`는 예약·완료·오류에 보존하며 과거 행은 다시 쓰지 않습니다. Claude thinking 세부값이 없으면 `reasoning_tokens`를 생략합니다. 캐시 읽기는 보수적으로 기본 입력 요율로 계산하며 요청하지 않은 캐시 쓰기나 비표준 사용량은 unknown으로 유지합니다.
+
+Claude 요청은 standard tier·global geo, 도구·캐싱 없는 Messages API를 사용합니다. workspace 지역 제한으로 거부될 수 있으며, 오류를 다른 키로 재시도하지 않습니다. Worker는 기존 OpenAI 설정을 유지해 0.3.0 코드를 먼저 배포하고, 클라이언트 업데이트 뒤 `ANTHROPIC_API_KEY` 시크릿과 Anthropic 프로필을 추가합니다. 관리자 토큰을 호스트에 전달하지 않습니다.
+
+API 비용과 크레딧 적용은 [Claude Console 청구 안내](https://support.claude.com/en/articles/8977456-how-do-i-pay-for-my-claude-api-usage)에서 확인하세요. Claude Code 구독 사용량과 Rebut API 호출을 혼동하지 마세요.
+
+새 번들은 schema 2로 공급자를 고정하고 해시에 포함합니다. 수집 시 선택한 백엔드의 프로필 메타데이터를 조회하므로 Worker 모드에는 접속 토큰이 필요합니다. 제출 시 현재 프로필의 공급자가 다르면 `provider_mismatch`로 키 조회·예약 전에 거부합니다. 기존 schema 1의 새 요청은 OpenAI로만 허용하고, 이미 제출된 ID는 원래 번들로 메타데이터를 조회합니다. 공급자 변경을 확인한 뒤 새 번들을 수집하세요.
+
+로컬 수집은 프로필 저장소를 초기화할 수 있습니다. schema 1의 해시 순서에는 provider가 없으며 기존 값 그대로입니다.

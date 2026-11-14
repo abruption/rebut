@@ -13,7 +13,17 @@ const SafeId = z
   .regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/);
 export const ReviewInputSchema = z
   .strictObject({
-    schema_version: z.literal(1),
+    schema_version: z
+      .union([z.literal(1), z.literal(2)])
+      .describe(
+        "Use 2 for new supplier-pinned bundles. Legacy 1 new requests are OpenAI only.",
+      ),
+    provider: z
+      .enum(["openai", "anthropic"])
+      .optional()
+      .describe(
+        "Required and hash-pinned for schema_version 2. Legacy schema 1 new requests are OpenAI only.",
+      ),
     request_id: SafeId.max(80),
     profile: SafeId.max(64),
     input_sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -31,6 +41,14 @@ export const ReviewInputSchema = z
     diff: z.string().max(100_000),
   })
   .superRefine((value, ctx) => {
+    if (
+      (value.schema_version === 2 && value.provider === undefined) ||
+      (value.schema_version === 1 && value.provider !== undefined)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Schema 2 requires provider; legacy schema 1 must omit it",
+      });
     if (
       new TextEncoder().encode(JSON.stringify(value)).byteLength >
       MAX_INPUT_BYTES
@@ -55,16 +73,25 @@ export const ReviewInputSchema = z
     }
   });
 export type ReviewInput = z.infer<typeof ReviewInputSchema>;
+export function inputProvider(
+  input: Pick<ReviewInput, "schema_version" | "provider">,
+): Provider {
+  if (input.schema_version === 1) return "openai";
+  if (input.provider !== "openai" && input.provider !== "anthropic")
+    throw new Error("Provider pin required");
+  return input.provider;
+}
 
 export async function inputHash(
   input: Pick<
     ReviewInput,
     "schema_version" | "task_kind" | "requirements" | "files" | "diff"
-  >,
+  > & { provider?: Provider },
 ): Promise<string> {
   const bytes = new TextEncoder().encode(
     JSON.stringify({
       schema_version: input.schema_version,
+      ...(input.schema_version === 2 ? { provider: inputProvider(input) } : {}),
       task_kind: input.task_kind,
       requirements: input.requirements,
       files: input.files.map(({ path, start_line, content }) => ({
@@ -81,7 +108,16 @@ export async function inputHash(
   ).join("");
 }
 
+export type Provider = "openai" | "anthropic";
+export function profileProvider(profile: { provider?: Provider }): Provider {
+  const provider = profile.provider ?? "openai";
+  if (provider !== "openai" && provider !== "anthropic")
+    throw new Error("Invalid provider");
+  return provider;
+}
+
 export interface Profile {
+  provider?: Provider;
   model: string;
   reasoning?: string;
   maxOutputTokens: number;
@@ -113,7 +149,7 @@ export interface ReviewUsage {
   input_tokens: number;
   output_tokens: number;
   cached_tokens: number;
-  reasoning_tokens: number;
+  reasoning_tokens?: number;
 }
 export type InvalidOutputReason =
   | "unexpected_output_item"
@@ -143,6 +179,7 @@ export type UnknownReason =
   | "usage_invalid"
   | "response_status_unhandled";
 export interface ReviewOutcome {
+  requested_provider?: Provider;
   status: "completed" | "refused" | "incomplete" | "invalid_output" | "unknown";
   review?: Review;
   response_id?: string;
