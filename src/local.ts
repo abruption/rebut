@@ -7,7 +7,7 @@ import { createNodeHttpTransport } from "./client/http.js";
 import { McpServer } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { z } from "zod";
-import { ReviewInputSchema } from "./contracts.js";
+import { ReviewInputSchema, type Provider } from "./contracts.js";
 import { parseConfig } from "./config.js";
 import { handleReview, metadata, ProviderKeyUnavailable } from "./service.js";
 import { Ledger, type LedgerRow } from "./ledger.js";
@@ -86,7 +86,7 @@ export async function openLocalRuntime(
   options: {
     directory?: string;
     fetcher?: typeof fetch;
-    loadApiKey?: () => Promise<string>;
+    loadApiKey?: (provider: Provider) => Promise<string>;
   } = {},
 ) {
   const config = await localConfig(settings);
@@ -155,7 +155,8 @@ export async function openLocalRuntime(
       const work = handleReview(raw, PRINCIPAL, env, {
         fetcher: providerFetch,
         loadApiKey:
-          options.loadApiKey ?? (() => loadToken(settings, "provider")),
+          options.loadApiKey ??
+          ((provider) => loadToken(settings, "provider", provider)),
         signal: AbortSignal.any([shutdown.signal, ...(signal ? [signal] : [])]),
       });
       active.add(work);
@@ -232,22 +233,28 @@ export async function localMcpServer(
   try {
     preferred = resolveProfile(records, {
       profile: settings.defaultProfile,
+      provider: settings.provider,
       model:
         settings.defaultModel || settings.defaultReasoning
           ? (settings.defaultModel ??
-            records.find((r) => r.id === "astra-medium" && r.enabled)?.profile
-              ?.model)
+            records.find(
+              (r) =>
+                r.id ===
+                  (settings.provider === "anthropic"
+                    ? "claude-medium"
+                    : "astra-medium") && r.enabled,
+            )?.profile?.model)
           : undefined,
       reasoning: settings.defaultReasoning,
     });
   } catch {
     unavailable = hasPreference;
   }
-  const server = new McpServer({ name: "rebut-mcp", version: "0.2.0" });
+  const server = new McpServer({ name: "rebut-mcp", version: "0.3.0" });
   server.registerTool(
     "review",
     {
-      description: `Explicit opt-in OpenAI review. Local per-device ledger; budgets are not shared with another machine or Worker. Keep the original request_id and backend after uncertainty; never replay another backend's uncertain request here. ${preferred ? "Preferred profile: " + preferred : unavailable ? "Configured profile is unavailable." : "Select an enabled profile explicitly."}`,
+      description: `Explicit opt-in provider review. Local per-device ledger; budgets are not shared with another machine or Worker. Keep the original request_id and backend after uncertainty; never replay another backend's uncertain request here. ${preferred ? "Preferred profile: " + preferred : unavailable ? "Configured profile is unavailable." : "Select an enabled profile explicitly."}`,
       inputSchema: ReviewInputSchema,
     },
     async (input, extra) => {

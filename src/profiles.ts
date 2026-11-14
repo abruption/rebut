@@ -49,7 +49,9 @@ function profileValue(value: unknown): Profile {
       "INVALID_PROFILE",
       "Invalid profile configuration.",
     );
-  return parsed.data;
+  const profile = parsed.data;
+  if (profile.provider === "openai") delete profile.provider;
+  return profile;
 }
 function record(row: ProfileRow): ProfileRecord {
   try {

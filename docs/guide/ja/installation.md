@@ -4,12 +4,31 @@
 
 [Rebut](../../../README.ja.md) · [ユーザーガイド](../ja.md)
 
-
 **Node.js 24以降**が必要です。新規インストールはローカルstdio MCPが既定で、Cloudflareアカウント・Worker endpoint・別のHTTPデーモンは不要です。
 
 ```sh
 npm install -g rebut-mcp
 ```
+
+## Claude API と Claude Code — 0.3.0
+
+0.3.0 以降はレビューのプロバイダーと MCP ホストを別々に選択します。ローカル macOS Keychain の例：
+
+```sh
+rebut set mode local
+rebut set provider anthropic
+rebut set api-key
+rebut setup --client claude
+rebut doctor --connect
+```
+
+プロバイダーを切り替えると既定プロファイルを選び、モデル/推論オーバーライドを解除します。同じ選択の繰り返しでは維持します。既存の OpenAI キー・プロファイル・台帳は削除しません。
+
+登録前に Claude Code を止め、設定をバックアップします。`~/.claude.json` の Rebut ユーザー項目だけを更新します。別ファイルは `--claude-config PATH`、`CLAUDE_CONFIG_DIR` 使用時は必須です。異なる Rebut 登録は `--replace` が必要です。プロジェクト/管理設定の同名上書きは別途確認し、登録ファイルは 0600 で原子的に置換し、ACL/xattr は維持しません。再起動後 `/mcp` を確認してください。
+
+env は `rebut set secret-store env` と実際のホスト環境の `REBUT_ANTHROPIC_API_KEY` を使います。Claude Code 認証を変えないため共有 `ANTHROPIC_API_KEY` の選択は非対応です。Keychain/Vaultwarden 登録はキー用 env プレースホルダーを追加しません。env setup もプロファイル取得時にローカル SQLite を初期化する場合があります。 env 登録は現在の既定プロファイルの変数を渡します。他プロバイダーの固定バンドルでキーがなければ予約前に失敗します。doctor の `provider` は既定プロファイル、`keyConfigurationProvider` は `set api-key` の対象です。変更後は各ホストで `setup --replace` と再起動を行います。
+
+任意のローカル専用 `rebut doctor --provider` はモデルメタデータだけを取得し、生成・レビュー予約・使用量記録は追加しません。プロファイル取得時にローカル SQLite を初期化する場合があります。`doctor --connect` は引き続き MCP 確認です。メタデータ到達は生成権限・残高・geo・構造化出力・品質の証明ではありません。
 
 ## ローカル設定
 
@@ -43,7 +62,7 @@ rebut set mode localで明示的に切り替え、障害時の自動代替はし
 
 ## ソースチェックアウトと開発者向け検証
 
-CLI 0.2.0向けです。npmはローカルサーバーと任意Workerブリッジを実行し、ホスト型サービスやAPIクレジットは提供しません。Cloudflareアカウントとソースチェックアウトは任意のWorkerデプロイだけに必要です。実endpoint・非公開設定・資格情報・レビュー本文はパッケージに含めません。
+CLI 0.3.0向けです。npmはローカルサーバーと任意Workerブリッジを実行し、ホスト型サービスやAPIクレジットは提供しません。Cloudflareアカウントとソースチェックアウトは任意のWorkerデプロイだけに必要です。実endpoint・非公開設定・資格情報・レビュー本文はパッケージに含めません。
 
 ```sh
 npm ci

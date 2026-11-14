@@ -11,12 +11,20 @@ import {
 } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import type { Provider } from "../contracts.js";
 import { LimitsSchema } from "../config.js";
 import { validateEndpoint } from "./connection.js";
 export const SettingsSchema = z
   .object({
     schemaVersion: z.literal(1),
     mode: z.enum(["local", "worker"]).optional(),
+    provider: z.enum(["openai", "anthropic"]).optional(),
+    vaultwardenAnthropicApiKeyItem: z
+      .string()
+      .min(1)
+      .max(200)
+      .refine((s) => !/[\x00-\x1f\x7f]/.test(s))
+      .optional(),
     apiKeyEnv: z.enum(["REBUT_OPENAI_API_KEY", "OPENAI_API_KEY"]).optional(),
     localLimits: LimitsSchema.optional(),
     vaultwardenApiKeyItem: z
@@ -115,6 +123,9 @@ export function executionMode(settings: Settings): "local" | "worker" {
 
 export function providerEnvName(
   settings: Settings,
-): "REBUT_OPENAI_API_KEY" | "OPENAI_API_KEY" {
-  return settings.apiKeyEnv ?? "REBUT_OPENAI_API_KEY";
+  provider: Provider = settings.provider ?? "openai",
+): "REBUT_OPENAI_API_KEY" | "OPENAI_API_KEY" | "REBUT_ANTHROPIC_API_KEY" {
+  return provider === "anthropic"
+    ? "REBUT_ANTHROPIC_API_KEY"
+    : (settings.apiKeyEnv ?? "REBUT_OPENAI_API_KEY");
 }

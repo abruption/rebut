@@ -52,3 +52,7 @@ Choose capacity from the pending count plus the deliberately allowed new paralle
 ## Maintainer npm publication
 
 The manual `publish.yml` workflow uses npm Trusted Publishing (OIDC) without a stored npm token. It runs only from main for a stable tag naming the exact workflow source commit, then requires the `abruption` owner's approval in the `npm` GitHub Environment. Building and testing have no OIDC write permission; only publishing the verified tarball has it. PR merges and GitHub release events do not publish packages. Registry visibility failures after publication require inspecting the original run and artifact before retrying. This does not deploy Workers or update installed clients. The [maintainer release checklist (Korean)](../../releases/release-checklist.ko.md#github-actions-trusted-publisher) records setup and operation; the workflow must be merged and the npm trust configured before first use.
+
+## Upgrading to 0.3.0
+
+New settings or Anthropic profiles may cause 0.2.x to reject settings/profile lists. Back up settings and the closed ledger before upgrading. Review a rollback procedure that disables Anthropic profiles using 0.3.0 and restores compatible settings; never delete request history or unknown reservations. The updater does not reserialize unrelated Claude configuration, but a running host can overwrite changes, so stop it before registration.

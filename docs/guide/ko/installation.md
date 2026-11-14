@@ -4,12 +4,31 @@
 
 [Rebut](../../../README.md) · [사용자 가이드](../ko.md)
 
-
 **Node.js 24 이상**을 사용합니다. 새 설치는 로컬 stdio MCP 서버가 기본이며 Cloudflare 계정·Worker endpoint·별도 HTTP 데몬이 필요하지 않습니다.
 
 ```sh
 npm install -g rebut-mcp
 ```
+
+## Claude API와 Claude Code — 0.3.0
+
+0.3.0 이상에서 검토 공급자와 MCP 호스트를 별도로 선택합니다. 다음은 로컬·macOS Keychain 예시입니다.
+
+```sh
+rebut set mode local
+rebut set provider anthropic
+rebut set api-key
+rebut setup --client claude
+rebut doctor --connect
+```
+
+명령으로 공급자를 바꿀 때 기본 프로필을 선택하고 모델/추론 오버라이드를 지웁니다. 같은 공급자를 다시 선택하면 유지합니다. 기존 OpenAI 키·프로필·장부는 삭제하지 않습니다.
+
+Claude Code를 종료한 뒤 설정 파일을 백업하고 등록하세요. 사용자 범위의 `~/.claude.json`에서 Rebut 항목만 갱신합니다. 다른 파일은 `--claude-config PATH`로 명시하며 `CLAUDE_CONFIG_DIR`이 있으면 이 옵션이 필요합니다. 기존 다른 Rebut 등록은 `--replace`로만 교체합니다. 프로젝트/관리 설정이 같은 이름을 가리면 별도로 확인하세요. 등록 파일은 0600으로 원자적 교체하며 ACL/xattr는 보존하지 않습니다. 등록 후 Claude Code를 재시작해 `/mcp`에서 확인합니다.
+
+환경변수는 `rebut set secret-store env`와 실제 호스트의 `REBUT_ANTHROPIC_API_KEY`를 사용합니다. Claude Code 자체 인증을 바꾸지 않도록 공유 `ANTHROPIC_API_KEY` 선택은 지원하지 않습니다. Keychain·Vaultwarden은 별도 env 키를 등록하지 않습니다. env setup도 프로필 조회 시 로컬 SQLite를 초기화할 수 있습니다. env 등록은 현재 기본 프로필의 공급자 변수를 전달합니다. 다른 공급자의 고정 번들에 필요한 env 키가 없으면 예약 전에 실패합니다. `doctor`의 `provider`는 기본 프로필, `keyConfigurationProvider`는 `set api-key`의 대상을 표시합니다. 공급자·백엔드·env 변경 뒤에는 사용하는 각 호스트에 `setup --replace`를 다시 실행하고 재시작하세요.
+
+선택 사항인 `rebut doctor --provider`는 로컬 키로 모델 메타데이터만 조회하며 생성·검토 예약·사용량 기록을 추가하지 않습니다. 프로필 조회 과정에서 로컬 SQLite를 초기화할 수 있습니다. `doctor --connect`는 계속 MCP 연결 확인용입니다. 메타데이터 조회 성공은 생성 권한·잔액·geo·구조화 출력·품질을 보장하지 않습니다.
 
 ## 로컬 설정
 
@@ -43,7 +62,7 @@ rebut setup --client codex --replace
 
 ## 소스 체크아웃 및 개발자 검증
 
-이 안내는 CLI 0.2.0 대상입니다. npm 패키지는 로컬 서버와 선택적 Worker 브리지를 실행하며 호스팅 검토 서비스나 API 크레딧을 제공하지 않습니다. Cloudflare 계정·소스 체크아웃은 선택적 Worker 배포에만 필요합니다. 실제 endpoint·비공개 설정·자격증명·리뷰 본문은 패키지에 포함하지 않습니다.
+이 안내는 CLI 0.3.0 대상입니다. npm 패키지는 로컬 서버와 선택적 Worker 브리지를 실행하며 호스팅 검토 서비스나 API 크레딧을 제공하지 않습니다. Cloudflare 계정·소스 체크아웃은 선택적 Worker 배포에만 필요합니다. 실제 endpoint·비공개 설정·자격증명·리뷰 본문은 패키지에 포함하지 않습니다.
 
 ```sh
 npm ci

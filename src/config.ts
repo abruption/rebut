@@ -4,6 +4,7 @@ import type { Limits } from "./ledger.js";
 const SafeInt = z.number().int().positive().max(1_000_000_000_000);
 export const ProfileSchema = z
   .object({
+    provider: z.enum(["openai", "anthropic"]).optional(),
     model: z.string().regex(/^[a-zA-Z0-9._:-]{1,100}$/),
     reasoning: z
       .string()
@@ -14,7 +15,14 @@ export const ProfileSchema = z
     outputMicrousdPerMillion: SafeInt,
     priceVersion: z.string().min(1).max(100),
   })
-  .strict();
+  .strict()
+  .refine(
+    (p) =>
+      p.provider !== "anthropic" ||
+      p.reasoning === undefined ||
+      ["low", "medium", "high", "xhigh", "max"].includes(p.reasoning),
+    "Unsupported Anthropic effort",
+  );
 export const LimitsSchema = z
   .object({
     dailyMicrousd: SafeInt,

@@ -52,3 +52,7 @@
 ## 维护者发布 npm 包
 
 手动 `publish.yml` 工作流通过 OIDC Trusted Publishing 发布，无需保存 npm 令牌。仅允许从 main 运行，稳定版本标签必须指向工作流的同一源码提交，并在 GitHub Environment `npm` 中由所有者 `abruption` 批准。构建和测试没有 OIDC 写入权限，只有发布已验证 tarball 的任务拥有该权限。PR 合并或 GitHub Release 事件不会自动发布。发布后若注册表处理或校验失败，应先检查原始运行与制品，再决定是否重试。这不部署 Worker，也不更新已有客户端。[维护者发布清单（韩语）](../../releases/release-checklist.ko.md#github-actions-trusted-publisher)包含设置和操作步骤；首次使用前须合并工作流并配置 npm trust。
+
+## 升级到 0.3.0
+
+新设置或 Anthropic 配置档可能导致 0.2.x 拒绝设置/配置档列表。升级前备份设置与已关闭的账本。回滚需评估在 0.3.0 中停用 Anthropic 配置档并恢复兼容设置；不能删除请求历史或 unknown 预留。更新器不重新序列化无关 Claude 配置，但运行中的宿主可能覆盖变更，故应停止后注册。

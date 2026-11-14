@@ -8,9 +8,11 @@
 
 </div>
 
-Rebut reviews code using your own OpenAI API key. New installations run a local stdio server without a Cloudflare account or a separate HTTP daemon.
+Rebut reviews code using your own OpenAI or Claude API key. New installations run a local stdio server without a Cloudflare account or a separate HTTP daemon.
 
-Review material is sent to the OpenAI API; the local ledger stores only request and usage metadata.
+Review material is sent to the selected provider API; the local ledger stores only request and usage metadata.
+
+On 0.3.0+, select Claude with `rebut set provider anthropic`, then `rebut set api-key` and `rebut setup --client claude`. Host registration and review provider are independent.
 
 The tested release targets macOS/Linux; Windows behavior and ACLs are not validated.
 

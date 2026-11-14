@@ -20,7 +20,8 @@ export interface CodexSetupOptions {
   replace?: boolean;
   forwardTokenEnv?: boolean;
   forwardApiKeyEnv?: boolean;
-  apiKeyEnv?: "REBUT_OPENAI_API_KEY" | "OPENAI_API_KEY";
+  apiKeyEnv?:
+    "REBUT_OPENAI_API_KEY" | "OPENAI_API_KEY" | "REBUT_ANTHROPIC_API_KEY";
   configDir?: string;
 }
 

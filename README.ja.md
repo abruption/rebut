@@ -8,9 +8,11 @@
 
 </div>
 
-Rebutは自分のOpenAI APIキーでコードをレビューします。新規インストールはローカルstdioサーバーとして動作し、Cloudflareアカウントや別のHTTPデーモンは不要です。
+Rebutは自分のOpenAIまたはClaude APIキーでコードをレビューします。新規インストールはローカルstdioサーバーとして動作し、Cloudflareアカウントや別のHTTPデーモンは不要です。
 
-レビュー資料はOpenAI APIへ送信し、ローカル台帳には要求・使用量メタデータのみ保存します。
+レビュー資料は選択したプロバイダーAPIへ送信し、ローカル台帳には要求・使用量メタデータのみ保存します。
+
+0.3.0 以降の Claude 対応は `rebut set provider anthropic` → `rebut set api-key` → `rebut setup --client claude` の順です。ホストとレビュープロバイダーは別々に選択します。
 
 検証対象はmacOS/Linuxで、Windows動作・ACLは未検証です。
 

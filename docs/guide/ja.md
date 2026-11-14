@@ -4,7 +4,7 @@
 
 [Rebut](../../README.ja.md)
 
-Rebutは自分のOpenAI Responses APIキーを使う、ローカル標準・明示選択型コードレビューMCPです。新規はローカルstdio、中央台帳用のCloudflare Workerは任意です。指定した固定資料のみを扱い、モデルにリポジトリ・URL取得・シェル・テスト・編集・PRツールは与えません。
+Rebutは自分のOpenAIまたはClaude APIキーを使う、ローカル標準・明示選択型コードレビューMCPです。新規はローカルstdio、中央台帳用のCloudflare Workerは任意です。指定した固定資料のみを扱い、モデルにリポジトリ・URL取得・シェル・テスト・編集・PRツールは与えません。
 
 rebut-mcpをインストールしローカルキーを設定後、rebut setup --client codexを実行します。既存endpoint設定はWorkerを維持します。Keychain・Vaultwarden・env・任意Workerは[インストール](ja/installation.md)を参照してください。
 

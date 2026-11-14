@@ -4,7 +4,7 @@
 
 [Rebut](../../README.zh-CN.md)
 
-Rebut 是默认本地、明确选择使用的代码审查 MCP，使用自己的 OpenAI Responses API 密钥。新安装运行本地 stdio，可选 Cloudflare Worker 用于共享账本。仅审查明确提供的冻结资料，不赋予模型仓库、URL 获取、shell、测试、编辑或 PR 工具。
+Rebut 是默认本地、明确选择使用的代码审查 MCP，使用自己的 OpenAI 或 Claude API 密钥。新安装运行本地 stdio，可选 Cloudflare Worker 用于共享账本。仅审查明确提供的冻结资料，不赋予模型仓库、URL 获取、shell、测试、编辑或 PR 工具。
 
 安装 rebut-mcp，配置本地供应商密钥，再运行 rebut setup --client codex。已有 endpoint 配置保持 Worker。[安装](zh-CN/installation.md)介绍 Keychain、Vaultwarden、env 和可选 Worker。
 

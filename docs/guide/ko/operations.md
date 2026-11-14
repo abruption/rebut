@@ -52,3 +52,7 @@ ID를 잃었다면 `rebut status --pending`부터 실행하세요. 키·공급�
 ## 관리자의 npm 발행
 
 수동 `publish.yml`은 저장된 npm 토큰 없이 OIDC Trusted Publishing을 사용합니다. main에서만 실행하며 안정 버전 태그가 실행 소스 커밋과 정확히 같아야 하고, GitHub Environment `npm`에서 소유자 `abruption`의 승인을 요구합니다. 빌드·테스트에는 OIDC 쓰기 권한이 없고 검증한 tarball 게시 작업만 해당 권한을 갖습니다. PR 병합·GitHub 릴리즈 이벤트로 자동 발행하지 않습니다. 게시 후 레지스트리 처리·검증 문제가 생기면 재실행 전에 원래 실행과 배포물부터 확인합니다. Worker 배포·기존 클라이언트 업데이트는 포함하지 않습니다. [관리자 릴리즈 체크리스트](../../releases/release-checklist.ko.md#github-actions-trusted-publisher)에 설정·실행 절차가 있으며 최초 사용 전에 워크플로 병합과 npm trust 등록이 필요합니다.
+
+## 0.3.0 업그레이드 주의
+
+새 설정 필드나 Anthropic 프로필이 있으면 0.2.x가 설정·프로필 목록을 거부할 수 있습니다. 업데이트 전 설정과 닫힌 장부를 백업하고, 롤백은 0.3.0에서 Anthropic 프로필을 비활성화하고 호환 설정을 복원하는 절차를 검토하세요. 기존 요청 행이나 unknown 예약을 삭제해 해결하지 않습니다. Claude 호스트의 다른 설정은 재직렬화하지 않지만 실행 중인 호스트가 덮어쓸 수 있으므로 종료 후 등록합니다.

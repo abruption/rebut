@@ -4,7 +4,7 @@
 
 [Rebut](../../README.en.md)
 
-Rebut is a local-first, opt-in code review MCP using your own OpenAI Responses API key. New installs run stdio locally; Cloudflare Worker is optional for a shared ledger. It reviews only supplied frozen evidence and gives the model no repository, URL-fetch, shell, test, edit or PR tools.
+Rebut is a local-first, opt-in code review MCP using your own OpenAI or Claude API key. New installs run stdio locally; Cloudflare Worker is optional for a shared ledger. It reviews only supplied frozen evidence and gives the model no repository, URL-fetch, shell, test, edit or PR tools.
 
 Install rebut-mcp, configure the local provider key, then run rebut setup --client codex. Existing endpoint-only configurations stay Worker. See [installation](en/installation.md) for Keychain, Vaultwarden, env credentials and optional Worker setup.
 

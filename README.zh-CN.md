@@ -8,9 +8,11 @@
 
 </div>
 
-Rebut 使用您自己的 OpenAI API 密钥审查代码。新安装默认运行本地 stdio 服务器，无需 Cloudflare 账户或独立 HTTP 守护进程。
+Rebut 使用您自己的 OpenAI 或 Claude API 密钥审查代码。新安装默认运行本地 stdio 服务器，无需 Cloudflare 账户或独立 HTTP 守护进程。
 
-审查资料会发送至 OpenAI API；本地账本仅存储请求和用量元数据。
+审查资料会发送至所选供应商 API；本地账本仅存储请求和用量元数据。
+
+0.3.0+ 的 Claude 支持按 `rebut set provider anthropic` → `rebut set api-key` → `rebut setup --client claude` 设置；宿主与审查供应商分别选择。
 
 验证目标为 macOS/Linux，Windows 行为与 ACL 未验证。
 

@@ -4,11 +4,9 @@
 
 [Rebut](../../../README.md) · [사용자 가이드](../ko.md)
 
-
 ## 로컬 프로필과 예산 범위
 
 새 설정은 로컬 모드를 사용하고 endpoint만 있던 기존 설정은 Worker로 유지합니다. `rebut set api-key`는 로컬 OpenAI 키를 Keychain에 저장하며 Worker의 set token·set admin-token과 다른 자격증명입니다. env 방식은 로컬 REBUT_OPENAI_API_KEY, Worker REBUT_TOKEN/REBUT_ADMIN_TOKEN을 사용합니다. Vaultwarden 로컬 키는 vaultwarden-api-key-item을 지정합니다. `rebut profile list/set/remove`는 선택한 backend를 대상으로 하며 로컬에서는 Worker 관리자 토큰이 필요 없습니다. 프로필·리비전·메타데이터는 private SQLite에 저장합니다. 예산은 해당 데이터 디렉터리 한 곳에만 적용되며 다른 기기나 OpenAI 계정 전체 사용량을 합산하지 않습니다. 중앙 장부가 필요하면 Worker를 공유합니다. 모드 전환은 불확실한 요청을 이전하거나 예약을 해제하지 않습니다.
-
 
 ## 모델 및 추론 환경설정
 
@@ -104,3 +102,15 @@ SHA-256은 마스킹 후 정규화한 `{schema_version,task_kind,requirements,fi
 OpenAI 요청에는 `store:false`를 사용합니다. 이는 공급자의 보관 기간이 0임을 보장하거나 조직의 데이터 정책을 대체하지 **않습니다**. [OpenAI 데이터 제어](https://developers.openai.com/api/docs/guides/your-data)를 참고하세요. 자격증명과 비공개 배포 식별자는 공개 소스와 로그에 포함하지 마세요.
 
 결과가 `invalid_output`이면 `invalid_output_reason`으로 원문이나 검토 본문을 보관하지 않고도 실패한 검증 단계를 구분할 수 있습니다. 중간 `commentary` 메시지는 제외하고 `final_answer` 또는 phase가 없는 기존 형식의 메시지만 구조화된 검토로 해석합니다. 최종 출력 중복, JSON·스키마 오류, 제공된 근거 범위를 벗어난 지적은 계속 오류로 처리합니다.
+
+## Claude 공급자 — 0.3.0
+
+`rebut set provider anthropic` 후 기존 `rebut set api-key`로 키 하나를 설정합니다. Keychain 서비스는 `com.abruption.rebut`, 계정은 `anthropic-api-key`입니다. Vaultwarden은 선택한 백엔드에서 `rebut set vaultwarden-api-key-item NAME`으로 항목을 지정하며 기본 이름은 `Rebut — Anthropic API Key`입니다. 계정 별칭·키 순환·공급자 fallback은 없습니다.
+
+`claude-medium`은 Claude Opus 5.5 / medium 프로필입니다. 새 Anthropic 프로필은 `profile set`에 `--provider anthropic`을 명시합니다. 생략하면 기존 활성 프로필의 공급자를 유지하며, 새/비활성 프로필은 OpenAI로 간주합니다. 키 선택 설정을 상속하지 않습니다. provider가 없는 기존 프로필은 OpenAI입니다. 고정 번들의 프로필이 실제 공급자와 키를 정하므로, 환경설정 변경 후에도 원래 번들·ID를 유지하세요.
+
+로컬/Worker 각각의 한 장부에서 두 공급자의 예산·동시성을 합산합니다. 새 요청의 `requested_provider`는 예약·완료·오류에 보존하며 과거 행은 다시 쓰지 않습니다. Claude thinking 세부값이 없으면 `reasoning_tokens`를 생략합니다. 캐시 읽기는 보수적으로 기본 입력 요율로 계산하며 요청하지 않은 캐시 쓰기나 비표준 사용량은 unknown으로 유지합니다.
+
+Claude 요청은 standard tier·global geo, 도구·캐싱 없는 Messages API를 사용합니다. workspace 지역 제한으로 거부될 수 있으며, 오류를 다른 키로 재시도하지 않습니다. Worker에는 별도 `ANTHROPIC_API_KEY` 시크릿과 Anthropic 프로필을 추가하고 클라이언트 → Worker 순서로 업데이트합니다. 관리자 토큰을 호스트에 전달하지 않습니다.
+
+API 비용과 크레딧 적용은 [Claude Console 청구 안내](https://support.claude.com/en/articles/8977456-how-do-i-pay-for-my-claude-api-usage)에서 확인하세요. Claude Code 구독 사용량과 Rebut API 호출을 혼동하지 마세요.

@@ -4,12 +4,31 @@
 
 [Rebut](../../../README.en.md) · [User guide](../en.md)
 
-
 Use Node.js **24 or later**. New installations default to a local stdio MCP server. No Cloudflare account, Worker endpoint or HTTP daemon is required.
 
 ```sh
 npm install -g rebut-mcp
 ```
+
+## Claude API and Claude Code — 0.3.0
+
+Version 0.3.0+ selects the review provider and MCP host separately. Local macOS Keychain example:
+
+```sh
+rebut set mode local
+rebut set provider anthropic
+rebut set api-key
+rebut setup --client claude
+rebut doctor --connect
+```
+
+Switching providers selects its default profile and clears model/reasoning overrides; selecting the same provider preserves them. Existing OpenAI keys, profiles, and ledger history are not deleted.
+
+Stop Claude Code and back up its config before registration. Only the Rebut user entry in `~/.claude.json` is updated. Use `--claude-config PATH` for another file; this is required when `CLAUDE_CONFIG_DIR` is set. A conflicting Rebut entry requires `--replace`. Project/managed same-name overrides must be checked separately. Registration atomically replaces the file with mode 0600; ACLs/xattrs are not retained. Restart Claude Code and inspect `/mcp`.
+
+For env storage, select `rebut set secret-store env` and supply `REBUT_ANTHROPIC_API_KEY` to the actual host. Shared `ANTHROPIC_API_KEY` selection is not supported, avoiding changes to Claude Code authentication. Keychain/Vaultwarden registration adds no provider env placeholder. Env setup may also initialize local SQLite while resolving profiles. Env registration forwards the current default profile provider variable. A frozen other-provider bundle without its env key fails before reservation. Doctor reports the default profile provider in `provider`, and the `set api-key` target in `keyConfigurationProvider`. Re-register each host with `setup --replace` and restart after provider/backend/env changes.
+
+Optional local-only `rebut doctor --provider` retrieves model metadata without generation, review reservations, or usage records. Resolving profiles may initialize local SQLite. `doctor --connect` remains an MCP check. Metadata reachability does not prove generation access, balance, geo, structured-output support, or quality.
 
 ## Local setup
 
@@ -43,7 +62,7 @@ Use `rebut set mode local` to switch explicitly. No automatic fallback occurs. B
 
 ## Source checkout and developer validation
 
-This guide targets CLI 0.2.0. The npm package runs the local server and optional Worker bridge; it is not a hosted review service and grants no API credits. Only optional Worker deployment needs a Cloudflare account and source checkout. Packages contain no real endpoint, private settings, credentials or review bodies.
+This guide targets CLI 0.3.0. The npm package runs the local server and optional Worker bridge; it is not a hosted review service and grants no API credits. Only optional Worker deployment needs a Cloudflare account and source checkout. Packages contain no real endpoint, private settings, credentials or review bodies.
 
 ```sh
 npm ci

@@ -4,11 +4,9 @@
 
 [Rebut](../../../README.zh-CN.md) · [用户指南](../zh-CN.md)
 
-
 ## 本地配置方案与预算范围
 
 新配置默认本地，已有 endpoint 配置保持 Worker。rebut set api-key 保存本地 OpenAI 密钥，与 Worker 的 set token／set admin-token 分离。env 本地读取 REBUT_OPENAI_API_KEY，Worker 读取 REBUT_TOKEN／REBUT_ADMIN_TOKEN；Vaultwarden 本地使用 vaultwarden-api-key-item。profile list/set/remove 针对所选后端，本地不需要 Worker 管理员令牌。配置方案、修订和元数据保存在私有 SQLite，预算仅覆盖该目录，不汇总其他设备或 OpenAI 账户整体用量。需要中央账本可共享 Worker。切换不会迁移不确定请求或释放预留。
-
 
 ## 模型与推理偏好
 
@@ -104,3 +102,15 @@ SHA-256 涵盖脱敏后规范化的 `{schema_version,task_kind,requirements,file
 OpenAI 请求使用 `store:false`；这**不**保证提供商零保留数据，也不能替代您组织的数据政策。参见 [OpenAI 数据控制](https://developers.openai.com/api/docs/guides/your-data)。请将凭据和私有部署标识符保留在公开源代码及日志之外。
 
 结果为 `invalid_output` 时，`invalid_output_reason` 可在不保留源代码或审查正文的情况下标识失败的验证阶段。中间 `commentary` 消息会被排除，仅将 `final_answer` 或未指定 phase 的旧格式消息解析为结构化审查。多个最终输出、无效 JSON 或模式以及超出所提供证据范围的发现仍会被拒绝。
+
+## Claude 供应商 — 0.3.0
+
+先执行 `rebut set provider anthropic`，再用原有 `rebut set api-key` 设置一个密钥。Keychain 服务/账户为 `com.abruption.rebut` / `anthropic-api-key`。Vaultwarden 的 `rebut set vaultwarden-api-key-item NAME` 设置所选供应商项目，默认 `Rebut — Anthropic API Key`。不添加账户别名、密钥轮换或供应商回退。
+
+`claude-medium` 使用 Claude Opus 5.5 / medium。创建 Anthropic 配置档需显式加 `--provider anthropic`。省略时保留已有活动配置档供应商，新/停用配置档默认 OpenAI，不继承密钥选择偏好。旧配置档没有 provider 时仍为 OpenAI。冻结材料的配置档决定实际供应商与密钥，偏好改变后保留原材料/ID。
+
+每个本地/Worker 账本在同一预算和并发限制下合计两个供应商。新请求在预留、完成和错误路径保留 `requested_provider`，旧行不改写。未报告 thinking 时省略 `reasoning_tokens`。缓存读取按完整基础输入费率保守估算，未请求的缓存写入或非标准用量保留 unknown。
+
+Claude 使用 standard tier/global geo 的 Messages API，无工具或提示缓存。workspace 地区政策可能拒绝请求，不改用其他密钥重试。Worker 需独立 `ANTHROPIC_API_KEY` 秘密及 Anthropic 配置档，先更新客户端再更新 Worker。管理员令牌不传给宿主。
+
+API 费用及信用额资格见 [Claude Console 计费说明](https://support.claude.com/en/articles/8977456-how-do-i-pay-for-my-claude-api-usage)，不要混淆 Rebut API 调用与 Claude Code 订阅用量。

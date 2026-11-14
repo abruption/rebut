@@ -8,9 +8,11 @@
 
 </div>
 
-Rebut은 자신의 OpenAI API 키로 실행하는 코드 검토 도구입니다. 새 설치는 로컬 stdio 서버를 사용하며 Cloudflare 계정이나 별도 HTTP 서버가 필요하지 않습니다.
+Rebut은 자신의 OpenAI 또는 Claude API 키로 실행하는 코드 검토 도구입니다. 새 설치는 로컬 stdio 서버를 사용하며 Cloudflare 계정이나 별도 HTTP 서버가 필요하지 않습니다.
 
-검토 자료는 OpenAI API로 전송하며, 로컬 원장에는 요청·사용량 메타데이터만 저장합니다.
+검토 자료는 선택한 공급자 API로 전송하며, 로컬 원장에는 요청·사용량 메타데이터만 저장합니다.
+
+Claude API·Claude Code 지원은 0.3.0 이상에서 `rebut set provider anthropic` → `rebut set api-key` → `rebut setup --client claude` 순서로 설정합니다. 호스트와 공급자는 독립적으로 선택합니다.
 
 검증 대상은 macOS/Linux이며 Windows 동작·ACL은 확인하지 않았습니다.
 

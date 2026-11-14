@@ -4,11 +4,9 @@
 
 [Rebut](../../../README.en.md) · [User guide](../en.md)
 
-
 ## Local profiles and budget scope
 
 New settings use local mode; endpoint-only legacy settings remain Worker. `rebut set api-key` stores a local OpenAI key in Keychain, while Worker `set token` and `set admin-token` store different credentials. env uses REBUT_OPENAI_API_KEY locally, REBUT_TOKEN/REBUT_ADMIN_TOKEN for Worker. Vaultwarden local keys use vaultwarden-api-key-item. `rebut profile list/set/remove` targets the selected backend; local profile changes require no Worker admin token. Local profiles, revisions and metadata are stored in private SQLite. Limits apply to one data directory, not all devices or the OpenAI account. Use a shared Worker for a central ledger. A mode switch does not migrate uncertain requests or release reservations.
-
 
 ## Model and reasoning preferences
 
@@ -104,3 +102,15 @@ The metadata-only D1 ledger retains request IDs, hashes, profile, status, reserv
 The OpenAI request uses `store:false`; this does **not** promise zero provider retention or replace your organization's data policy. See [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data). Keep credentials and private deployment identifiers outside public source and logs.
 
 When the result is `invalid_output`, `invalid_output_reason` identifies the failed validation stage without retaining source or review text. Intermediate `commentary` messages are excluded; only `final_answer` (or a legacy message with no phase) is parsed as the structured review. Multiple final outputs, invalid JSON/schema, and findings outside supplied evidence remain errors.
+
+## Claude provider — 0.3.0
+
+Select `rebut set provider anthropic`, then use the existing `rebut set api-key` flow for one key. Keychain service/account: `com.abruption.rebut` / `anthropic-api-key`. For Vaultwarden, `rebut set vaultwarden-api-key-item NAME` sets the selected provider item; its default is `Rebut — Anthropic API Key`. No account aliases, key rotation, or provider fallback is added.
+
+`claude-medium` uses Claude Opus 5.5 / medium. Explicitly add `--provider anthropic` when creating an Anthropic profile. Omitting it preserves an existing active profile provider; new/disabled profiles default to OpenAI, independently of the key-selection preference. Legacy profiles without provider remain OpenAI. The frozen bundle profile determines the actual provider and key, so retain the original bundle/ID after preference changes.
+
+Each local/Worker ledger aggregates both providers under the same budget/concurrency limits. New requests retain `requested_provider` through reservation, completion, and errors; historical rows are unchanged. Missing thinking detail omits `reasoning_tokens`. Cache reads are conservatively charged at full base input rate; unexpected cache writes or nonstandard usage retain unknown reservations.
+
+Claude uses the Messages API with standard tier/global geo and no tools or prompt caching. Workspace regional policies may reject a request; do not retry another key. Workers need a separate `ANTHROPIC_API_KEY` secret and an Anthropic profile; update clients before the Worker. Never forward administrator tokens to hosts.
+
+Check [Claude Console billing](https://support.claude.com/en/articles/8977456-how-do-i-pay-for-my-claude-api-usage) for API costs and credit eligibility. Rebut API calls are distinct from Claude Code subscription usage.

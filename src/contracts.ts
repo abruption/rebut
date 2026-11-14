@@ -81,7 +81,16 @@ export async function inputHash(
   ).join("");
 }
 
+export type Provider = "openai" | "anthropic";
+export function profileProvider(profile: { provider?: Provider }): Provider {
+  const provider = profile.provider ?? "openai";
+  if (provider !== "openai" && provider !== "anthropic")
+    throw new Error("Invalid provider");
+  return provider;
+}
+
 export interface Profile {
+  provider?: Provider;
   model: string;
   reasoning?: string;
   maxOutputTokens: number;
@@ -113,7 +122,7 @@ export interface ReviewUsage {
   input_tokens: number;
   output_tokens: number;
   cached_tokens: number;
-  reasoning_tokens: number;
+  reasoning_tokens?: number;
 }
 export type InvalidOutputReason =
   | "unexpected_output_item"
@@ -143,6 +152,7 @@ export type UnknownReason =
   | "usage_invalid"
   | "response_status_unhandled";
 export interface ReviewOutcome {
+  requested_provider?: Provider;
   status: "completed" | "refused" | "incomplete" | "invalid_output" | "unknown";
   review?: Review;
   response_id?: string;
