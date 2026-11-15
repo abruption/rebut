@@ -1,9 +1,7 @@
 name: Trusted PR policy
 
 on:
-  # Phase 1: add this base-revision check while retaining pr-policy.yml.
-  # After merge, observe a successful run before requiring this distinct check.
-  # Remove the legacy workflow only through a separate reviewed PR.
+  # Required check: Trusted Issue-first PR (GitHub Actions).
   # Keep this metadata-only: use the trusted base revision, never PR code.
   pull_request_target:
     types: [opened, edited, synchronize, reopened, ready_for_review]
@@ -22,7 +20,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-          package-manager-cache: false
       - name: Require an issue created before the pull request
         env:
           GH_TOKEN: ${{ github.token }}
