@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
@@ -44,20 +44,12 @@ async function check(
 
 const validIssue = { state: "open", created_at: "2026-11-13T01:00:00Z" };
 describe("Issue-first PR policy", () => {
-  it("keeps the legacy required check during the staged migration", () => {
-    const legacy = readFileSync(
-      new URL("../.github/workflows/pr-policy.yml", import.meta.url),
-      "utf8",
-    );
-    expect(legacy).toMatch(/^  pull_request:$/m);
-    expect(legacy).toContain("name: Issue-first PR");
+  it("uses only the trusted issue-policy workflow after migration", () => {
+    expect(
+      existsSync(new URL("../.github/workflows/pr-policy.yml", import.meta.url)),
+    ).toBe(false);
     expect(workflow).toContain("name: Trusted Issue-first PR");
     expect(workflow).not.toMatch(/^    name: Issue-first PR$/m);
-    const legacyScript = legacy
-      .split("node --input-type=module <<'JS'\n")[1]!
-      .split("          JS")[0]!
-      .replace(/^          /gm, "");
-    expect(legacyScript).toBe(script);
   });
   it("uses a read-only base workflow without checking out or executing PR code", () => {
     expect(workflow).toMatch(/^  pull_request_target:$/m);
