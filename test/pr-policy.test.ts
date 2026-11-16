@@ -44,9 +44,44 @@ async function check(
 
 const validIssue = { state: "open", created_at: "2026-11-13T01:00:00Z" };
 describe("Issue-first PR policy", () => {
+  it("keeps the proposed event exception scoped to the trusted workflow only", () => {
+    // These are approved security boundaries, not proof of applied GitHub settings.
+    const policy = JSON.parse(
+      readFileSync(
+        new URL(
+          "../.github/actions-policies/trusted-pr-policy.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    expect(Object.keys(policy).sort()).toEqual([
+      "conditions",
+      "enforcement",
+      "name",
+      "rules",
+    ]);
+    expect(policy.name).toBe("Allow trusted Issue-first metadata event");
+    expect(policy.enforcement).toBe("active");
+    expect(policy.conditions).toEqual({
+      workflow_path: {
+        include: [".github/workflows/trusted-pr-policy.yml"],
+        exclude: [],
+      },
+    });
+    expect(policy.rules).toEqual([
+      {
+        type: "restrict_action_events",
+        parameters: { allowed_events: ["pull_request_target"] },
+      },
+    ]);
+    expect(policy).not.toHaveProperty("bypass_actors");
+  });
   it("uses only the trusted issue-policy workflow after migration", () => {
     expect(
-      existsSync(new URL("../.github/workflows/pr-policy.yml", import.meta.url)),
+      existsSync(
+        new URL("../.github/workflows/pr-policy.yml", import.meta.url),
+      ),
     ).toBe(false);
     expect(workflow).toContain("name: Trusted Issue-first PR");
     expect(workflow).not.toMatch(/^    name: Issue-first PR$/m);
