@@ -149,6 +149,11 @@ async function hidden(label = "Bearer token"): Promise<string> {
     process.stdin.on("data", onData);
   });
 }
+async function packageVersion(): Promise<string> {
+  return JSON.parse(
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
+  ).version;
+}
 export async function runCli(args: string[]): Promise<void> {
   const [command, ...rest] = args;
   if (!command || command === "--help" || command === "-h") {
@@ -156,11 +161,7 @@ export async function runCli(args: string[]): Promise<void> {
     return;
   }
   if (command === "--version" || command === "-v") {
-    process.stdout.write(
-      JSON.parse(
-        await readFile(new URL("../package.json", import.meta.url), "utf8"),
-      ).version + "\n",
-    );
+    process.stdout.write((await packageVersion()) + "\n");
     return;
   }
   const settings = await readSettings();
@@ -555,6 +556,7 @@ export async function runCli(args: string[]): Promise<void> {
           "Endpoint or credentials unavailable. Check your selected secret store.",
         );
       if (mode === "local") {
+        const version = await packageVersion();
         report.localTools = await withLocal(async (runtime) => {
           const server = await localMcpServer(runtime, settings);
           const { Client } = await import("@modelcontextprotocol/client");
@@ -563,7 +565,7 @@ export async function runCli(args: string[]): Promise<void> {
           const [host, local] = InMemoryTransport.createLinkedPair();
           const client = new Client({
             name: "rebut-local-doctor",
-            version: "0.3.0",
+            version,
           });
           try {
             await Promise.all([client.connect(host), server.connect(local)]);

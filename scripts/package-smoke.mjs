@@ -500,16 +500,51 @@ try {
     cliRecorded.budget_reserved_microusd,
   );
   assert.equal((await readFile(cliMarker, "utf8")).trim(), "1");
-  const doctor = spawnSync(process.execPath, [entry, "doctor", "--connect"], {
-    cwd: directory,
-    env: localEnv,
-    encoding: "utf8",
-    timeout: 15000,
-  });
-  assert.equal(doctor.status, 0);
-  const health = JSON.parse(doctor.stdout);
-  assert.equal(health.mode, "local");
-  assert.deepEqual(health.localTools, ["review", "review_status"]);
+  const manifestPath = join(installed, "package.json");
+  const originalManifest = await readFile(manifestPath, "utf8");
+  const fixtureVersion = "9.8.7-doctor-fixture";
+  const doctorObserver = join(installed, "doctor-observer.mjs");
+  const doctorHandshake = join(directory, "doctor-handshake.json");
+  await writeFile(
+    doctorObserver,
+    await readFile(join(root, "test/fixtures/doctor-handshake.mjs"), "utf8"),
+  );
+  try {
+    // A different fixture version catches a hardcoded value even before the next release.
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        ...JSON.parse(originalManifest),
+        version: fixtureVersion,
+      }),
+    );
+    assert.equal(run([entry, "--version"], directory).trim(), fixtureVersion);
+    const doctor = spawnSync(
+      process.execPath,
+      ["--import", doctorObserver, entry, "doctor", "--connect"],
+      {
+        cwd: directory,
+        env: { ...localEnv, REBUT_TEST_HANDSHAKE: doctorHandshake },
+        encoding: "utf8",
+        timeout: 15000,
+      },
+    );
+    assert.equal(doctor.status, 0);
+    const health = JSON.parse(doctor.stdout);
+    assert.equal(health.mode, "local");
+    assert.deepEqual(health.localTools, ["review", "review_status"]);
+    assert.deepEqual(JSON.parse(await readFile(doctorHandshake, "utf8")), {
+      name: "rebut-local-doctor",
+      version: fixtureVersion,
+    });
+    assert.equal(await readFile(doctorHandshake + ".network", "utf8"), "0");
+  } finally {
+    try {
+      await writeFile(manifestPath, originalManifest);
+    } finally {
+      await rm(doctorObserver, { force: true });
+    }
+  }
   const ledger = await readFile(join(config, "local", "ledger.sqlite"));
   assert(!ledger.includes(Buffer.from(localKey)));
   assert(!ledger.includes(Buffer.from("Synthetic local package review")));
