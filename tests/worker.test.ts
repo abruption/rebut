@@ -70,7 +70,7 @@ beforeAll(async () => {
               JSON.stringify({
                 id: "resp_mock",
                 status: "completed",
-                model: "gpt-6-astra",
+                model: "gpt-6.2-astra",
                 usage: {
                   input_tokens: 100,
                   output_tokens: 20,
@@ -212,7 +212,13 @@ it("lists real MCP tools and runs synthetic review exactly once", async () => {
   const metadata = JSON.parse(
     ((await decode(status)) as any).result.content[0].text,
   );
-  expect(metadata.status).toBe("completed");
+  expect(metadata).toMatchObject({
+    status: "completed",
+    requested_model: "gpt-6.2-astra",
+    actual_model: "gpt-6.2-astra",
+    price_version: "openai-standard-2026-11-18",
+    estimated_cost_microusd: 1600,
+  });
   expect(metadata.review).toBeUndefined();
 });
 it("rejects oversize transport without paying", async () => {
@@ -346,7 +352,7 @@ it("retains original resolved model and revision for a completed ID after profil
   );
   expect(outcome).toMatchObject({
     status: "completed",
-    requested_model: "gpt-6-astra",
+    requested_model: "gpt-6.2-astra",
     profile_revision: 1,
   });
   const after = calls;
@@ -382,7 +388,7 @@ it("retains original resolved model and revision for a completed ID after profil
   );
   expect(duplicate).toMatchObject({
     status: "completed",
-    requested_model: "gpt-6-astra",
+    requested_model: "gpt-6.2-astra",
     profile_revision: 1,
   });
   expect(calls).toBe(after);

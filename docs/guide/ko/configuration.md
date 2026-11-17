@@ -38,6 +38,8 @@ rebut set profile PROFILE_ID
 
 환경설정은 새 수집에 적용합니다. 명시적 `collect --profile`이 우선하며 `review`는 번들에 고정한 프로필을 유지합니다. 기본은 `astra-medium`입니다. 프로필 허용 목록은 공급자의 모델 사용 권한을 보장하지 않습니다.
 
+기본 제공 `astra-medium` 프로필은 GPT-6.2 Astra(`gpt-6.2-astra`)와 medium 추론을 사용합니다. 예제의 [짧은 컨텍스트 Standard 요율](https://developers.openai.com/api/docs/models/gpt-6.2-astra)은 100만 토큰당 입력 $8, 출력 $40입니다. 기존 Worker와 로컬 프로필 오버라이드는 저장된 설정을 유지합니다. 전환하려면 `rebut profile list`를 확인하고 모델 `gpt-6.2-astra`, 추론 `medium`, 두 요율과 가격 버전 `openai-standard-2026-11-18`을 현재 `--if-revision`으로 한 번에 갱신합니다. 클라이언트가 이전 모델 ID를 명시했다면 해당 설정을 갱신하거나 프로필 ID로 `astra-medium`을 선택합니다.
+
 로컬 프로필은 OS 소유자가 관리합니다. Worker 변경에는 `0002` 마이그레이션과 `ADMIN_TOKEN_SHA256`, 별도 관리자 토큰이 필요합니다. 조회는 유료 모델을 호출하지 않습니다.
 
 ```sh

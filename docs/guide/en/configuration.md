@@ -38,6 +38,8 @@ rebut set profile PROFILE_ID
 
 Preferences affect new collection. Explicit `collect --profile` wins; `review` retains the frozen bundle's profile. The default is `astra-medium`. Allowlisting does not grant provider model access.
 
+The shipped `astra-medium` profile uses GPT-6.2 Astra (`gpt-6.2-astra`) with medium reasoning. The example uses [short-context Standard rates](https://developers.openai.com/api/docs/models/gpt-6.2-astra) of $8 input and $40 output per million tokens. Existing Workers and local profile overrides retain their stored settings. To migrate them, inspect `rebut profile list` and update the model to `gpt-6.2-astra`, reasoning to `medium`, and both rates together in one profile update with the current `--if-revision`, and price version `openai-standard-2026-11-18`. If a client explicitly selects the old model ID, update that preference or select `astra-medium` by profile ID.
+
 The OS owner manages local profiles. Worker changes require migration `0002`, `ADMIN_TOKEN_SHA256`, and a separate administrator token. Listing profiles makes no paid model call.
 
 ```sh

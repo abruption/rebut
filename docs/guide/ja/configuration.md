@@ -38,6 +38,8 @@ rebut set profile PROFILE_ID
 
 設定は新規収集に適用します。明示した `collect --profile` が優先され、`review` は固定バンドルのプロファイルを維持します。既定は `astra-medium` です。許可リストはプロバイダーのモデル権限を与えません。
 
+同梱の `astra-medium` プロファイルは GPT-6.2 Astra（`gpt-6.2-astra`）と medium の推論を使用します。例の[短いコンテキストの Standard 料金](https://developers.openai.com/api/docs/models/gpt-6.2-astra)は100万トークン当たり入力 $8、出力 $40 です。既存の Worker とローカルのプロファイル上書きは保存済み設定を維持します。移行するには `rebut profile list` を確認し、モデル `gpt-6.2-astra`、推論 `medium`、両方の料金と料金バージョン `openai-standard-2026-11-18` を、現在の `--if-revision` で一度に更新してください。旧モデル ID を明示しているクライアントでは、その設定を更新するか、プロファイル ID で `astra-medium` を選択してください。
+
 ローカルは OS 所有者が管理します。Worker の変更には `0002`、`ADMIN_TOKEN_SHA256`、別の管理者トークンが必要です。一覧取得は有料モデルを呼びません。
 
 ```sh
