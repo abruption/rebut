@@ -1,12 +1,12 @@
 {
   "profiles": {
     "astra-medium": {
-      "model": "gpt-6-astra",
+      "model": "gpt-6.2-astra",
       "reasoning": "medium",
       "maxOutputTokens": 8192,
-      "inputMicrousdPerMillion": 10000000,
-      "outputMicrousdPerMillion": 50000000,
-      "priceVersion": "openai-standard-2026-11-12"
+      "inputMicrousdPerMillion": 8000000,
+      "outputMicrousdPerMillion": 40000000,
+      "priceVersion": "openai-standard-2026-11-18"
     },
     "luna-test": {
       "model": "gpt-6-luna",

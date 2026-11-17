@@ -38,6 +38,8 @@ rebut set profile PROFILE_ID
 
 偏好应用于新收集的材料。显式 `collect --profile` 优先，`review` 保留冻结材料的配置档。默认 `astra-medium`，允许列表不授予供应商模型权限。
 
+随附的 `astra-medium` 配置档使用 GPT-6.2 Astra（`gpt-6.2-astra`）和 medium 推理。示例采用[短上下文 Standard 费率](https://developers.openai.com/api/docs/models/gpt-6.2-astra)，每百万令牌输入 $8、输出 $40。现有 Worker 和本地配置档覆盖项保留已保存的设置。迁移时请查看 `rebut profile list`，使用当前的 `--if-revision` 一次性更新模型 `gpt-6.2-astra`、推理级别 `medium`、两项费率和价格版本 `openai-standard-2026-11-18`。如果客户端显式选择了旧模型 ID，请更新该偏好，或通过配置档 ID 选择 `astra-medium`。
+
 本地配置档由 OS 所有者管理。Worker 更改需要 `0002` 迁移、`ADMIN_TOKEN_SHA256` 和独立管理员令牌。列表查询不调用付费模型。
 
 ```sh
