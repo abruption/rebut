@@ -128,7 +128,7 @@ export default {
         return new Response("Invalid request", { status: 400 });
       const handler = createMcpHandler(
         () => {
-          const server = new McpServer({ name: "rebut", version: "0.3.0" });
+          const server = new McpServer({ name: "rebut", version: "0.3.1" });
           server.registerTool(
             "review",
             {

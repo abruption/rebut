@@ -81,7 +81,7 @@ export async function connectRemote(options: RemoteOptions): Promise<Client> {
       reconnectionDelayGrowFactor: 1,
     },
   });
-  const client = new Client({ name: "rebut-mcp", version: "0.3.0" });
+  const client = new Client({ name: "rebut-mcp", version: "0.3.1" });
   const close = client.close.bind(client);
   let closing: Promise<void> | undefined;
   client.close = () =>
