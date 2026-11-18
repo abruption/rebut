@@ -51,7 +51,16 @@ rebut doctor --connect
 
 ```sh
 umask 077
-rebut collect --root /path/to/project --request-id review-001 --requirements 'Check the supplied code' --profile astra-medium -- src/example.ts > /protected/path/review-001.bundle.json
+rebut collect --root /path/to/project --request-id review-001 --requirements 'AC-1: 保持排序顺序。AC-2: 保留空结果。' --profile astra-medium -- src/example.ts > /protected/path/review-001.bundle.json
+```
+
+使用问题单或规范中由人工批准的验收标准。尽可能在开始实现前固定该版本，并将它与补丁分开。选择评估补丁所需的文件，默认将作者摘要排除在 `requirements` 之外。
+
+提交前，确认固定的版本仍适用于本次审查，并将包中脱敏后的实际 `requirements` 与批准版本逐项核对。Rebut 检查提交的内容与随请求提供的哈希是否一致。它无法确认谁批准了标准或是否遗漏了条目。如果修订改变了范围，或脱敏改变了某条标准的含义，请在提交前向标准批准人确认。
+
+本例需要能够判断 AC-1 和 AC-2 的证据。如果缺少 AC-2 或判断该项所需的代码或测试，即使没有发现问题，AC-2 也应视为未评估。如果缺少已批准的标准或标准互相冲突，请先确认标准，或将审查范围限定为一般性缺陷。没有发现问题本身不能证明符合验收标准，也不代表批准合并。
+
+```sh
 rebut review < /protected/path/review-001.bundle.json
 rebut status review-001
 ```
