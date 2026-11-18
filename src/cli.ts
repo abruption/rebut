@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { readFile } from "node:fs/promises";
+import { validMonthlyStartDay } from "./budget-cycle.js";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
@@ -29,6 +30,7 @@ import { collect } from "./client/collector.js";
 import { ReviewInputSchema } from "./contracts.js";
 import {
   profileCommand,
+  workerBudget,
   listProfiles,
   resolveProfile,
   safeProfileError,
@@ -55,6 +57,8 @@ rebut set vaultwarden-item NAME
 rebut set vaultwarden-api-key-item NAME
 rebut set daily-budget USD
 rebut set monthly-budget USD
+rebut budget                    Show budget and unresolved concurrency (Worker admin)
+rebut budget set-start-day DAY  Set a monthly UTC start day once per ledger (1–28)
 rebut set request-budget USD
 rebut set vaultwarden-admin-item NAME
 rebut set model MODEL
@@ -459,6 +463,49 @@ export async function runCli(args: string[]): Promise<void> {
       reasoning: selected.profile!.reasoning,
       revision: selected.revision,
     };
+  }
+  if (command === "budget") {
+    let day: number | undefined;
+    if (rest.length > 0) {
+      if (
+        rest.length !== 2 ||
+        rest[0] !== "set-start-day" ||
+        !/^[0-9]{1,2}$/.test(rest[1]!)
+      )
+        throw new CliError(
+          "Use rebut budget or rebut budget set-start-day DAY.",
+        );
+      day = Number(rest[1]);
+      if (!validMonthlyStartDay(day))
+        throw new CliError("Expected a monthly start day from 1 to 28.");
+    }
+    if (mode === "local") {
+      if (day === undefined)
+        output(await withLocal((runtime) => runtime.budget()));
+      else {
+        const result = await withLocal((runtime) =>
+          runtime.scheduleMonthlyCycle(day!),
+        );
+        if (result.status === "conflict")
+          throw new CliError(
+            "Budget schedule already set or the calendar boundary changed; run rebut budget.",
+          );
+        output(result);
+      }
+    } else {
+      if (!settings.endpoint)
+        throw new CliError("Set the Worker endpoint first.");
+      output(
+        await workerBudget(
+          {
+            endpoint: settings.endpoint,
+            loadToken: () => loadToken(settings, "admin"),
+          },
+          day,
+        ),
+      );
+    }
+    return;
   }
   if (command === "profile") {
     if (mode === "local") {

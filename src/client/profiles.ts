@@ -28,6 +28,10 @@ const ListSchema = z
 const FAILURE = "Profile request failed; no automatic retry was made.";
 const SAFE_ERRORS = new Set([
   FAILURE,
+  "Budget request failed; no automatic retry was made.",
+  "Budget schedule already set or the calendar boundary changed; run rebut budget.",
+  "Budget administration authentication failed.",
+  "Budget service unavailable; check the Worker and ledger migration.",
   "Profile revision conflict; read current profiles before making another change.",
   "Profile authentication or authorization failed.",
   "Profile service unavailable; check migration and service status.",
@@ -60,7 +64,20 @@ async function request(
   path: string,
   method = "GET",
   body?: object,
+  isBudget = false,
 ): Promise<unknown> {
+  const failure = isBudget
+    ? "Budget request failed; no automatic retry was made."
+    : FAILURE;
+  const conflict = isBudget
+    ? "Budget schedule already set or the calendar boundary changed; run rebut budget."
+    : "Profile revision conflict; read current profiles before making another change.";
+  const unauthorized = isBudget
+    ? "Budget administration authentication failed."
+    : "Profile authentication or authorization failed.";
+  const unavailable = isBudget
+    ? "Budget service unavailable; check the Worker and ledger migration."
+    : "Profile service unavailable; check migration and service status.";
   const endpoint = validateEndpoint(options.endpoint);
   const url = new URL(path, endpoint.origin);
   const controller = new AbortController();
@@ -70,7 +87,7 @@ async function request(
     return await Promise.race([
       (async () => {
         const token = await options.loadToken();
-        if (controller.signal.aborted) throw new Error(FAILURE);
+        if (controller.signal.aborted) throw new Error(failure);
         const response = await fetch(url, {
           method,
           headers: {
@@ -82,22 +99,16 @@ async function request(
           signal: controller.signal,
         });
         if (!response.ok) {
-          if (response.status === 409)
-            throw new Error(
-              "Profile revision conflict; read current profiles before making another change.",
-            );
+          if (response.status === 409) throw new Error(conflict);
           if (response.status === 401 || response.status === 403)
-            throw new Error("Profile authentication or authorization failed.");
-          if (response.status === 503)
-            throw new Error(
-              "Profile service unavailable; check migration and service status.",
-            );
-          throw new Error(FAILURE);
+            throw new Error(unauthorized);
+          if (response.status === 503) throw new Error(unavailable);
+          throw new Error(failure);
         }
         const declared = response.headers.get("content-length");
         if (declared && (!/^\d+$/.test(declared) || Number(declared) > LIMIT))
-          throw new Error(FAILURE);
-        if (!response.body) throw new Error(FAILURE);
+          throw new Error(failure);
+        if (!response.body) throw new Error(failure);
         reader = response.body.getReader();
         const chunks: Uint8Array[] = [];
         let size = 0;
@@ -105,7 +116,7 @@ async function request(
           const chunk = await reader.read();
           if (chunk.done) break;
           size += chunk.value.byteLength;
-          if (size > LIMIT) throw new Error(FAILURE);
+          if (size > LIMIT) throw new Error(failure);
           chunks.push(chunk.value);
         }
         const bytes = new Uint8Array(size);
@@ -119,33 +130,38 @@ async function request(
             new TextDecoder("utf-8", { fatal: true }).decode(bytes),
           );
         } catch {
-          throw new Error(FAILURE);
+          throw new Error(failure);
         }
       })(),
       new Promise<never>((_, reject) => {
         timeout = setTimeout(() => {
           controller.abort();
-          reject(new Error(FAILURE));
+          reject(new Error(failure));
         }, 15_000);
       }),
     ]);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    if (
-      [
-        FAILURE,
-        "Profile revision conflict; read current profiles before making another change.",
-        "Profile authentication or authorization failed.",
-        "Profile service unavailable; check migration and service status.",
-      ].includes(message)
-    )
+    if ([failure, conflict, unauthorized, unavailable].includes(message))
       throw new Error(message);
-    throw new Error(FAILURE);
+    throw new Error(failure);
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
     controller.abort();
     void reader?.cancel().catch(() => {});
   }
+}
+
+export function workerBudget(options: RemoteOptions, day?: number) {
+  return day === undefined
+    ? request(options, "/admin/budget", "GET", undefined, true)
+    : request(
+        options,
+        `/admin/budget/start-day/${day}`,
+        "PUT",
+        undefined,
+        true,
+      );
 }
 
 export async function listProfiles(

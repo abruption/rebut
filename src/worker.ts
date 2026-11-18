@@ -10,6 +10,7 @@ import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
 import { ReviewInputSchema } from "./contracts.js";
 import { Ledger } from "./ledger.js";
+import { validMonthlyStartDay } from "./budget-cycle.js";
 import { parseConfig } from "./config.js";
 import { profileApi } from "./profile-api.js";
 export interface Env {
@@ -48,7 +49,12 @@ export default {
     const profileRoute =
       url.pathname === "/profiles" ||
       /^\/admin\/profiles\/[^/]+$/.test(url.pathname);
-    if (url.pathname !== "/mcp" && !profileRoute)
+    const budgetStartDay = /^\/admin\/budget\/start-day\/([0-9]{1,2})$/.exec(
+      url.pathname,
+    );
+    const budgetRoute =
+      url.pathname === "/admin/budget" || budgetStartDay !== null;
+    if (url.pathname !== "/mcp" && !profileRoute && !budgetRoute)
       return new Response("Not found", { status: 404 });
     try {
       if (!env.DB || !env.REBUT_CONFIG || !env.AUTH_TOKENS)
@@ -61,7 +67,7 @@ export default {
         request.headers.get("origin") !== url.origin
       )
         return new Response("Forbidden", { status: 403 });
-      if (profileRoute) {
+      if (profileRoute || budgetRoute) {
         const auth = request.headers.get("authorization");
         const adminDigest = env.ADMIN_TOKEN_SHA256;
         const isAdmin = !!(
@@ -71,6 +77,28 @@ export default {
           auth.length <= 520 &&
           (await sha256(auth.slice(7))) === adminDigest
         );
+        if (budgetRoute) {
+          const reply = (body: object, status = 200) =>
+            Response.json(body, {
+              status,
+              headers: { "Cache-Control": "no-store" },
+            });
+          if (!isAdmin) return reply({ status: "unauthorized" }, 401);
+          const ledger = new Ledger(env.DB);
+          try {
+            if (request.method === "GET" && !budgetStartDay)
+              return reply(await ledger.budget(config.limits));
+            if (request.method !== "PUT" || !budgetStartDay)
+              return reply({ status: "method_not_allowed" }, 405);
+            const day = Number(budgetStartDay[1]);
+            if (!validMonthlyStartDay(day))
+              return reply({ status: "invalid_monthly_start_day" }, 400);
+            const result = await ledger.scheduleMonthlyCycle(day);
+            return reply(result, result.status === "conflict" ? 409 : 200);
+          } catch {
+            return reply({ status: "budget_storage_unavailable" }, 503);
+          }
+        }
         const reader =
           url.pathname === "/profiles"
             ? await authenticate(request, env)

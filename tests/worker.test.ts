@@ -645,3 +645,65 @@ it("keeps Worker metadata available without a provider key and never reserves a 
     }
   }
 }, 20000);
+
+it("keeps budget aggregates and the one-time schedule behind Worker admin auth", async () => {
+  const request = (path: string, method: string, bearer: string) =>
+    mf.dispatchFetch("http://127.0.0.1" + path, {
+      method,
+      headers: { Authorization: `Bearer ${bearer}` },
+    });
+  const admin = "synthetic-admin-token-not-a-secret";
+  const path = "/admin/budget";
+  const before = calls + anthropicCalls;
+  expect((await request(path, "GET", token)).status).toBe(401);
+  expect((await request(path + "/start-day/15", "PUT", token)).status).toBe(
+    401,
+  );
+  expect(await (await request(path, "GET", admin)).json()).toMatchObject({
+    monthly_start_day: 1,
+    effective_at: null,
+    max_concurrent: cfg.limits.maxConcurrent,
+  });
+  expect((await request(path + "/start-day/15", "PUT", admin)).status).toBe(
+    503,
+  );
+  const db = await mf.getD1Database("DB");
+  // Prepare complete statements so the semicolon inside the trigger stays intact.
+  const migration = readFileSync("migrations/0003_budget_cycle.sql", "utf8");
+  const trigger = migration.indexOf("CREATE TRIGGER");
+  for (const statement of migration
+    .slice(0, trigger)
+    .split(";")
+    .map((s) => s.trim())) {
+    if (
+      statement &&
+      !statement.split("\n").every((line) => line.startsWith("--"))
+    )
+      await db.prepare(statement).run();
+  }
+  await db.prepare(migration.slice(trigger)).run();
+  const update = await request(path + "/start-day/15", "PUT", admin);
+  expect(update.status).toBe(200);
+  expect(await update.json()).toMatchObject({
+    status: "configured",
+    monthly_start_day: 15,
+  });
+  expect((await request(path + "/start-day/2", "PUT", admin)).status).toBe(409);
+  expect(await (await request(path, "GET", admin)).json()).toMatchObject({
+    monthly_start_day: 15,
+    monthly_limit_microusd: cfg.limits.monthlyMicrousd,
+    effective_at: expect.any(String),
+    next_reset_at: expect.any(String),
+  });
+  // Exercise the guard in the D1 emulator using the legacy insert shape.
+  await expect(
+    db
+      .prepare(
+        `INSERT INTO requests
+    (principal,request_id,fingerprint,input_sha256,profile,claim,created_at,day,month,state,reserved_microusd,charged_microusd)
+    VALUES ('test','old-writer','f','h','p','c','2026-11-15T00:00:00.000Z','2026-11-15','2026-11','reserved',1,1)`,
+      )
+      .run(),
+  ).rejects.toThrow(/budget_schedule_changed/);
+  expect(calls + anthropicCalls).toBe(before);
+}, 20000);

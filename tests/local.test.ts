@@ -547,13 +547,73 @@ it("recovers a newly enabled preferred profile and preserves old IDs after remov
       await server.close();
     }
   }));
+it("upgrades the local schema only when custom budget opt-in succeeds", async () =>
+  fixture(async (directory) => {
+    const runtime = await openLocalRuntime(settings(), { directory });
+    const other = new DatabaseSync(runtime.path);
+    const version = () =>
+      other.prepare("PRAGMA user_version").get()?.user_version;
+    try {
+      expect(version()).toBe(2);
+      other.exec(`INSERT INTO requests
+        (principal,request_id,fingerprint,input_sha256,profile,claim,created_at,day,month,state,reserved_microusd,charged_microusd)
+        VALUES ('local','future','f','h','p','c','2026-12-01T00:00:00Z','2026-12-01','2026-12','unknown',1,1)`);
+      expect(
+        await runtime.scheduleMonthlyCycle(
+          15,
+          new Date("2026-11-30T23:59:59Z"),
+        ),
+      ).toMatchObject({ status: "conflict", monthly_start_day: 1 });
+      expect(version()).toBe(2);
+      expect(
+        other
+          .prepare(
+            "SELECT 1 FROM sqlite_schema WHERE name='monthly_budget_cycle'",
+          )
+          .get(),
+      ).toBeUndefined();
+      expect(
+        await runtime.scheduleMonthlyCycle(
+          15,
+          new Date("2026-12-01T00:00:00Z"),
+        ),
+      ).toMatchObject({ status: "configured", monthly_start_day: 15 });
+      expect(version()).toBe(3);
+      expect(await runtime.budget()).toMatchObject({
+        monthly_start_day: 15,
+        unresolved_slots: 1,
+      });
+    } finally {
+      other.close();
+      await runtime.close();
+    }
+
+    const reopened = await openLocalRuntime(settings(), { directory });
+    try {
+      expect(await reopened.budget()).toMatchObject({
+        monthly_start_day: 15,
+        unresolved_slots: 1,
+      });
+      const check = new DatabaseSync(reopened.path, { readOnly: true });
+      try {
+        expect(check.prepare("PRAGMA user_version").get()?.user_version).toBe(
+          3,
+        );
+      } finally {
+        check.close();
+      }
+    } finally {
+      await reopened.close();
+    }
+  }));
+
 it("does not change a newer ledger's schema or journal mode", async () =>
   fixture(async (directory) => {
     await mkdir(directory, { mode: 0o700 });
     const path = join(directory, "ledger.sqlite");
     const db = new DatabaseSync(path);
     db.exec(
-      "PRAGMA journal_mode=WAL; PRAGMA user_version=3; CREATE TABLE future_data(value TEXT); INSERT INTO future_data VALUES ('preserve');",
+      "PRAGMA journal_mode=WAL; PRAGMA user_version=4; CREATE TABLE future_data(value TEXT); INSERT INTO future_data VALUES ('preserve');",
     );
     db.close();
     await chmod(path, 0o600);
@@ -562,7 +622,7 @@ it("does not change a newer ledger's schema or journal mode", async () =>
     );
     const check = new DatabaseSync(path, { readOnly: true });
     try {
-      expect(check.prepare("PRAGMA user_version").get()?.user_version).toBe(3);
+      expect(check.prepare("PRAGMA user_version").get()?.user_version).toBe(4);
       expect(check.prepare("PRAGMA journal_mode").get()?.journal_mode).toBe(
         "wal",
       );

@@ -44,6 +44,7 @@ it("rejects package omissions and private or unexpected artifacts", () => {
     "lib/cli.mjs",
     "migrations/0001_ledger.sql",
     "migrations/0002_profiles.sql",
+    "migrations/0003_budget_cycle.sql",
     "docs/releases/0.2.0.ko.md",
   ].map((path) => ({ path }));
   const pack = {
