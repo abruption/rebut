@@ -51,7 +51,16 @@ rebut doctor --connect
 
 ```sh
 umask 077
-rebut collect --root /path/to/project --request-id review-001 --requirements 'Check the supplied code' --profile astra-medium -- src/example.ts > /protected/path/review-001.bundle.json
+rebut collect --root /path/to/project --request-id review-001 --requirements 'AC-1: 정렬 순서 유지. AC-2: 빈 결과 보존.' --profile astra-medium -- src/example.ts > /protected/path/review-001.bundle.json
+```
+
+이슈나 명세에서 사람이 승인한 수락 기준을 사용합니다. 가능하면 구현 전에 그 버전을 패치와 별도로 고정합니다. 패치를 판단하는 데 필요한 파일을 선택하고, 작성자 요약은 기본적으로 `requirements`에서 제외합니다.
+
+제출하기 전에 고정한 버전이 이번 리뷰에 여전히 적용되는지 확인하고, 번들에서 마스킹된 실제 `requirements`를 승인본과 대조합니다. Rebut은 제출한 내용이 함께 제출한 해시와 일치하는지 확인합니다. 누가 기준을 승인했는지나 누락된 항목이 있는지는 알 수 없습니다. 기준 수정으로 범위가 달라지거나 마스킹으로 의미가 바뀌면 제출 전에 기준을 승인한 사람에게 확인합니다.
+
+이 예시에서는 AC-1과 AC-2 모두를 판단할 근거가 필요합니다. AC-2나 이를 판단할 코드·테스트가 빠졌다면, 지적이 없어도 AC-2는 판단하지 못한 항목으로 봅니다. 승인된 기준이 없거나 서로 충돌하면 먼저 기준을 확정하거나 일반 결함 검토로 범위를 좁힙니다. 지적이 없다는 결과만으로 수락 기준을 충족했다거나 병합이 승인됐다고 판단하지 않습니다.
+
+```sh
 rebut review < /protected/path/review-001.bundle.json
 rebut status review-001
 ```

@@ -51,7 +51,16 @@ rebut doctor --connect
 
 ```sh
 umask 077
-rebut collect --root /path/to/project --request-id review-001 --requirements 'Check the supplied code' --profile astra-medium -- src/example.ts > /protected/path/review-001.bundle.json
+rebut collect --root /path/to/project --request-id review-001 --requirements 'AC-1: ソート順を維持する。AC-2: 空の結果を保持する。' --profile astra-medium -- src/example.ts > /protected/path/review-001.bundle.json
+```
+
+Issue や仕様にある、人が承認した受け入れ基準を使用します。可能であれば実装前に、その版をパッチとは別に固定してください。パッチの評価に必要なファイルを選び、作成者の要約は原則として `requirements` に入れません。
+
+送信前に、固定した版が今回のレビューに引き続き適用されることを確認し、マスキング後のバンドルに含まれる実際の `requirements` を承認済みの基準と照合します。Rebut は送信された内容と一緒に渡されたハッシュが一致するかを確認します。誰が基準を承認したか、項目が欠けていないかは判定できません。修正で対象範囲が変わる場合や、マスキングで基準の意味が変わる場合は、送信前に基準の承認者に確認してください。
+
+この例では AC-1 と AC-2 の両方を評価する根拠が必要です。AC-2 自体や評価に必要なコード・テストが欠けている場合、指摘がなくても AC-2 は未評価です。承認済みの基準がない場合や複数の基準が矛盾する場合は、先に基準を確定するか、一般的な不具合のレビューに範囲を絞ります。指摘がないことだけで受け入れ基準の充足やマージの承認は判断できません。
+
+```sh
 rebut review < /protected/path/review-001.bundle.json
 rebut status review-001
 ```

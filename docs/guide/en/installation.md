@@ -51,7 +51,16 @@ For 0.2.x → 0.3.0, use **Worker code with existing OpenAI configuration → CL
 
 ```sh
 umask 077
-rebut collect --root /path/to/project --request-id review-001 --requirements 'Check the supplied code' --profile astra-medium -- src/example.ts > /protected/path/review-001.bundle.json
+rebut collect --root /path/to/project --request-id review-001 --requirements 'AC-1: Preserve sort order. AC-2: Retain empty results.' --profile astra-medium -- src/example.ts > /protected/path/review-001.bundle.json
+```
+
+Use the acceptance criteria a human approved in the issue or spec. Pin that version separately from the patch, ideally before implementation. Select the files needed to evaluate the patch and leave their summary out of `requirements` by default.
+
+Before submitting, confirm the pinned version still applies and compare the actual masked `requirements` in the bundle with the approved criteria. Rebut checks that the submitted content matches its supplied hash. It cannot establish who approved the criteria or whether anything was omitted. If a correction changes the scope or masking changes a criterion’s meaning, check with the person who approved the criteria before submitting.
+
+In this example, the reviewer needs evidence for both AC-1 and AC-2. If AC-2 or the code or tests needed to assess it are missing, treat AC-2 as unassessed, even when findings are empty. If approved criteria are missing or conflict, either resolve them first or scope the review to general defects. An empty findings list does not establish acceptance or authorize merging.
+
+```sh
 rebut review < /protected/path/review-001.bundle.json
 rebut status review-001
 ```
