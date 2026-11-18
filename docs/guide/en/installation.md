@@ -65,6 +65,10 @@ rebut review < /protected/path/review-001.bundle.json
 rebut status review-001
 ```
 
+If the bundle contains identifiable criteria, the reviewer is asked to summarize which it assessed and cite the evidence, even with no findings. For example, `summary` might report “AC-1: assessed from the sorting code in src/example.ts:12–16, no supported finding. AC-2: unassessed.” The `additional_evidence` would then ask for the empty-result code path or a relevant test.
+
+Compare those observations with the approved criteria and the supplied evidence. Keep any criterion absent from the bundle or report, or unsupported by the cited evidence, unassessed. The summary is the reviewer's account of its work. Use it as prose for review, and keep acceptance and merge decisions in your normal approval process.
+
 Select files explicitly. The collector rejects unsafe files, symlinks, FIFOs, and binaries and masks common secret patterns; inspect the bundle before sending it. `review` is a paid call; `status` retrieves metadata. Save the initial response because review bodies cannot be replayed.
 
 Select paid reviews explicitly. Check for `completed` and compare the returned model and input hash with the frozen bundle/profile, then verify each finding against the source. For independent reviews, supply the same frozen material without sharing reviewers' results. After timeout/unknown, retain the ID and backend rather than submitting a new ID. Follow [recovery](operations.md#unknown-recovery).
