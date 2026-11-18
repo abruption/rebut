@@ -63,6 +63,7 @@ export function validatePack(tag, pack) {
     "lib/cli.mjs",
     "migrations/0001_ledger.sql",
     "migrations/0002_profiles.sql",
+    "migrations/0003_budget_cycle.sql",
   ])
     assert(paths.includes(required));
   for (const path of paths) {

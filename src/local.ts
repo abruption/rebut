@@ -10,7 +10,8 @@ import { z } from "zod";
 import { ReviewInputSchema, type Provider } from "./contracts.js";
 import { parseConfig } from "./config.js";
 import { handleReview, metadata, ProviderKeyUnavailable } from "./service.js";
-import { Ledger, type LedgerRow } from "./ledger.js";
+import { Ledger, monthlyCycleInsert, type LedgerRow } from "./ledger.js";
+import { validMonthlyStartDay } from "./budget-cycle.js";
 import { ProfileRegistry } from "./profiles.js";
 import { resolveProfile } from "./client/profiles.js";
 import { settingsPath, type Settings } from "./client/settings.js";
@@ -93,8 +94,9 @@ export async function openLocalRuntime(
   // Read package assets before taking SQLite's write lock: no async I/O while
   // another process could block the event loop waiting for that lock.
   const migrations = await Promise.all(
-    ["0001_ledger.sql", "0002_profiles.sql"].map((name) =>
-      readFile(new URL("../migrations/" + name, import.meta.url), "utf8"),
+    ["0001_ledger.sql", "0002_profiles.sql", "0003_budget_cycle.sql"].map(
+      (name) =>
+        readFile(new URL("../migrations/" + name, import.meta.url), "utf8"),
     ),
   );
   const directory = resolve(options.directory ?? localDirectory());
@@ -123,7 +125,7 @@ export async function openLocalRuntime(
     const version = Number(
       database.prepare("PRAGMA user_version").get()?.user_version,
     );
-    if (!Number.isInteger(version) || version < 0 || version > 2)
+    if (!Number.isInteger(version) || version < 0 || version > 3)
       throw Error("LOCAL_SCHEMA_UNSUPPORTED");
     if (version < 1) database.exec(migrations[0]!);
     if (version < 2) database.exec(migrations[1]!);
@@ -141,6 +143,34 @@ export async function openLocalRuntime(
   const db = adapter(database);
   const env = { DB: db, REBUT_CONFIG: JSON.stringify(config) };
   const profiles = new ProfileRegistry(db, config.profiles);
+  const ledger = new Ledger(db);
+  function setFirstCustomBudgetCycle(day: number, now: Date) {
+    // Keep the schema upgrade and opt-in in the same synchronous transaction.
+    database.exec("BEGIN IMMEDIATE;");
+    try {
+      const version = Number(
+        database.prepare("PRAGMA user_version").get()?.user_version,
+      );
+      if (version === 3) {
+        database.exec("COMMIT;");
+        return false;
+      }
+      if (version !== 2) throw Error("LOCAL_SCHEMA_UNSUPPORTED");
+      database.exec(migrations[2]!);
+      const { sql, args } = monthlyCycleInsert(day, now);
+      if (!database.prepare(sql).run(...args).changes) {
+        database.exec("ROLLBACK;");
+        return true;
+      }
+      database.exec("PRAGMA user_version=3; COMMIT;");
+      return true;
+    } catch (error) {
+      try {
+        database.exec("ROLLBACK;");
+      } catch {}
+      throw error;
+    }
+  }
   const shutdown = new AbortController();
   const http = createNodeHttpTransport();
   const providerFetch = options.fetcher ?? http.fetch;
@@ -150,6 +180,13 @@ export async function openLocalRuntime(
     path,
     config,
     profiles,
+    budget: () => ledger.budget(config.limits),
+    async scheduleMonthlyCycle(day: number, now = new Date()) {
+      if (!validMonthlyStartDay(day)) throw Error("INVALID_MONTHLY_START_DAY");
+      if (day !== 1 && setFirstCustomBudgetCycle(day, now))
+        return ledger.monthlyCycleSetting(day);
+      return ledger.scheduleMonthlyCycle(day, now);
+    },
     async review(raw: unknown, signal?: AbortSignal) {
       if (shutdown.signal.aborted) throw Error("LOCAL_RUNTIME_CLOSED");
       const work = handleReview(raw, PRINCIPAL, env, {

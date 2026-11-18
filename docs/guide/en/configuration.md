@@ -65,6 +65,12 @@ Local limits apply to one data directory; Worker limits apply across its deploym
 
 The service reserves conservatively for input and maximum output, then accounts for verified usage. Estimates are not invoices. Unknown keeps the full reservation and concurrency slot, including after date changes. Period accounting remains attached to the original UTC submission day/month.
 
+Run `rebut budget` to see accounted monthly spend, the next UTC reset, and slots occupied by unresolved requests. These are ledger figures, independent of provider credit balances. In Worker mode this command uses the Worker administrator token. Compare the accounted amount with the monthly limit, and unresolved slots with the concurrency limit. Daily and per-request limits also apply.
+
+To opt into a different UTC monthly start day, run `rebut budget set-start-day DAY` (1–28). A fresh ledger adopts it immediately. An existing ledger extends its current calendar-month budget to the chosen day in the next month. For example, setting day 15 in November retains November's budget until December 15 at 00:00 UTC. Day 1 remains the default, and each ledger permits one transition away from it. Repeating the same setting is safe; changing it again is rejected.
+
+For a Worker, deploy the new code and apply D1 migration `0003_budget_cycle.sql` before setting a custom day. Calendar-month mode works without the migration. Local opt-in upgrades the ledger automatically. Use a compatible CLI afterwards, since older local versions cannot open the upgraded ledger. Older Worker versions cannot make new reservations after opt-in. Existing request IDs, accounting periods and unresolved slots are preserved.
+
 ## Input and result contract
 
 | Item                  | Limit                       |
