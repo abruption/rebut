@@ -174,6 +174,67 @@ describe("review input contract", () => {
 });
 
 describe("reservation and request", () => {
+  it("requests criterion coverage through both provider formats", () => {
+    const criteriaInput = {
+      ...input,
+      requirements: "AC-1: Preserve sort order. AC-2: Retain empty results.",
+    };
+    const openaiBody = buildReviewBody(criteriaInput, profile);
+    const anthropicBody = buildReviewBody(
+      { ...criteriaInput, schema_version: 2, provider: "anthropic" },
+      { ...profile, provider: "anthropic" },
+    );
+    if (!("instructions" in openaiBody) || !("system" in anthropicBody))
+      throw new Error("Expected the OpenAI and Anthropic request formats");
+
+    expect(openaiBody.instructions).toEqual(
+      expect.stringContaining("summarize coverage even when findings is empty"),
+    );
+    expect(openaiBody.instructions).toMatch(/unassessed.*additional_evidence/);
+    expect(anthropicBody.system).toEqual(
+      expect.stringContaining(openaiBody.instructions!),
+    );
+    expect(JSON.parse(openaiBody.input).requirements).toBe(
+      criteriaInput.requirements,
+    );
+    expect(JSON.parse(anthropicBody.messages[0]!.content).requirements).toBe(
+      criteriaInput.requirements,
+    );
+  });
+
+  it("retains coverage prose and missing evidence on a completed review with no findings", async () => {
+    const report = {
+      summary:
+        "AC-1: assessed against src/a.ts:8-9, no supported finding. AC-2: unassessed.",
+      additional_evidence: ["AC-2: supply the empty-result path or its test."],
+      findings: [],
+    };
+    const fetcher = mockFetch(
+      payload({
+        output: [
+          {
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            content: [{ type: "output_text", text: JSON.stringify(report) }],
+          },
+        ],
+      }),
+    );
+    const result = await runReview(
+      {
+        ...input,
+        requirements: "AC-1: Preserve sort order. AC-2: Retain empty results.",
+      },
+      profile,
+      "fake-key",
+      fetcher,
+    );
+    expect(result.status).toBe("completed");
+    expect(result.review).toEqual(report);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("reserves full serialized body bytes plus framing and maximum output without cache discount", () => {
     const bytes = new TextEncoder().encode(
       JSON.stringify(buildReviewBody(input, profile)),
