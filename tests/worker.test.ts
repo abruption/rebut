@@ -160,6 +160,61 @@ it("rejects nonauthenticated and cross origin requests without provider calls", 
   ).toBe(403);
   expect(calls).toBe(0);
 });
+it("fails closed when Worker credential digests are ambiguous", async () => {
+  const ordinaryDigest = createHash("sha256").update(token).digest("hex");
+  const separateAdminDigest = createHash("sha256")
+    .update("separate-synthetic-admin-token")
+    .digest("hex");
+  const ambiguousConfigs = [
+    {
+      AUTH_TOKENS: JSON.stringify({
+        first: ordinaryDigest,
+        second: ordinaryDigest,
+      }),
+      ADMIN_TOKEN_SHA256: separateAdminDigest,
+    },
+    {
+      AUTH_TOKENS: JSON.stringify({ test: ordinaryDigest }),
+      ADMIN_TOKEN_SHA256: ordinaryDigest,
+    },
+  ];
+  for (const [index, bindings] of ambiguousConfigs.entries()) {
+    const isolated = new Miniflare(
+      convertV4MiniflareOptions({
+        workers: [
+          {
+            name: `ambiguous-auth-${index}`,
+            modules: [{ type: "ESModule", path: "dist/worker.js" }],
+            compatibilityDate: "2026-11-12",
+            compatibilityFlags: ["nodejs_compat"],
+            d1Databases: ["DB"],
+            bindings: {
+              REBUT_CONFIG: JSON.stringify(cfg),
+              ...bindings,
+            },
+          },
+        ],
+      }),
+    );
+    try {
+      for (const path of ["/mcp", "/profiles", "/admin/budget"]) {
+        const response = await isolated.dispatchFetch(
+          "http://127.0.0.1" + path,
+          {
+            headers: {
+              Host: "127.0.0.1",
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+        expect(response.status).toBe(503);
+        expect(await response.text()).toBe("Service not configured");
+      }
+    } finally {
+      await isolated.dispose();
+    }
+  }
+});
 it("lists real MCP tools and runs synthetic review exactly once", async () => {
   const listed = await rpc("tools/list", {});
   expect(listed.status).toBe(200);
