@@ -160,6 +160,74 @@ it("rejects nonauthenticated and cross origin requests without provider calls", 
   ).toBe(403);
   expect(calls).toBe(0);
 });
+it("rejects invalid Worker auth configuration and permits an absent administrator", async () => {
+  const ordinaryDigest = createHash("sha256").update(token).digest("hex");
+  const separateAdminDigest = createHash("sha256")
+    .update("separate-synthetic-admin-token")
+    .digest("hex");
+  const principals = JSON.stringify({ test: ordinaryDigest });
+  const authCases: Array<{
+    valid: boolean;
+    bindings: { AUTH_TOKENS: string; ADMIN_TOKEN_SHA256?: string };
+  }> = [
+    {
+      valid: false,
+      bindings: {
+        AUTH_TOKENS: JSON.stringify({
+          first: ordinaryDigest,
+          second: ordinaryDigest,
+        }),
+        ADMIN_TOKEN_SHA256: separateAdminDigest,
+      },
+    },
+    { valid: false, bindings: { AUTH_TOKENS: principals, ADMIN_TOKEN_SHA256: ordinaryDigest } },
+    { valid: false, bindings: { AUTH_TOKENS: "{", ADMIN_TOKEN_SHA256: separateAdminDigest } },
+    { valid: false, bindings: { AUTH_TOKENS: principals, ADMIN_TOKEN_SHA256: "invalid" } },
+    { valid: true, bindings: { AUTH_TOKENS: principals, ADMIN_TOKEN_SHA256: "" } },
+    { valid: true, bindings: { AUTH_TOKENS: principals } },
+  ];
+  for (const [index, { valid, bindings }] of authCases.entries()) {
+    const isolated = new Miniflare(
+      convertV4MiniflareOptions({
+        workers: [
+          {
+            name: `auth-config-${index}`,
+            modules: [{ type: "ESModule", path: "dist/worker.js" }],
+            compatibilityDate: "2026-11-12",
+            compatibilityFlags: ["nodejs_compat"],
+            d1Databases: ["DB"],
+            bindings: {
+              REBUT_CONFIG: JSON.stringify(cfg),
+              ...bindings,
+            },
+          },
+        ],
+      }),
+    );
+    try {
+      const routes = valid ? ["/mcp", "/admin/budget"] : ["/mcp", "/profiles", "/admin/budget"];
+      for (const path of routes) {
+        const response = await isolated.dispatchFetch(
+          "http://127.0.0.1" + path,
+          {
+            headers: {
+              Host: "127.0.0.1",
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+        if (!valid) {
+          expect(response.status).toBe(503);
+          expect(await response.text()).toBe("Service not configured");
+        } else {
+          expect(response.status).toBe(path === "/mcp" ? 405 : 401);
+        }
+      }
+    } finally {
+      await isolated.dispose();
+    }
+  }
+});
 it("lists real MCP tools and runs synthetic review exactly once", async () => {
   const listed = await rpc("tools/list", {});
   expect(listed.status).toBe(200);

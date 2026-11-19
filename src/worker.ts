@@ -21,17 +21,45 @@ export interface Env {
   ANTHROPIC_API_KEY?: string;
   ADMIN_TOKEN_SHA256?: string;
 }
+const DigestSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const PrincipalSchema = z.record(
   z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
-  z.string().regex(/^[a-f0-9]{64}$/),
+  DigestSchema,
 );
-async function authenticate(request: Request, env: Env) {
+const AuthConfigSchema = z
+  .object({
+    principals: PrincipalSchema,
+    adminDigest: DigestSchema.optional(),
+  })
+  .superRefine(({ principals, adminDigest }, ctx) => {
+    const ordinaryDigests = Object.values(principals);
+    if (new Set(ordinaryDigests).size !== ordinaryDigests.length)
+      ctx.addIssue({
+        code: "custom",
+        message: "Principal token digests must be unique",
+      });
+    if (adminDigest && ordinaryDigests.includes(adminDigest))
+      ctx.addIssue({
+        code: "custom",
+        message: "Administrator token digest must be separate",
+      });
+  });
+type AuthConfig = z.infer<typeof AuthConfigSchema>;
+function parseAuthConfig(env: Env): AuthConfig {
+  return AuthConfigSchema.parse({
+    principals: JSON.parse(env.AUTH_TOKENS),
+    adminDigest: env.ADMIN_TOKEN_SHA256 === "" ? undefined : env.ADMIN_TOKEN_SHA256,
+  });
+}
+async function authenticate(
+  request: Request,
+  principals: AuthConfig["principals"],
+) {
   const authorization = request.headers.get("authorization");
   if (!authorization?.startsWith("Bearer ") || authorization.length > 520)
     return null;
   const digest = await sha256(authorization.slice(7));
   // Stored values are SHA-256 digests of independently generated random 256-bit tokens.
-  const principals = PrincipalSchema.parse(JSON.parse(env.AUTH_TOKENS));
   return (
     Object.entries(principals).find(([, hash]) => hash === digest)?.[0] ?? null
   );
@@ -59,6 +87,12 @@ export default {
     try {
       if (!env.DB || !env.REBUT_CONFIG || !env.AUTH_TOKENS)
         return new Response("Service not configured", { status: 503 });
+      let authConfig: AuthConfig;
+      try {
+        authConfig = parseAuthConfig(env);
+      } catch {
+        return new Response("Service not configured", { status: 503 });
+      }
       const config = parseConfig(env.REBUT_CONFIG);
       if (url.hostname !== config.hostname)
         return new Response("Forbidden", { status: 403 });
@@ -69,10 +103,9 @@ export default {
         return new Response("Forbidden", { status: 403 });
       if (profileRoute || budgetRoute) {
         const auth = request.headers.get("authorization");
-        const adminDigest = env.ADMIN_TOKEN_SHA256;
+        const adminDigest = authConfig.adminDigest;
         const isAdmin = !!(
           adminDigest &&
-          /^[a-f0-9]{64}$/.test(adminDigest) &&
           auth?.startsWith("Bearer ") &&
           auth.length <= 520 &&
           (await sha256(auth.slice(7))) === adminDigest
@@ -101,11 +134,11 @@ export default {
         }
         const reader =
           url.pathname === "/profiles"
-            ? await authenticate(request, env)
+            ? await authenticate(request, authConfig.principals)
             : null;
         return await profileApi(request, config, env.DB, isAdmin, !!reader);
       }
-      const principal = await authenticate(request, env);
+      const principal = await authenticate(request, authConfig.principals);
       if (!principal)
         return new Response("Unauthorized", {
           status: 401,
