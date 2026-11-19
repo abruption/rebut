@@ -15,6 +15,8 @@
 
 macOS/Linux 配置为 `~/.config/rebut/config.json`，本地账本为 `~/.local/share/rebut/local/ledger.sqlite`。设置 `REBUT_CONFIG_DIR` 后改用该目录中的 `config.json` 和 `local/`。注册与状态查询必须使用同一目录。
 
+配置文件应由当前账户所有，权限设为 `0600`。配置目录也应由当前账户所有，并与上级路径一同放在其他用户无法写入的位置。如果 Rebut 报告配置路径不安全，请检查所有权和权限。
+
 ## 凭据
 
 `rebut set secret-store keychain|vaultwarden|env` 对所有角色选择后端，没有自动回退。Keychain 服务为 `com.abruption.rebut`。

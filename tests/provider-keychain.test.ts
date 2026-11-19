@@ -42,10 +42,7 @@ afterEach(async () => {
 it.skipIf(process.platform !== "darwin")(
   "uses separate Keychain accounts and the existing api-key stdin flow without a real Keychain call",
   async () => {
-    const base = process.cwd().startsWith("/Volumes/Kingston NV/")
-      ? "/Volumes/Kingston NV/tmp"
-      : tmpdir();
-    const dir = await mkdtemp(join(base, "codex-provider-keychain-"));
+    const dir = await mkdtemp(join(tmpdir(), "codex-provider-keychain-"));
     await chmod(dir, 0o700);
     roots.push(dir);
     vi.stubEnv("REBUT_CONFIG_DIR", dir);

@@ -22,12 +22,9 @@ import {
 } from "@modelcontextprotocol/server";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const temporaryRoot = root.startsWith("/Volumes/Kingston NV/")
-  ? "/Volumes/Kingston NV/tmp"
-  : root.startsWith("/Volumes/Samsung T5/")
-    ? "/Volumes/Samsung T5/tmp"
-    : tmpdir();
-const directory = await mkdtemp(join(temporaryRoot, "codex-rebut-package-"));
+// The fixture includes credential-routing settings, so use the system temp
+// directory instead of a workspace volume with shared write permissions.
+const directory = await mkdtemp(join(tmpdir(), "codex-rebut-package-"));
 await chmod(directory, 0o700);
 const home = join(directory, "home");
 const config = join(home, "settings");
