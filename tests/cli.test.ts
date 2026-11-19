@@ -273,6 +273,7 @@ it("does not add new-only settings when updating a legacy Worker configuration",
         secretStore: "env",
         vaultwardenItem: "legacy",
       }),
+      { mode: 0o600 },
     );
     expect(cli(dir, ["set", "model", "gpt-6-astra"]).status).toBe(0);
     expect(
