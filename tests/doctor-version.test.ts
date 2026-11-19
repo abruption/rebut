@@ -13,12 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 it("source doctor handshakes with the fixture package version and preserves tools/exit codes", async () => {
-  const base = process.cwd().startsWith("/Volumes/Kingston NV/")
-    ? "/Volumes/Kingston NV/tmp"
-    : process.cwd().startsWith("/Volumes/Samsung T5/")
-      ? "/Volumes/Samsung T5/tmp"
-      : tmpdir();
-  const root = await mkdtemp(join(base, "codex-doctor-version-"));
+  const root = await mkdtemp(join(tmpdir(), "codex-doctor-version-"));
   try {
     await cp(resolve("src"), join(root, "src"), { recursive: true });
     await cp(resolve("migrations"), join(root, "migrations"), {

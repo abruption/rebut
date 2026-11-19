@@ -15,6 +15,8 @@
 
 설정은 `~/.config/rebut/config.json`, 로컬 장부는 `~/.local/share/rebut/local/ledger.sqlite`입니다(macOS/Linux). `REBUT_CONFIG_DIR`을 지정하면 그 안의 `config.json`과 `local/`을 사용합니다. 등록과 상태 조회도 같은 디렉터리를 사용해야 합니다.
 
+설정 파일은 현재 계정이 소유하고 권한을 `0600`으로 유지합니다. 설정 디렉터리도 현재 계정이 소유해야 합니다. 설정 디렉터리와 상위 경로는 다른 사용자가 쓸 수 없는 위치를 사용합니다. 안전하지 않은 설정 경로 오류가 나면 소유권과 권한을 확인합니다.
+
 ## 자격증명
 
 `rebut set secret-store keychain|vaultwarden|env`는 모든 역할에 적용하며 자동 대체하지 않습니다. Keychain 서비스는 `com.abruption.rebut`입니다.

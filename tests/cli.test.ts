@@ -13,14 +13,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse } from "smol-toml";
 import { ReviewInputSchema, inputHash } from "../src/contracts.js";
-const base = process.cwd().startsWith("/Volumes/Kingston NV/")
-  ? "/Volumes/Kingston NV/tmp"
-  : process.cwd().startsWith("/Volumes/Samsung T5/")
-    ? "/Volumes/Samsung T5/tmp"
-    : tmpdir();
 const fixtureToken = "synthetic-test-bearer-value-not-real-123456789";
 async function fixture(run: (dir: string) => Promise<void>) {
-  const dir = await mkdtemp(join(base, "codex-rebut-cli-"));
+  const dir = await mkdtemp(join(tmpdir(), "codex-rebut-cli-"));
   try {
     await run(dir);
   } finally {
@@ -273,6 +268,7 @@ it("does not add new-only settings when updating a legacy Worker configuration",
         secretStore: "env",
         vaultwardenItem: "legacy",
       }),
+      { mode: 0o600 },
     );
     expect(cli(dir, ["set", "model", "gpt-6-astra"]).status).toBe(0);
     expect(

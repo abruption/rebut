@@ -15,6 +15,8 @@ Existing endpoint settings remain Worker mode. There is no automatic backend fal
 
 On macOS/Linux, settings are `~/.config/rebut/config.json` and the local ledger is `~/.local/share/rebut/local/ledger.sqlite`. With `REBUT_CONFIG_DIR`, use `config.json` and `local/` inside that directory. Registration and status queries must use the same directory.
 
+Keep the settings file owned by your account with mode `0600`. The settings directory must also be owned by your account. Keep it and its ancestors in locations where other users cannot write. If Rebut reports an unsafe settings path, check ownership and permissions before using that configuration.
+
 ## Credentials
 
 `rebut set secret-store keychain|vaultwarden|env` selects the backend for every role without fallback. Keychain service: `com.abruption.rebut`.
