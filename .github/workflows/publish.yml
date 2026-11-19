@@ -111,22 +111,84 @@ jobs:
           SHA256: ${{ needs.build.outputs.sha256 }}
         run: |
           node --input-type=module <<'JS'
-          import {createHash} from 'node:crypto';
-          const {VERSION, SHA256} = process.env;
-          for (let attempt = 0; attempt < 20; attempt++) {
-            const response = await fetch(`https://registry.npmjs.org/rebut-mcp/${VERSION}`, {signal: AbortSignal.timeout(15000)});
-            if (response.status === 404) { await new Promise(resolve => setTimeout(resolve, 15000)); continue; }
-            if (!response.ok) throw new Error(`Registry verification failed: ${response.status}`);
-            const metadata = await response.json();
-            if (!metadata.dist?.attestations) { await new Promise(resolve => setTimeout(resolve, 15000)); continue; }
+          import { createHash } from 'node:crypto';
+          const { VERSION, SHA256 } = process.env;
+          const registry = 'https://registry.npmjs.org';
+          const attempts = 25;
+          const deadline = AbortSignal.timeout(7 * 60_000);
+          const transientStatuses = new Set([404, 408, 429, 500, 502, 503, 504]);
+
+          async function readRegistry(url, label, timeout, readBody) {
+            const signal = AbortSignal.any([deadline, AbortSignal.timeout(timeout)]);
+            try {
+              const response = await fetch(url, { redirect: 'manual', signal });
+              if (!response.ok) {
+                await response.body?.cancel().catch(() => {});
+                if (transientStatuses.has(response.status)) {
+                  return { pending: `${label} HTTP ${response.status}` };
+                }
+                throw new Error(`${label} verification failed: HTTP ${response.status}`);
+              }
+              return { value: await readBody(response) };
+            } catch (error) {
+              const networkFailure = error instanceof TypeError &&
+                (error.cause || ['fetch failed', 'terminated'].includes(error.message));
+              if (networkFailure || ['TimeoutError', 'AbortError'].includes(error?.name)) {
+                return { pending: `${label} request or download interrupted` };
+              }
+              throw error;
+            }
+          }
+
+          async function checkArtifact() {
+            const result = await readRegistry(
+              `${registry}/rebut-mcp/${VERSION}`, 'Registry metadata', 15_000,
+              response => response.json(),
+            );
+            if (result.pending) return result.pending;
+            const metadata = result.value;
+            if (metadata?.name !== 'rebut-mcp' || metadata.version !== VERSION) {
+              throw new Error('Published package identity mismatch');
+            }
+            const predicateType = metadata.dist?.attestations?.provenance?.predicateType;
+            if (typeof predicateType !== 'string' || !predicateType) return 'Registry provenance unavailable';
+            if (typeof metadata.dist.tarball !== 'string' || !URL.canParse(metadata.dist.tarball)) {
+              throw new Error('Unexpected tarball URL');
+            }
             const url = new URL(metadata.dist.tarball);
-            if (url.origin !== 'https://registry.npmjs.org') throw new Error('Unexpected tarball host');
-            const tarball = await fetch(url, {signal: AbortSignal.timeout(30000)});
-            if (!tarball.ok) throw new Error('Cannot download the published tarball');
-            const sha = createHash('sha256').update(Buffer.from(await tarball.arrayBuffer())).digest('hex');
+            if (url.origin !== registry || url.username || url.password) {
+              throw new Error('Unexpected tarball URL');
+            }
+            const tarball = await readRegistry(url, 'Tarball', 30_000, response => response.arrayBuffer());
+            if (tarball.pending) return tarball.pending;
+            const sha = createHash('sha256').update(Buffer.from(tarball.value)).digest('hex');
             if (sha !== SHA256) throw new Error('Published artifact hash mismatch');
             console.log(`Verified rebut-mcp@${VERSION} (${sha})`);
-            process.exit(0);
           }
-          throw new Error('Publication was accepted but registry visibility is pending; inspect the original run before any retry');
+
+          function waitForRetry() {
+            return new Promise(resolve => {
+              const finish = () => {
+                clearTimeout(timer);
+                deadline.removeEventListener('abort', finish);
+                resolve();
+              };
+              const timer = setTimeout(finish, 15_000);
+              deadline.addEventListener('abort', finish, { once: true });
+            });
+          }
+
+          let pending = 'no registry request completed';
+          for (let attempt = 1; attempt <= attempts && !deadline.aborted; attempt++) {
+            pending = await checkArtifact();
+            if (!pending) break;
+            console.log(`Registry verification attempt ${attempt}/${attempts}: ${pending}`);
+            if (attempt < attempts && !deadline.aborted) {
+              await waitForRetry();
+            }
+          }
+          if (pending) {
+            const reason = deadline.aborted ? `${pending} (deadline reached)` : pending;
+            throw new Error(`Publication was accepted but verification did not finish: ${reason}. Inspect the original run before any retry.`);
+          }
           JS
