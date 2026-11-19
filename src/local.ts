@@ -287,7 +287,7 @@ export async function localMcpServer(
   } catch {
     unavailable = hasPreference;
   }
-  const server = new McpServer({ name: "rebut-mcp", version: "0.3.2" });
+  const server = new McpServer({ name: "rebut-mcp", version: "0.3.3" });
   server.registerTool(
     "review",
     {
