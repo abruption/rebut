@@ -1,13 +1,14 @@
+import { constants, type Stats } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import {
   mkdir,
-  readFile,
-  writeFile,
   rename,
   unlink,
   lstat,
-  chmod,
+  open,
+  realpath,
+  type FileHandle,
 } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -71,16 +72,222 @@ export function settingsPath(): string {
     "config.json",
   );
 }
+
+interface PathIdentity {
+  path: string;
+  stat: Stats;
+  allowTrustedLink: boolean;
+  requireCurrentOwner: boolean;
+}
+
+interface DirectoryState {
+  handle: FileHandle;
+  entries: PathIdentity[];
+}
+
+function unsafeSettings(): never {
+  throw new Error("SETTINGS_UNSAFE");
+}
+
+function currentUid(): number {
+  // Node does not expose Windows DACL ownership/effective-write checks. Fail
+  // closed rather than trust credential-routing settings without that proof.
+  const getuid = process.getuid;
+  if (process.platform === "win32" || !getuid) unsafeSettings();
+  return getuid();
+}
+
+function sameIdentity(left: Stats, right: Stats): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+function pathChain(path: string): string[] {
+  const chain: string[] = [];
+  for (let current = resolve(path); ; current = dirname(current)) {
+    chain.push(current);
+    const parent = dirname(current);
+    if (parent === current) break;
+  }
+  return chain.reverse();
+}
+
+function checkDirectoryEntry(
+  stat: Stats,
+  options: { allowTrustedLink: boolean; requireCurrentOwner: boolean },
+): void {
+  const uid = currentUid();
+  if (stat.isSymbolicLink()) {
+    if (!options.allowTrustedLink || stat.uid !== 0) unsafeSettings();
+    return;
+  }
+  if (!stat.isDirectory()) unsafeSettings();
+  if (
+    (options.requireCurrentOwner && stat.uid !== uid) ||
+    (!options.requireCurrentOwner && stat.uid !== uid && stat.uid !== 0)
+  )
+    unsafeSettings();
+  if (
+    (stat.mode & 0o022) !== 0 &&
+    !(
+      !options.requireCurrentOwner &&
+      stat.uid === 0 &&
+      (stat.mode & 0o1000) !== 0
+    )
+  )
+    unsafeSettings();
+}
+
+async function snapshotDirectoryChain(
+  path: string,
+  allowTrustedLinks: boolean,
+  requireDirectoryOwner = true,
+): Promise<PathIdentity[]> {
+  const paths = pathChain(path);
+  return Promise.all(
+    paths.map(async (entry, index) => {
+      const requireCurrentOwner = requireDirectoryOwner && index === paths.length - 1;
+      const options = {
+        allowTrustedLink: allowTrustedLinks && !requireCurrentOwner,
+        requireCurrentOwner,
+      };
+      const stat = await lstat(entry);
+      checkDirectoryEntry(stat, options);
+      return { path: entry, stat, ...options };
+    }),
+  );
+}
+
+async function verifyDirectory(state: DirectoryState): Promise<void> {
+  for (const entry of state.entries) {
+    const current = await lstat(entry.path);
+    checkDirectoryEntry(current, entry);
+    if (!sameIdentity(current, entry.stat)) unsafeSettings();
+  }
+  const current = await state.handle.stat();
+  const directory = state.entries[state.entries.length - 1]!;
+  checkDirectoryEntry(current, {
+    allowTrustedLink: false,
+    requireCurrentOwner: true,
+  });
+  if (!sameIdentity(current, directory.stat)) unsafeSettings();
+}
+
+async function createSettingsDirectory(path: string): Promise<void> {
+  let ancestor = path;
+  for (;;) {
+    try {
+      await lstat(ancestor);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+        unsafeSettings();
+      ancestor = dirname(ancestor);
+    }
+  }
+  if (ancestor === path) return;
+
+  await snapshotDirectoryChain(ancestor, true, false);
+  await snapshotDirectoryChain(await realpath(ancestor), false, false);
+  await mkdir(path, { recursive: true, mode: 0o700 });
+}
+
+async function inspectDirectory(path: string): Promise<DirectoryState> {
+  let handle: FileHandle | undefined;
+  try {
+    const lexical = await snapshotDirectoryChain(path, true);
+    const canonicalPath = await realpath(path);
+    const canonical = await snapshotDirectoryChain(canonicalPath, false);
+    const lexicalDirectory = lexical[lexical.length - 1]!.stat;
+    const canonicalDirectory = canonical[canonical.length - 1]!.stat;
+    if (!sameIdentity(lexicalDirectory, canonicalDirectory)) unsafeSettings();
+    handle = await open(
+      path,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    const state = { handle, entries: [...lexical, ...canonical] };
+    await verifyDirectory(state);
+    return state;
+  } catch (error) {
+    await handle?.close().catch(() => {});
+    if (error instanceof Error && error.message === "SETTINGS_UNSAFE")
+      throw error;
+    return unsafeSettings();
+  }
+}
+
+function checkSettingsFile(stat: Stats): void {
+  const uid = currentUid();
+  if (
+    !stat.isFile() ||
+    stat.isSymbolicLink() ||
+    stat.nlink !== 1 ||
+    stat.uid !== uid ||
+    (stat.mode & 0o077) !== 0
+  )
+    unsafeSettings();
+}
+
+async function openSettingsFile(
+  path: string,
+  directory: DirectoryState,
+  allowMissing = false,
+): Promise<{ handle: FileHandle; stat: Stats } | undefined> {
+  let handle: FileHandle | undefined;
+  try {
+    let observed: Stats;
+    try {
+      observed = await lstat(path);
+    } catch (error) {
+      if (allowMissing && (error as NodeJS.ErrnoException).code === "ENOENT")
+        return undefined;
+      throw error;
+    }
+    checkSettingsFile(observed);
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const current = await handle.stat();
+    checkSettingsFile(current);
+    if (!sameIdentity(observed, current)) unsafeSettings();
+    await verifyDirectory(directory);
+    return { handle, stat: current };
+  } catch (error) {
+    await handle?.close().catch(() => {});
+    if (error instanceof Error && error.message === "SETTINGS_UNSAFE")
+      throw error;
+    return unsafeSettings();
+  }
+}
+
+async function readSettingsSource(path: string): Promise<string | undefined> {
+  try {
+    await lstat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    unsafeSettings();
+  }
+  let directory: DirectoryState | undefined;
+  let file: FileHandle | undefined;
+  try {
+    directory = await inspectDirectory(dirname(path));
+    const opened = await openSettingsFile(path, directory);
+    if (!opened) unsafeSettings();
+    file = opened.handle;
+    const source = await file.readFile("utf8");
+    const current = await file.stat();
+    checkSettingsFile(current);
+    if (!sameIdentity(opened.stat, current)) unsafeSettings();
+    await verifyDirectory(directory);
+    return source;
+  } finally {
+    await file?.close().catch(() => {});
+    await directory?.handle.close().catch(() => {});
+  }
+}
+
 export async function readSettings(): Promise<Settings> {
   try {
     const path = settingsPath();
-    const stat = await lstat(path);
-    if (!stat.isFile() || stat.isSymbolicLink()) throw Error();
-    const data = SettingsSchema.parse(JSON.parse(await readFile(path, "utf8")));
-    if (data.endpoint) validateEndpoint(data.endpoint);
-    return data;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+    const source = await readSettingsSource(path);
+    if (source === undefined)
       return {
         schemaVersion: 1,
         mode: "local",
@@ -88,6 +295,12 @@ export async function readSettings(): Promise<Settings> {
         vaultwardenItem: "Rebut — MCP Access Token",
         vaultwardenAdminItem: "Rebut — MCP Admin Token",
       };
+    const data = SettingsSchema.parse(JSON.parse(source));
+    if (data.endpoint) validateEndpoint(data.endpoint);
+    return data;
+  } catch (error) {
+    if (error instanceof Error && error.message === "SETTINGS_UNSAFE")
+      throw error;
     throw new Error("SETTINGS_INVALID");
   }
 }
@@ -96,24 +309,50 @@ export async function writeSettings(value: Settings): Promise<void> {
   if (checked.endpoint) validateEndpoint(checked.endpoint);
   const path = settingsPath(),
     dir = dirname(path);
-  await mkdir(dir, { recursive: true, mode: 0o700 });
-  try {
-    const stat = await lstat(path);
-    if (!stat.isFile() || stat.isSymbolicLink())
-      throw new Error("SETTINGS_UNSAFE");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
+  currentUid();
+  await createSettingsDirectory(dir);
   const temporary = join(dir, ".config-" + randomUUID() + ".tmp");
+  let directory: DirectoryState | undefined;
+  let staged: FileHandle | undefined;
+  let temporaryCreated = false;
+  let destination: Stats | undefined;
   try {
-    await writeFile(temporary, JSON.stringify(checked, null, 2) + "\n", {
-      flag: "wx",
-      mode: 0o600,
-    });
+    directory = await inspectDirectory(dir);
+    const existing = await openSettingsFile(path, directory, true);
+    if (existing) {
+      destination = existing.stat;
+      await existing.handle.close();
+    }
+    staged = await open(
+      temporary,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+    temporaryCreated = true;
+    await staged.chmod(0o600);
+    const stagedStat = await staged.stat();
+    checkSettingsFile(stagedStat);
+    await staged.writeFile(JSON.stringify(checked, null, 2) + "\n", "utf8");
+    await staged.sync();
+    await staged.close();
+    staged = undefined;
+    await verifyDirectory(directory);
+    try {
+      const current = await lstat(path);
+      checkSettingsFile(current);
+      if (!destination || !sameIdentity(destination, current)) unsafeSettings();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT" || destination)
+        unsafeSettings();
+    }
     await rename(temporary, path);
-    await chmod(path, 0o600);
   } finally {
-    await unlink(temporary).catch(() => {});
+    await staged?.close().catch(() => {});
+    await directory?.handle.close().catch(() => {});
+    if (temporaryCreated) await unlink(temporary).catch(() => {});
   }
 }
 

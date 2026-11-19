@@ -747,7 +747,8 @@ export function safeError(error: unknown): string {
     PROVIDER_KEY_UNAVAILABLE:
       "Configure the selected profile provider key for local mode.",
     SETTINGS_INVALID: "Invalid local settings file.",
-    SETTINGS_UNSAFE: "Local settings path is unsafe.",
+    SETTINGS_UNSAFE:
+      "Local settings path is unsafe. Use a user-owned config.json with mode 0600 in a directory you own, and check the parent directory permissions.",
     TOKEN_INVALID: "Credential must contain 32–512 non-space ASCII characters.",
     KEYCHAIN_UNSUPPORTED:
       "Keychain backend requires macOS. Select an explicit supported secret store.",
