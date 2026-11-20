@@ -11,7 +11,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { parse } from "smol-toml";
+import { parse, stringify } from "smol-toml";
 import { removeCodex, setupCodex } from "../src/client/codex.js";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -61,7 +61,7 @@ describe("portable Codex setup", () => {
       mcp_servers: {
         rebut: {
           command: options.nodePath,
-          args: [options.entrypoint, "mcp"],
+          args: [options.entrypoint, "mcp", "--client", "codex"],
           startup_timeout_sec: 60,
           tool_timeout_sec: 1860,
           enabled_tools: ["review", "review_status", "review_pair"],
@@ -83,7 +83,7 @@ describe("portable Codex setup", () => {
     const server = (parse(raw).mcp_servers as Record<string, unknown>).rebut;
     expect(server).toEqual({
       command: options.nodePath,
-      args: [options.entrypoint, "mcp"],
+      args: [options.entrypoint, "mcp", "--client", "codex"],
       startup_timeout_sec: 60,
       tool_timeout_sec: 1860,
       enabled_tools: ["review", "review_status", "review_pair"],
@@ -200,6 +200,57 @@ describe("portable Codex setup", () => {
     });
     expect(await readFile(configPath, "utf8")).toBe(external);
     expect(await readdir(options.codexHome)).toEqual(["config.toml"]);
+  });
+
+  it.each([false, true])(
+    "removes a previously registered provider even after preferences change (legacy: %s)",
+    async (legacy) => {
+      const { options, configPath } = await fixture();
+      await setupCodex({
+        ...options,
+        forwardApiKeyEnv: true,
+        apiKeyEnv: "REBUT_ANTHROPIC_API_KEY",
+      });
+      if (legacy) {
+        const document = parse(await readFile(configPath, "utf8")) as any;
+        document.mcp_servers.rebut.args = [options.entrypoint, "mcp"];
+        await writeFile(configPath, stringify(document));
+      }
+      const openai = {
+        ...options,
+        forwardApiKeyEnv: true,
+        apiKeyEnv: "REBUT_OPENAI_API_KEY" as const,
+      };
+      await expect(setupCodex(openai)).rejects.toMatchObject({
+        code: "SERVER_CONFLICT",
+      });
+      await expect(
+        removeCodex({ ...options, forwardTokenEnv: true }),
+      ).rejects.toMatchObject({ code: "SERVER_CONFLICT" });
+      expect(await removeCodex(openai)).toEqual({ configPath, changed: true });
+    },
+  );
+
+  it.each([
+    ["env_vars", ["REBUT_TOKEN"]],
+    ["env_vars", ["REBUT_ANTHROPIC_API_KEY", "CUSTOM_VAR"]],
+    ["command", "/different/node"],
+    ["env", { CUSTOM_VAR: "synthetic" }],
+  ])("refuses removal when a registration changes %s", async (field, value) => {
+    const { options, configPath } = await fixture();
+    await setupCodex({
+      ...options,
+      forwardApiKeyEnv: true,
+      apiKeyEnv: "REBUT_ANTHROPIC_API_KEY",
+    });
+    const document = parse(await readFile(configPath, "utf8")) as any;
+    document.mcp_servers.rebut[field as string] = value;
+    const custom = stringify(document);
+    await writeFile(configPath, custom);
+    await expect(removeCodex(options)).rejects.toMatchObject({
+      code: "SERVER_CONFLICT",
+    });
+    expect(await readFile(configPath, "utf8")).toBe(custom);
   });
 
   it("removes the owned server while preserving all other values", async () => {

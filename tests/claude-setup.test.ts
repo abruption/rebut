@@ -61,7 +61,7 @@ it("creates a user-only entry at the documented default without granting permiss
   expect(value.mcpServers.rebut).toMatchObject({
     type: "stdio",
     command: "/runtime/node",
-    args: [options.entrypoint, "mcp"],
+    args: [options.entrypoint, "mcp", "--client", "claude"],
     timeout: 1_860_000,
   });
   expect(value).not.toHaveProperty("permissions");

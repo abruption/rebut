@@ -160,7 +160,7 @@ function desired(options: ClaudeSetupOptions) {
   return {
     type: "stdio",
     command: safePath(options.nodePath ?? process.execPath),
-    args: [safePath(options.entrypoint), "mcp"],
+    args: [safePath(options.entrypoint), "mcp", "--client", "claude"],
     timeout: CODEX_TOOL_TIMEOUT_SECONDS * 1000,
     ...(Object.keys(env).length ? { env } : {}),
   };
@@ -200,7 +200,10 @@ function recognized(value: unknown): boolean {
     typeof v.command === "string" &&
     isAbsolute(v.command) &&
     Array.isArray(v.args) &&
-    v.args.length === 2 &&
+    (v.args.length === 2 ||
+      (v.args.length === 4 &&
+        v.args[2] === "--client" &&
+        v.args[3] === "claude")) &&
     typeof v.args[0] === "string" &&
     /(?:^|[\\/])bin[\\/]rebut\.mjs$/.test(v.args[0]) &&
     v.args[1] === "mcp"

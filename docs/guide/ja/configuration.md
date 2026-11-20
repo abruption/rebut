@@ -40,6 +40,18 @@ rebut set profile PROFILE_ID
 
 設定は新規収集に適用します。明示した `collect --profile` が優先され、`review` は固定バンドルのプロファイルを維持します。既定は `astra-medium` です。許可リストはプロバイダーのモデル権限を与えません。
 
+1 つの設定と台帳を共有しながら、Codex と Claude Code に別々の既定レビュープロファイルを設定できます。
+
+```sh
+rebut set profile claude-medium --client codex
+rebut set profile astra-medium --client claude
+rebut set profile --client codex --clear
+```
+
+`--clear` はそのクライアントを共有の既定値に戻します。シェルやエージェントから `collect --client codex` または `collect --client claude` を指定するとクライアント別の既定値が適用されます。明示した `collect --profile` が優先されます。既定のプロファイルが使用できない場合は既定値での収集が失敗し、既存のバンドルのプロファイルとプロバイダーは保持されます。`rebut doctor --client codex` または `--client claude` で設定を確認できます。
+
+既存の登録を `rebut setup --client codex --replace` または `rebut setup --client claude --replace` で更新し、ホストを再起動してください。ローカルの環境変数方式で必要なキー変数が変わった場合は再登録します。モデルは `rebut profile set --model` でプロファイルに定義します。既定値に選んだプロファイルのモデル・推論・料金が適用されます。 クライアント別の既定値をサポートしない版へ戻す場合は、両方の設定を先に解除し、旧版の CLI で両方の MCP ホストを再登録してください。
+
 同梱の `astra-medium` プロファイルは GPT-6.2 Astra（`gpt-6.2-astra`）と medium の推論を使用します。例の[短いコンテキストの Standard 料金](https://developers.openai.com/api/docs/models/gpt-6.2-astra)は100万トークン当たり入力 $8、出力 $40 です。既存の Worker とローカルのプロファイル上書きは保存済み設定を維持します。移行するには `rebut profile list` を確認し、モデル `gpt-6.2-astra`、推論 `medium`、両方の料金と料金バージョン `openai-standard-2026-11-18` を、現在の `--if-revision` で一度に更新してください。旧モデル ID を明示しているクライアントでは、その設定を更新するか、プロファイル ID で `astra-medium` を選択してください。
 
 ローカルは OS 所有者が管理します。Worker の変更には `0002`、`ADMIN_TOKEN_SHA256`、別の管理者トークンが必要です。一覧取得は有料モデルを呼びません。

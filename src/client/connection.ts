@@ -4,11 +4,14 @@ import {
 } from "@modelcontextprotocol/client";
 import { CLIENT_TOOL_TIMEOUT_MS } from "../timeouts.js";
 import { createNodeHttpTransport } from "./http.js";
+import type { McpClient } from "./settings.js";
 
 export interface RemoteOptions {
   endpoint: string;
   preferredProfile?: { id: string; model: string; reasoning?: string };
   reviewUnavailable?: boolean;
+  clientProfileUnavailable?: boolean;
+  client?: McpClient;
   loadToken: () => Promise<string>;
 }
 

@@ -10,6 +10,7 @@ import {
   settingsPath,
   executionMode,
   providerEnvName,
+  type McpClient,
 } from "./client/settings.js";
 import { loadToken, storeToken } from "./client/secrets.js";
 import {
@@ -63,7 +64,8 @@ rebut set request-budget USD
 rebut set vaultwarden-admin-item NAME
 rebut set model MODEL
 rebut set reasoning EFFORT
-rebut set profile PROFILE_ID
+rebut set profile PROFILE_ID [--client codex|claude]
+rebut set profile --client codex|claude --clear
 rebut set admin-token [--stdin]
 rebut profile list
 rebut profile set ID [--provider openai|anthropic] --model MODEL --reasoning EFFORT --max-output-tokens N --input-usd-per-million USD --output-usd-per-million USD --price-version VERSION [--if-revision N]
@@ -71,12 +73,12 @@ rebut profile remove ID [--if-revision N]
 rebut set token [--stdin]        Hidden input; never pass a token as an argument
 rebut setup --client codex|claude [--codex-home PATH | --claude-config PATH] [--replace]
 rebut remove --client codex|claude [--codex-home PATH | --claude-config PATH] [--replace]
-rebut mcp                       Start the local server or Worker bridge
-rebut doctor [--connect] [--provider]         Check selected backend; --connect lists tools, never calls a model
+rebut mcp [--client codex|claude] Start the local server or Worker bridge
+rebut doctor [--connect] [--provider] [--client codex|claude]         Check selected backend; --connect lists tools, never calls a model
 rebut status --pending           Local reserved/unknown metadata only
 rebut status REQUEST_ID          Free metadata query
 rebut review                    Explicit paid review; JSON bundle on stdin
-rebut collect --root PATH --request-id ID --requirements TEXT [--profile ID] -- FILE...
+rebut collect --root PATH --request-id ID --requirements TEXT [--profile ID] [--client codex|claude] -- FILE...
 rebut --version
 
 New installs run locally with your selected provider API key. Host registration does not select the provider. No Cloudflare account is required.
@@ -102,6 +104,11 @@ function options(
   } catch {
     throw new CliError("Invalid arguments. Run rebut --help.");
   }
+}
+function selectedClient(value: unknown): McpClient | undefined {
+  if (value === undefined || value === "codex" || value === "claude")
+    return value;
+  throw new CliError("Specify --client codex or claude.");
 }
 async function stdin(max = 160000): Promise<string> {
   const chunks: Buffer[] = [];
@@ -225,6 +232,51 @@ export async function runCli(args: string[]): Promise<void> {
       );
       return;
     }
+    if (key === "profile") {
+      const parsed = options(
+        values,
+        {
+          client: { type: "string" },
+          clear: { type: "boolean" },
+        },
+        true,
+      );
+      const client = selectedClient(parsed.values.client);
+      const [value] = parsed.positionals;
+      if (parsed.values.clear) {
+        if (!client || parsed.positionals.length)
+          throw new CliError(
+            "Use rebut set profile --client codex|claude --clear.",
+          );
+        if (settings.clientProfiles) {
+          delete settings.clientProfiles[client];
+          if (!settings.clientProfiles.codex && !settings.clientProfiles.claude)
+            delete settings.clientProfiles;
+        }
+      } else {
+        if (
+          parsed.positionals.length !== 1 ||
+          !value ||
+          !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(value)
+        )
+          throw new CliError("Expected one valid profile ID.");
+        if (client)
+          settings.clientProfiles = {
+            ...settings.clientProfiles,
+            [client]: value,
+          };
+        else {
+          settings.defaultProfile = value;
+          delete settings.defaultModel;
+          delete settings.defaultReasoning;
+        }
+      }
+      await writeSettings(settings);
+      process.stdout.write(
+        "Profile preference saved. Restart the MCP host. Re-register existing hosts to enable client selection or refresh forwarded API key environment variables.\n",
+      );
+      return;
+    }
     if (values.length !== 1)
       throw new CliError(
         "Expected one configuration value. Tokens must use hidden input.",
@@ -319,12 +371,6 @@ export async function runCli(args: string[]): Promise<void> {
         throw new CliError("Invalid reasoning effort.");
       settings.defaultReasoning = value;
       delete settings.defaultProfile;
-    } else if (key === "profile") {
-      if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(value))
-        throw new CliError("Invalid profile ID.");
-      settings.defaultProfile = value;
-      delete settings.defaultModel;
-      delete settings.defaultReasoning;
     } else throw new CliError("Unknown configuration key.");
     await writeSettings(settings);
     process.stdout.write(
@@ -339,9 +385,8 @@ export async function runCli(args: string[]): Promise<void> {
       "claude-config": { type: "string" },
       replace: { type: "boolean" },
     });
-    const client = parsed.values.client;
-    if (client !== "codex" && client !== "claude")
-      throw new CliError("Specify --client codex or claude.");
+    const client = selectedClient(parsed.values.client);
+    if (!client) throw new CliError("Specify --client codex or claude.");
     if (
       (client === "claude" && parsed.values["codex-home"]) ||
       (client === "codex" && parsed.values["claude-config"])
@@ -354,15 +399,17 @@ export async function runCli(args: string[]): Promise<void> {
         fileURLToPath(new URL("../bin/rebut.mjs", import.meta.url)),
     );
     let keyProvider = settings.provider ?? "openai";
-    if (
-      command === "setup" &&
-      mode === "local" &&
-      settings.secretStore === "env"
-    ) {
+    let forwardApiKeyEnv = mode === "local" && settings.secretStore === "env";
+    if (command === "setup" && forwardApiKeyEnv) {
       try {
-        keyProvider = (await preferred()).provider;
+        keyProvider = (await preferred(undefined, client)).provider;
       } catch {
-        /* retain a startable metadata server for unavailable preferences */
+        if (settings.clientProfiles?.[client]) {
+          forwardApiKeyEnv = false;
+          process.stderr.write(
+            "Client default could not be resolved. No provider key variable was added to the registration.\n",
+          );
+        }
       }
     }
     const value = {
@@ -371,7 +418,7 @@ export async function runCli(args: string[]): Promise<void> {
       entrypoint,
       replace: parsed.values.replace as boolean | undefined,
       forwardTokenEnv: mode === "worker" && settings.secretStore === "env",
-      forwardApiKeyEnv: mode === "local" && settings.secretStore === "env",
+      forwardApiKeyEnv,
       apiKeyEnv: providerEnvName(settings, keyProvider),
       configDir: process.env.REBUT_CONFIG_DIR,
     };
@@ -394,6 +441,7 @@ export async function runCli(args: string[]): Promise<void> {
         "request-id": { type: "string" },
         requirements: { type: "string" },
         profile: { type: "string" },
+        client: { type: "string" },
       },
       true,
     );
@@ -407,7 +455,20 @@ export async function runCli(args: string[]): Promise<void> {
         "Collect requires root, request-id, requirements and explicit source files.",
       );
     // Resolve the current profile metadata while collecting, then freeze its supplier.
-    const chosen = await preferred(p.values.profile as string | undefined);
+    const client = selectedClient(p.values.client);
+    if (
+      !client &&
+      p.values.profile === undefined &&
+      (settings.clientProfiles?.codex || settings.clientProfiles?.claude)
+    ) {
+      process.stderr.write(
+        "No client selected. This bundle uses the shared review preference. Pass --client codex or --client claude to use a client default.\n",
+      );
+    }
+    const chosen = await preferred(
+      p.values.profile as string | undefined,
+      client,
+    );
     output(
       await collect(
         p.values.root as string,
@@ -420,7 +481,9 @@ export async function runCli(args: string[]): Promise<void> {
     );
     return;
   }
-  async function preferred(explicitProfile?: string) {
+  async function preferred(explicitProfile?: string, client?: McpClient) {
+    const selectedProfile =
+      explicitProfile ?? (client && settings.clientProfiles?.[client]);
     if (mode === "worker" && !settings.endpoint)
       throw new CliError(
         "Set the Worker endpoint before selecting server models.",
@@ -443,8 +506,8 @@ export async function runCli(args: string[]): Promise<void> {
       )?.profile?.model;
     const id = resolveProfile(
       records,
-      explicitProfile !== undefined
-        ? { profile: explicitProfile }
+      selectedProfile !== undefined
+        ? { profile: selectedProfile }
         : {
             provider: settings.provider,
             profile: settings.defaultProfile,
@@ -531,35 +594,46 @@ export async function runCli(args: string[]): Promise<void> {
     const p = options(rest, {
       connect: { type: "boolean" },
       provider: { type: "boolean" },
+      client: { type: "string" },
     });
+    const client = selectedClient(p.values.client);
+    const clientProfile = client && settings.clientProfiles?.[client];
     if (p.values.provider && mode !== "local")
       throw new CliError(
         "Provider metadata diagnostics are local mode only; Worker credentials stay on the Worker.",
       );
     let chosen: Awaited<ReturnType<typeof preferred>> | undefined;
-    if (mode === "local" && (p.values.connect || p.values.provider)) {
+    if (
+      (mode === "local" || client !== undefined) &&
+      (p.values.connect || p.values.provider)
+    ) {
       try {
-        chosen = await preferred();
+        chosen = await preferred(undefined, client);
       } catch {
         /* report unavailable preferences without losing metadata diagnostics */
       }
     }
-    const activeProvider = chosen?.provider ?? settings.provider ?? "openai";
-    let credentialAvailable = false;
+    const activeProvider =
+      chosen?.provider ??
+      (clientProfile ? undefined : (settings.provider ?? "openai"));
+    let credentialAvailable: boolean | undefined;
     let providerKey: string | undefined;
-    try {
-      providerKey = await loadToken(
-        settings,
-        mode === "local" ? "provider" : "review",
-        activeProvider,
-      );
-      credentialAvailable = true;
-    } catch {}
+    if (mode === "worker" || activeProvider) {
+      credentialAvailable = false;
+      try {
+        providerKey = await loadToken(
+          settings,
+          mode === "local" ? "provider" : "review",
+          activeProvider,
+        );
+        credentialAvailable = true;
+      } catch {}
+    }
     const report: any = {
       configPath: settingsPath(),
       mode,
       provider: activeProvider,
-      ...(mode === "local"
+      ...(mode === "local" || client !== undefined
         ? {
             profileResolution: !(p.values.connect || p.values.provider)
               ? "not_checked"
@@ -569,7 +643,7 @@ export async function runCli(args: string[]): Promise<void> {
           }
         : {}),
       keyConfigurationProvider: settings.provider ?? "openai",
-      ...(mode === "local" && settings.secretStore === "env"
+      ...(mode === "local" && settings.secretStore === "env" && activeProvider
         ? { apiKeyEnv: providerEnvName(settings, activeProvider) }
         : {}),
       ...(mode === "local"
@@ -581,12 +655,14 @@ export async function runCli(args: string[]): Promise<void> {
       endpointConfigured: !!settings.endpoint,
       secretStore: settings.secretStore,
       credentialAvailable,
-      defaultModel: settings.defaultModel,
-      defaultReasoning: settings.defaultReasoning,
-      defaultProfile: settings.defaultProfile,
+      ...(client ? { client } : {}),
+      defaultModel: clientProfile ? undefined : settings.defaultModel,
+      defaultReasoning: clientProfile ? undefined : settings.defaultReasoning,
+      defaultProfile: clientProfile ?? settings.defaultProfile,
+      clientProfiles: settings.clientProfiles,
     };
     if (p.values.provider) {
-      chosen ??= await preferred();
+      chosen ??= await preferred(undefined, client);
       report.providerDiagnostic = providerKey
         ? await providerDiagnostic(chosen, providerKey)
         : {
@@ -598,6 +674,8 @@ export async function runCli(args: string[]): Promise<void> {
         "Metadata reachability only; not generation permission, credits, rate limits, geo, structured-output support, or quality.";
     }
     if (p.values.connect) {
+      if (mode === "local" && clientProfile && !chosen)
+        throw new CliError("The configured client profile is unavailable.");
       if ((mode === "worker" && !settings.endpoint) || !credentialAvailable)
         throw new CliError(
           "Endpoint or credentials unavailable. Check your selected secret store.",
@@ -605,36 +683,36 @@ export async function runCli(args: string[]): Promise<void> {
       if (mode === "local") {
         const version = await packageVersion();
         report.localTools = await withLocal(async (runtime) => {
-          const server = await localMcpServer(runtime, settings);
+          const server = await localMcpServer(runtime, settings, client);
           const { Client } = await import("@modelcontextprotocol/client");
           const { InMemoryTransport } =
             await import("@modelcontextprotocol/server");
           const [host, local] = InMemoryTransport.createLinkedPair();
-          const client = new Client({
+          const mcpClient = new Client({
             name: "rebut-local-doctor",
             version,
           });
           try {
-            await Promise.all([client.connect(host), server.connect(local)]);
-            return (await client.listTools()).tools.map((t) => t.name);
+            await Promise.all([mcpClient.connect(host), server.connect(local)]);
+            return (await mcpClient.listTools()).tools.map((t) => t.name);
           } finally {
-            await client.close();
+            await mcpClient.close();
             await server.close();
           }
         });
         output(report);
         return;
       }
-      const client = await connectRemote({
+      const mcpClient = await connectRemote({
         endpoint: settings.endpoint!,
         loadToken: () => loadToken(settings),
       });
       try {
-        report.remoteTools = (await client.listTools()).tools.map(
+        report.remoteTools = (await mcpClient.listTools()).tools.map(
           (t) => t.name,
         );
       } finally {
-        await client.close();
+        await mcpClient.close();
       }
     }
     output(report);
@@ -647,25 +725,36 @@ export async function runCli(args: string[]): Promise<void> {
     loadToken: () => loadToken(settings),
   };
   if (command === "mcp") {
-    if (rest.length) throw new CliError("Unexpected mcp arguments.");
+    const parsed = options(rest, { client: { type: "string" } });
+    const client = selectedClient(parsed.values.client);
+    const clientProfile = client && settings.clientProfiles?.[client];
     if (mode === "local") {
-      await serveLocalStdio(settings);
+      await serveLocalStdio(settings, client);
       return;
     }
     let preferredProfile;
     let reviewUnavailable = false;
+    let clientProfileUnavailable = false;
     if (
       settings.defaultModel ||
       settings.defaultReasoning ||
-      settings.defaultProfile
+      settings.defaultProfile ||
+      clientProfile
     ) {
       try {
-        preferredProfile = await preferred();
+        preferredProfile = await preferred(undefined, client);
       } catch {
-        reviewUnavailable = true;
+        clientProfileUnavailable = clientProfile !== undefined;
+        reviewUnavailable = !clientProfileUnavailable;
       }
     }
-    await serveStdio({ ...remote, preferredProfile, reviewUnavailable });
+    await serveStdio({
+      ...remote,
+      client,
+      preferredProfile,
+      reviewUnavailable,
+      clientProfileUnavailable,
+    });
     return;
   }
   if (command === "status" && rest.length === 1 && rest[0] === "--pending") {

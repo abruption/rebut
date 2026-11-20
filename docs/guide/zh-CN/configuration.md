@@ -40,6 +40,18 @@ rebut set profile PROFILE_ID
 
 偏好应用于新收集的材料。显式 `collect --profile` 优先，`review` 保留冻结材料的配置档。默认 `astra-medium`，允许列表不授予供应商模型权限。
 
+Codex 和 Claude Code 可以共享同一配置与账本，同时各自设置默认审查配置。
+
+```sh
+rebut set profile claude-medium --client codex
+rebut set profile astra-medium --client claude
+rebut set profile --client codex --clear
+```
+
+`--clear` 将该客户端恢复为共享默认配置。在终端或代理命令中用 `collect --client codex` 或 `collect --client claude` 选择对应默认值，显式传入的 `collect --profile` 优先。客户端默认配置不可用时，按默认值收集会失败。已有冻结审查包保留原来的配置和供应商。可用 `rebut doctor --client codex` 或 `--client claude` 查看设置。
+
+更新现有注册时，运行 `rebut setup --client codex --replace` 或 `rebut setup --client claude --replace`，然后重启宿主。本地环境变量模式下，如果所需密钥变量变化，请重新注册。通过 `rebut profile set --model` 定义配置中的模型。选为默认值后，将使用该配置的模型、推理设置和费率。 回退到不支持客户端默认值的版本前，先清除两个客户端的覆盖值，再用旧版 CLI 重新注册两个 MCP 宿主。
+
 随附的 `astra-medium` 配置档使用 GPT-6.2 Astra（`gpt-6.2-astra`）和 medium 推理。示例采用[短上下文 Standard 费率](https://developers.openai.com/api/docs/models/gpt-6.2-astra)，每百万令牌输入 $8、输出 $40。现有 Worker 和本地配置档覆盖项保留已保存的设置。迁移时请查看 `rebut profile list`，使用当前的 `--if-revision` 一次性更新模型 `gpt-6.2-astra`、推理级别 `medium`、两项费率和价格版本 `openai-standard-2026-11-18`。如果客户端显式选择了旧模型 ID，请更新该偏好，或通过配置档 ID 选择 `astra-medium`。
 
 本地配置档由 OS 所有者管理。Worker 更改需要 `0002` 迁移、`ADMIN_TOKEN_SHA256` 和独立管理员令牌。列表查询不调用付费模型。

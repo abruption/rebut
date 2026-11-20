@@ -174,6 +174,9 @@ try {
       );
     return fixture;
   });
+  const shippedProfiles = JSON.parse(
+    await readFile(join(installed, "config.example.json"), "utf8"),
+  ).profiles;
   server = createServer(async (request, response) => {
     try {
       if (request.headers.authorization !== `Bearer ${token}`) {
@@ -181,6 +184,22 @@ try {
         return;
       }
       authenticatedRequests++;
+      if (request.method === "GET" && request.url === "/profiles") {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(
+          JSON.stringify({
+            profiles: [
+              {
+                id: "claude-medium",
+                enabled: true,
+                revision: 0,
+                profile: shippedProfiles["claude-medium"],
+              },
+            ],
+          }),
+        );
+        return;
+      }
       const chunks = [];
       for await (const chunk of request) chunks.push(chunk);
       const body = Buffer.concat(chunks);
@@ -208,12 +227,13 @@ try {
       secretStore: "env",
       vaultwardenItem: "unused synthetic fixture",
       endpoint: `http://127.0.0.1:${server.address().port}/mcp`,
+      clientProfiles: { codex: "claude-medium" },
     }),
     { mode: 0o600 },
   );
   transport = new StdioClientTransport({
     command: process.execPath,
-    args: [entry, "mcp"],
+    args: [entry, "mcp", "--client", "codex"],
     cwd: directory,
     env,
     stderr: "pipe",
@@ -230,6 +250,13 @@ try {
     "review_pair",
     "review_status",
   ]);
+  const preferred = tools.tools.find(
+    (tool) => tool.name === "review",
+  )?.description;
+  assert(
+    preferred?.includes("Preferred profile for new reviews: claude-medium"),
+  );
+  assert(preferred?.includes("rebut collect --client codex"));
   const requestId = "synthetic-existing-request";
   const result = await bounded(
     client.callTool({
@@ -560,7 +587,11 @@ try {
     REBUT_CONFIG_DIR: anthropicConfig,
     REBUT_ANTHROPIC_API_KEY: anthropicKey,
   };
-  run([entry, "set", "provider", "anthropic"], directory, anthropicEnv);
+  run(
+    [entry, "set", "profile", "claude-medium", "--client", "claude"],
+    directory,
+    anthropicEnv,
+  );
   run([entry, "set", "secret-store", "env"], directory, anthropicEnv);
   const claudeConfig = join(home, "claude-user.json");
   run(
@@ -604,7 +635,7 @@ try {
   await transport.close();
   transport = new StdioClientTransport({
     command: process.execPath,
-    args: ["--import", anthroPreload, entry, "mcp"],
+    args: ["--import", anthroPreload, ...registered.args],
     cwd: directory,
     env: { ...env, ...anthropicEnv },
     stderr: "pipe",
@@ -625,6 +656,11 @@ try {
   );
   client = new Client({ name: "anthropic-package-smoke", version: "1" });
   await bounded(client.connect(transport), "Claude MCP initialize");
+  assert(
+    (await client.listTools()).tools
+      .find((tool) => tool.name === "review")
+      ?.description.includes("Preferred profile: claude-medium"),
+  );
   const claudeBundle = {
     ...frozen,
     schema_version: 2,
@@ -673,7 +709,15 @@ try {
   assert.equal(saved.requested_provider, "anthropic");
   const metadata = JSON.parse(
     run(
-      ["--import", anthroPreload, entry, "doctor", "--provider"],
+      [
+        "--import",
+        anthroPreload,
+        entry,
+        "doctor",
+        "--provider",
+        "--client",
+        "claude",
+      ],
       directory,
       anthropicEnv,
     ),
