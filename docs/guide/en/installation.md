@@ -4,7 +4,31 @@
 
 [README](../../../README.en.md) · [Configuration](configuration.md) · [Operations](operations.md)
 
-Requires Node.js 24+. macOS/Linux are tested; Windows behavior and ACLs are unverified.
+Requires Node.js 24+. macOS and Linux are tested. See the Windows section below for the local MCP MVP.
+
+## Local MCP on Windows (MVP)
+
+On Windows, the local MCP can use an OpenAI API key from the environment. Choose a dedicated data directory under your Windows user profile and outside shared folders. Without a `config.json` in that directory, Rebut starts with its local defaults. If this directory already contains `config.json`, Rebut rejects it as an unsafe settings path. Commands that write settings, such as `rebut.cmd set mode local`, are also blocked.
+
+The MVP was verified with the local MCP process on Windows 10 x64 and Node 24. The commands below show Codex registration, which the PoC checked as launcher configuration. Launching Codex or Claude Code itself was outside the verification. Use `--client claude` on the last line to register Claude Code.
+
+```powershell
+npm.cmd install -g rebut-mcp
+$env:REBUT_CONFIG_DIR = Join-Path $env:LOCALAPPDATA 'Rebut\local-mvp'
+$rebutKey = Read-Host 'OpenAI API key' -AsSecureString
+try {
+    $env:REBUT_OPENAI_API_KEY = [System.Net.NetworkCredential]::new('', $rebutKey).Password
+} finally {
+    $rebutKey.Dispose()
+    Remove-Variable rebutKey
+}
+rebut.cmd doctor --connect
+rebut.cmd setup --client codex
+```
+
+Start Codex or Claude Code from the same PowerShell session. If Rebut is already registered, see [how to refresh a registration](#codex-registration-and-updates). Programs started from this shell can inherit the key. After closing the host, you can remove the key from the shell with `Remove-Item Env:REBUT_OPENAI_API_KEY`.
+
+Use the same `REBUT_CONFIG_DIR` next time. The request and usage records are in `local\ledger.sqlite` under that directory. If a result is uncertain, run `rebut.cmd status REQUEST_ID` with the original ID and the same `REBUT_CONFIG_DIR`. See [recovery](operations.md#unknown-recovery).
 
 ## Local MCP
 

@@ -4,7 +4,31 @@
 
 [README](../../../README.zh-CN.md) · [配置](configuration.md) · [运维](operations.md)
 
-需要 Node.js 24+。已验证 macOS/Linux；Windows 行为与 ACL 尚未验证。
+需要 Node.js 24 或更高版本。已在 macOS 和 Linux 上验证。Windows 本地 MCP 的使用范围见下文。
+
+## Windows 本地 MCP（MVP）
+
+在 Windows 上，可以通过环境变量向本地 MCP 提供 OpenAI API 密钥。请在 Windows 用户配置文件下指定一个专用目录，避开共享文件夹。目录内没有 `config.json` 时，Rebut 会按默认的本地模式启动。如果目录中已有 `config.json`，Rebut 会因设置路径不安全而拒绝启动。`rebut.cmd set mode local` 等写入设置的命令也会被拒绝。
+
+MVP 在 Windows 10 x64 和 Node 24 上验证了直接连接本地 MCP 进程。下例中的 Codex 注册已验证启动配置。Codex 和 Claude Code 应用本身的连接未纳入测试。若要注册 Claude Code，将最后一行的选项改为 `--client claude`。
+
+```powershell
+npm.cmd install -g rebut-mcp
+$env:REBUT_CONFIG_DIR = Join-Path $env:LOCALAPPDATA 'Rebut\local-mvp'
+$rebutKey = Read-Host 'OpenAI API key' -AsSecureString
+try {
+    $env:REBUT_OPENAI_API_KEY = [System.Net.NetworkCredential]::new('', $rebutKey).Password
+} finally {
+    $rebutKey.Dispose()
+    Remove-Variable rebutKey
+}
+rebut.cmd doctor --connect
+rebut.cmd setup --client codex
+```
+
+注册后，请从同一个 PowerShell 启动 Codex 或 Claude Code。已经注册过的用户可参阅[更新注册](#codex-注册与更新)。从这个会话启动的程序可能会继承密钥。关闭宿主后，可以用 `Remove-Item Env:REBUT_OPENAI_API_KEY` 清除当前会话中的密钥。
+
+下次继续使用同一个 `REBUT_CONFIG_DIR`。请求和用量记录保存在该目录下的 `local\ledger.sqlite`。结果不确定时，在设置了同一 `REBUT_CONFIG_DIR` 的会话中，通过 `rebut.cmd status REQUEST_ID` 查询原请求 ID。参见[恢复流程](operations.md#unknown-恢复)。
 
 ## 本地 MCP
 

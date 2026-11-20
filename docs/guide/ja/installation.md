@@ -4,7 +4,31 @@
 
 [README](../../../README.ja.md) · [設定](configuration.md) · [運用](operations.md)
 
-Node.js 24 以上が必要です。macOS/Linux を検証対象とし、Windows の動作・ACL は未検証です。
+Node.js 24 以上が必要です。macOS と Linux で検証しています。Windows のローカル MCP については下の節を参照してください。
+
+## Windows のローカル MCP（MVP）
+
+Windows では、環境変数に設定した OpenAI API キーでローカル MCP を使えます。Windows のユーザープロファイル内に専用ディレクトリを指定してください。共有フォルダーは避けてください。そのディレクトリに `config.json` がなければ、Rebut は既定のローカルモードで起動します。そのディレクトリに `config.json` があると、安全でない設定パスとして起動が拒否されます。`rebut.cmd set mode local` など、設定を書き込むコマンドも使えません。
+
+MVP では Windows 10 x64 と Node 24 でローカル MCP プロセスへの直接接続を確認しました。下の例にある Codex 登録はランチャー設定まで確認しています。Codex や Claude Code アプリからの接続は検証範囲外です。Claude Code に登録する場合は最後の行を `--client claude` に変えてください。
+
+```powershell
+npm.cmd install -g rebut-mcp
+$env:REBUT_CONFIG_DIR = Join-Path $env:LOCALAPPDATA 'Rebut\local-mvp'
+$rebutKey = Read-Host 'OpenAI API key' -AsSecureString
+try {
+    $env:REBUT_OPENAI_API_KEY = [System.Net.NetworkCredential]::new('', $rebutKey).Password
+} finally {
+    $rebutKey.Dispose()
+    Remove-Variable rebutKey
+}
+rebut.cmd doctor --connect
+rebut.cmd setup --client codex
+```
+
+登録後は、同じ PowerShell から Codex または Claude Code を起動します。すでに登録している場合は[登録の更新手順](#codex-登録と更新)を参照してください。このシェルから起動したプログラムはキーを引き継ぐ場合があります。ホストを終了した後、`Remove-Item Env:REBUT_OPENAI_API_KEY` でシェルからキーを削除できます。
+
+次回も同じ `REBUT_CONFIG_DIR` を指定してください。リクエストと使用量は、その下の `local\ledger.sqlite` に記録されます。結果が不明なときは、同じ `REBUT_CONFIG_DIR` と元の ID で `rebut.cmd status REQUEST_ID` を実行してください。[復旧手順](operations.md#unknown-復旧)を参照してください。
 
 ## ローカル MCP
 
