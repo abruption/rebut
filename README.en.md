@@ -12,7 +12,7 @@
 
 </div>
 
-An MCP for reviewing supplied code and diffs through OpenAI or Claude APIs. Review material is sent to the selected provider.
+Rebut is an MCP server for reviewing selected code and diffs with the OpenAI or Claude API. It sends the review material to the provider you choose.
 
 On 0.3.0+, select Claude with `rebut set provider anthropic`, then `rebut set api-key` and `rebut setup --client claude`. Host and provider are independent.
 
@@ -31,7 +31,7 @@ Restart Codex after registration. See [installation](docs/guide/en/installation.
 
 New installations use local stdio. Choose [Worker mode](docs/guide/en/installation.md#optional-worker-deployment) to share budgets and request history across devices. Existing Worker settings remain unchanged.
 
-`review` is a paid call; `doctor --connect` checks connectivity without a paid review. Keep the same request ID when the result is uncertain.
+`review` starts a paid review. `doctor --connect` checks the connection without calling a model. If a result is uncertain, check the original request ID on the same backend. Never start a replacement review with a new ID while the result is unknown.
 
 ## Guides
 

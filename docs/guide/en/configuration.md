@@ -61,7 +61,7 @@ rebut profile set PROFILE_ID --model MODEL_ID --reasoning medium --max-output-to
 rebut profile remove PROFILE_ID --if-revision N
 ```
 
-Replace uppercase placeholders with verified values. Check model/reasoning support and rates; both rates and the price version are required. `set` also accepts `--if-revision N`. On conflict, refresh the list and decide rather than automatically overwriting.
+Replace placeholders such as `PROFILE_ID` and `MODEL_ID` with the values you intend to use. Check the model’s supported reasoning effort and rates. Both rates and the price version are required. `set` also accepts `--if-revision N`. If the revision conflicts, refresh the list before making another change. Do not overwrite automatically.
 
 Changes affect future requests. Removal leaves an inactive tombstone without deleting history or reviving seeded profiles. Existing IDs retain their model, revision, and reservation. Dynamic profile edits do not require Worker redeployment.
 
@@ -77,7 +77,7 @@ Changes affect future requests. Removal leaves an inactive tombstone without del
 
 Local limits apply to one data directory; Worker limits apply across its deployment. They do not aggregate other devices, Workers, API usage, or OpenAI account balance. Manage Worker limits in `REBUT_CONFIG`. Daily, monthly, and request ceilings are independent; changing one does not increase the others. Restart hosts after settings changes.
 
-The service reserves conservatively for input and maximum output, then accounts for verified usage. Estimates are not invoices. Unknown keeps the full reservation and concurrency slot, including after date changes. Period accounting remains attached to the original UTC submission day/month.
+The service reserves conservatively for input and maximum output, then accounts for verified usage. Estimates are not invoices. Requests in the `unknown` state keep their full reservation and concurrency slot across UTC date changes. Period accounting remains attached to the original UTC submission day/month.
 
 Run `rebut budget` to see accounted monthly spend, the next UTC reset, and slots occupied by unresolved requests. These are ledger figures, independent of provider credit balances. In Worker mode this command uses the Worker administrator token. Compare the accounted amount with the monthly limit, and unresolved slots with the concurrency limit. Daily and per-request limits also apply.
 
@@ -97,9 +97,9 @@ For a Worker, deploy the new code and apply D1 migration `0003_budget_cycle.sql`
 SHA-256 covers masked `{schema_version,provider,task_kind,requirements,files,diff}` with file keys ordered `{path,start_line,content}`. ID and profile are separate from the evidence hash. See [the full schema](../../../src/contracts.ts).
 
 - `review` processes frozen material. Only `completed` means success; results include file/diff line evidence, model, input hash, usage, and estimated cost. Empty findings do not prove correctness.
-- `review_status` returns metadata for the original principal. Reusing an ID does not create another provider call; changing its hash/profile conflicts. Review bodies are not replayed.
+- `review_status` returns metadata only for the original principal. When the ID is already in the ledger for the same backend and principal, resubmitting `review` with the same input hash and profile makes no new provider call. A different input hash or profile returns `conflict`. Status lookups do not replay review bodies.
 
-Ledgers retain request/usage metadata, not code, review text, or keys. Material is sent to OpenAI; `store:false` does not promise zero provider retention. The prompt instructs the model to treat instructions inside supplied material as review data. Models receive no repository/URL fetching, shell, test, editing, or PR tools.
+Ledgers retain request/usage metadata, not code, review text, or keys. Review material goes to the provider selected by the profile. OpenAI’s `store:false` setting does not guarantee zero retention. The prompt instructs the model to treat instructions inside supplied material as review data. Models receive no repository/URL fetching, shell, test, editing, or PR tools.
 
 ## Claude provider — 0.3.0
 
@@ -113,6 +113,6 @@ Claude uses the Messages API with standard tier/global geo and no tools or promp
 
 Check [Claude Console billing](https://support.claude.com/en/articles/8977456-how-do-i-pay-for-my-claude-api-usage) for API costs and credit eligibility. Rebut API calls are distinct from Claude Code subscription usage.
 
-New schema 2 bundles freeze the provider and include it in the hash. Collection reads profile metadata from the selected backend, so Worker collection requires its access token. Submission rejects a changed profile supplier with `provider_mismatch` before key loading or reservation. New legacy schema 1 requests are OpenAI-only; previously submitted IDs retain metadata access with their original bundle. Confirm a supplier change before collecting a new bundle.
+New schema 2 bundles freeze the provider and include it in the hash. Collection reads profile metadata from the selected backend, so Worker collection requires its access token. If the profile’s provider has changed since collection, Rebut returns `provider_mismatch` before loading a key or reserving budget. New legacy schema 1 requests are OpenAI-only; previously submitted IDs retain metadata access with their original bundle. Confirm a provider change before collecting a new bundle.
 
 Local collection may initialize the profile store. Schema 1 hashes omit provider and retain their original ordering.

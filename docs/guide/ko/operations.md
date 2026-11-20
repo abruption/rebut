@@ -10,7 +10,7 @@
 
 `reserved`는 실행 중이거나 중단됐을 수 있는 예약, `unknown`은 결과·사용량이 불확실한 실행입니다. 둘 다 과금됐을 수 있으며 자동 재시도·만료·환불이 없습니다. 기본 한 슬롯을 점유하므로 신규 검토가 막힐 수 있습니다.
 
-1. 같은 백엔드·인증 주체·`REBUT_CONFIG_DIR`에서 `rebut status REQUEST_ID`를 조회합니다. ID를 잃었다면 로컬에서 `rebut status --pending`을 사용합니다(최대 100건, `has_more` 표시). 로컬 조회에는 OpenAI 키가 필요 없고 Worker 조회는 기존 접속 토큰을 사용합니다. 유료 모델 호출은 없습니다.
+1. 같은 백엔드·인증 주체·`REBUT_CONFIG_DIR`에서 `rebut status REQUEST_ID`를 조회합니다. ID를 잃었다면 로컬에서 `rebut status --pending`을 사용합니다(최대 100건, `has_more` 표시). 로컬 조회에는 OpenAI 키가 필요 없고 Worker 조회는 기존 접속 토큰을 사용합니다. 이 조회에서는 모델을 호출하지 않습니다.
 2. 호스트를 중지하고 닫힌 로컬 SQLite와 설정을 백업합니다. Worker는 Cloudflare D1 내보내기·Time Travel 방식으로 백업합니다.
 3. 원래 ID·입력 해시·프로필과 가능한 공급자 요청/사용량 근거를 대조합니다. `not_found`만으로 미실행을 단정하거나 다른 백엔드·새 ID로 재실행하지 마세요.
 4. 불확실하면 행·전액 회계 예약·슬롯을 유지합니다. 정산은 독립 근거가 있는 운영자가 해당 `(principal, request_id)`를 확인해 처리하며, 앱은 강제 해제·환불·삭제 도구를 제공하지 않습니다.
@@ -20,7 +20,7 @@
 
 ## 진단
 
-`rebut doctor`는 로컬 설정·키 상태, `doctor --connect`는 선택한 백엔드와 도구 목록을 확인합니다. 유료 검토나 공급자 계정 접근 검증은 하지 않습니다. SSH Keychain 접근 실패와 같은 장비의 로그인 세션에서 접근 성공은 구분하세요.
+`rebut doctor`는 로컬 설정·키 상태, `doctor --connect`는 선택한 백엔드와 도구 목록을 확인합니다. 모델을 호출하거나 공급자 계정 권한을 확인하지 않습니다. SSH Keychain 접근 실패와 같은 장비의 로그인 세션에서 접근 성공은 구분하세요.
 
 새 unknown 기록의 `unknown_reason`, `provider_elapsed_ms`, 공급자 ID·`upstream_status`는 가능한 경우에만 있습니다. 원문·예외 문자열은 저장하지 않습니다. HTTP 오류를 받은 뒤 본문 대기에서 timeout이 날 수도 있어 필드를 함께 해석하세요. 경과 시간은 실행·청구 완료 증거가 아니며 과거 누락 필드를 복원하지 않습니다.
 
@@ -30,9 +30,9 @@ SIGINT/SIGTERM은 진행 중 요청을 unknown으로 기록하고 닫으려 시�
 
 0.3.0 업데이트는 [설치 안내](installation.md#codex-등록과-업데이트)의 단계별 순서를 따릅니다. 사용자 지정 디렉터리를 유지하고 등록 전 `config.toml` 전체를 백업하세요. [설치 명령](installation.md#codex-등록과-업데이트)을 따릅니다.
 
-0.2.0 전용 설정을 쓰기 전 `config.json`도 백업하세요. 0.1.0은 새 필드를 거부하므로 Worker 사용자도 롤백 시 이전 설정 복원이 필요할 수 있습니다. 로컬 장부를 사용한 상태에서 0.1.0으로 내리는 것은 장부 복구가 아닙니다. 설정 복원을 위해 장부를 지우지 마세요.
+0.2.0 전용 설정을 쓰기 전 `config.json`도 백업하세요. 0.1.0은 새 필드를 거부하므로 Worker 사용자도 롤백 시 이전 설정 복원이 필요할 수 있습니다. 0.1.0으로 돌아가도 로컬 SQLite에 저장된 요청 기록과 예약의 상태는 바뀌지 않습니다. 이전 설정을 복원할 때도 SQLite 파일을 보존하세요.
 
-Worker는 같은 D1을 유지하고 대기 중인 마이그레이션만 적용합니다. bearer 교체는 `AUTH_TOKENS`의 다이제스트와 클라이언트 저장소를 갱신하되 인증 주체 ID는 유지합니다. 공급자 키는 별도로 `OPENAI_API_KEY`를 갱신합니다. 관리자 토큰을 MCP 설정에 넣지 마세요. `rebut remove`는 등록만 제거하며 키·설정·장부는 남깁니다.
+Worker는 같은 D1을 유지하고 대기 중인 마이그레이션만 적용합니다. bearer 교체는 `AUTH_TOKENS`의 다이제스트와 클라이언트 저장소를 갱신하되 인증 주체 ID는 유지합니다. 공급자 키는 별도로 `OPENAI_API_KEY`를 갱신합니다. 관리자 토큰을 MCP 설정에 넣지 마세요. `rebut remove`는 등록만 제거하며 키, 설정, 요청·사용량 기록은 남습니다.
 
 ## 개발 검증
 
@@ -44,18 +44,18 @@ npm test
 npm run test:package
 ```
 
-Worker 테스트는 빌드 결과를 사용합니다. 자동 테스트·패키지 smoke는 공급자를 모의 처리하므로 유료 API·모델 품질 검증이 아닙니다. 실제 API 테스트 기본 모델은 `luna-test`, 운영 기본은 `astra-medium`이며 Luna 성공으로 Astra 가용성·품질을 추론하지 않습니다. 과거 검증 상세는 [0.2.0 소스 기록](https://github.com/abruption/rebut/tree/v0.2.0/docs/guide/ko)을 참고하세요.
+Worker 테스트는 빌드 결과를 사용합니다. 자동 테스트·패키지 smoke는 공급자를 모의 처리하므로 실제 API 동작이나 모델 품질은 검증하지 않습니다. 실제 API 테스트 기본 모델은 `luna-test`, 운영 기본은 `astra-medium`이며 Luna 성공으로 Astra 가용성·품질을 추론하지 않습니다. 과거 검증 상세는 [0.2.0 소스 기록](https://github.com/abruption/rebut/tree/v0.2.0/docs/guide/ko)을 참고하세요.
 
-소스 경계: `service.ts`는 해시·프로필·예약/정산, `review.ts`는 공급자·근거 검증, `local.ts`는 stdio·SQLite, `worker.ts`는 HTTP 인증·D1을 담당합니다. 로컬은 한 디렉터리의 장부, Worker는 배포 공유 장부를 사용합니다.
+소스 경계: `service.ts`는 해시·프로필·예약/정산, `review.ts`는 공급자·근거 검증, `local.ts`는 stdio·SQLite, `worker.ts`는 HTTP 인증·D1을 담당합니다. 로컬은 데이터 디렉터리의 SQLite에 기록하고, Worker는 같은 배포에 접속하는 기기가 공유하는 D1에 기록합니다.
 
 ## npm 발행
 
 `publish.yml`은 main에서 수동 실행하며 태그·소스·버전을 검증하고 `npm` Environment에서 소유자 승인을 받습니다. 빌드·smoke에는 OIDC 쓰기 권한이 없고 검증한 tarball의 게시 작업만 권한을 갖습니다. PR 병합·GitHub Release 이벤트로 자동 발행하지 않습니다.
 
-게시 뒤 처리·검증 문제가 생기면 원래 실행과 레지스트리 버전·무결성을 먼저 확인한 뒤 재시도 여부를 판단하세요. 이미 게시된 버전은 재발행하지 않습니다. [한국어 릴리즈 체크리스트](../../releases/release-checklist.ko.md#github-actions-trusted-publisher)에 설정·승인·7일 artifact 기한을 정리했습니다. 이 워크플로는 Worker 배포·기존 설치 업데이트를 수행하지 않습니다.
+원래 실행의 게시 작업과 레지스트리를 먼저 확인하세요. 게시에 실패했거나 결과가 불확실하면 재실행 전에 버전이 이미 공개됐는지 확인하세요. 게시가 성공했다면 레지스트리에서 버전과 파일 해시를 대조하고, 일시적 오류가 난 `Verify npm registry artifact` 작업만 다시 실행하세요. 이미 게시된 버전은 다시 발행하지 마세요. [릴리즈 체크리스트](../../releases/release-checklist.ko.md#github-actions-trusted-publisher)에 설정, 승인, 빌드 산출물의 7일 보존 기간을 정리했습니다. 이 워크플로는 Worker 배포나 설치된 클라이언트의 갱신을 수행하지 않습니다.
 
 ## 0.3.0 업그레이드 주의
 
-새 설정 필드나 Anthropic 프로필이 있으면 0.2.x가 설정·프로필 목록을 거부할 수 있습니다. 업데이트 전 설정과 닫힌 장부를 백업하고, 롤백은 0.3.0에서 Anthropic 프로필을 비활성화하고 호환 설정을 복원하는 절차를 검토하세요. 기존 요청 행이나 unknown 예약을 삭제해 해결하지 않습니다. Claude 호스트의 다른 설정은 재직렬화하지 않지만 실행 중인 호스트가 덮어쓸 수 있으므로 종료 후 등록합니다.
+새 설정 필드나 Anthropic 프로필이 있으면 0.2.x가 설정·프로필 목록을 거부할 수 있습니다. 업데이트 전 실행 중인 Rebut을 종료한 뒤 설정과 SQLite 파일을 백업하세요. 롤백할 때는 0.3.0에서 Anthropic 프로필을 비활성화하고 호환 설정을 복원하는 절차를 검토하세요. 기존 요청 행이나 unknown 예약을 삭제해 해결하지 않습니다. Claude 호스트의 다른 설정은 재직렬화하지 않지만 실행 중인 호스트가 덮어쓸 수 있으므로 종료 후 등록합니다.
 
 일반 `rebut doctor`는 프로필을 해석하거나 SQLite를 만들지 않으며 `profileResolution: not_checked`를 표시합니다. 명시적인 `--connect`·`--provider`만 로컬 프로필 조회와 초기화를 수행할 수 있습니다.

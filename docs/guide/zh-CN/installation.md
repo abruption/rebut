@@ -67,11 +67,11 @@ rebut status review-001
 
 如果包中包含可识别的验收标准，即使没有发现问题，也会要求审查模型在摘要中说明评估了哪些标准并引用证据。例如，`summary` 可以写“AC-1：已检查 src/example.ts:12–16 中的排序代码，没有证据支持的问题发现。AC-2：未评估。” `additional_evidence` 则可请求处理空结果的代码路径或相关测试。
 
-将报告与已批准的标准和提供的证据对照。包或报告中遗漏的标准，以及引用证据不足以评估的标准，均保留为未评估。摘要是模型对审查过程的说明。请将它作为供人核对的文字，验收与合并按现有审批流程决定。
+把审查报告与已批准的标准和送审材料逐项对照。标准未出现在审查包或报告中，或引用的证据不足时，仍记为未评估。模型摘要可作为人工核对证据的参考。验收和合并沿用现有审批流程。
 
-明确选择文件。收集器拒绝危险文件、符号链接、FIFO 和二进制文件，并屏蔽常见秘密模式；发送前仍需检查材料。`review` 是付费调用，`status` 查询元数据。保存首次响应，审查正文不能重放。
+明确指定要送审的文件。收集时会拒绝不安全的文件、符号链接、FIFO 和二进制文件，并屏蔽常见的敏感信息模式。发送前请检查审查包。`review` 会发起付费调用，`status` 只查询元数据。审查正文无法重新获取，请保存首次响应。
 
-明确选择付费审查。确认 `completed`，将返回的模型和输入哈希与冻结材料及配置档对照，再逐条核对原始证据。独立审查应使用同一份冻结材料，不共享各审查者结果。timeout/unknown 后保留原 ID 与后端，不以新 ID 重试，按[恢复流程](operations.md#unknown-恢复)处理。
+仅在用户明确选择付费审查后发起调用。响应为 `completed` 时，核对模型和输入哈希是否与冻结的审查包及配置档相符，并逐条核对原始证据。独立审查使用同一份材料，各审查方之间不共享结果。如果调用超时或结果为 `unknown`，请在同一后端查询原请求 ID，避免用新 ID 重试。参见[恢复流程](operations.md#unknown-恢复)。
 
 ### 用两个配置进行独立审查
 
@@ -129,6 +129,6 @@ rebut doctor --connect
 
 注册前停止 Claude Code 并备份配置。仅更新 `~/.claude.json` 中的 Rebut 用户项。其他文件用 `--claude-config PATH`，设置 `CLAUDE_CONFIG_DIR` 时必须提供此选项。冲突的 Rebut 项需 `--replace`。项目/管理级同名覆盖需另外检查。注册通过原子替换生成 0600 文件，不保留 ACL/xattr。重启 Claude Code 后查看 `/mcp`。
 
-env 方式使用 `rebut set secret-store env`，向实际宿主提供 `REBUT_ANTHROPIC_API_KEY`。不支持选择共享 `ANTHROPIC_API_KEY`，避免改变 Claude Code 认证。Keychain/Vaultwarden 注册不添加供应商 env 占位符。env setup 解析配置档时也可能初始化本地 SQLite。 env 注册传递当前默认配置档的供应商变量，其他供应商冻结材料缺少对应 env 密钥时会在预留前失败。doctor 的 `provider` 表示默认配置档供应商，`keyConfigurationProvider` 表示 `set api-key` 目标。供应商/后端/env 改变后，为每个宿主重跑 `setup --replace` 并重启。
+env 方式使用 `rebut set secret-store env`，向实际宿主提供 `REBUT_ANTHROPIC_API_KEY`。不支持选择共享 `ANTHROPIC_API_KEY`，避免改变 Claude Code 认证。Keychain/Vaultwarden 注册不添加供应商 env 占位符。env setup 解析配置档时也可能初始化本地 SQLite。 env 注册传递当前默认配置档的供应商变量，其他供应商冻结材料缺少对应 env 密钥时会在预留前失败。如果 `doctor` 解析了配置档，`provider` 会显示所选供应商。未查询或无法解析配置档时，会显示共享设置中的供应商。如果 `--client` 指定的客户端有自己的默认配置档，且该配置档未查询或无法解析，则省略 `provider`。`keyConfigurationProvider` 显示 `set api-key` 的目标供应商。供应商/后端/env 改变后，为每个宿主重跑 `setup --replace` 并重启。
 
 可选、本地专用 `rebut doctor --provider` 仅查询模型元数据，不生成内容、预留审查费用或新增用量记录。解析配置档时可能初始化本地 SQLite。`doctor --connect` 仍只检查 MCP。元数据可达不证明生成权限、余额、geo、结构化输出支持或质量。
