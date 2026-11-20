@@ -105,6 +105,17 @@ jobs:
           assert(index >= 0 && a[index] > b[index], 'Version must still advance latest after approval');
           JS
           npm publish "./release-artifact/rebut-mcp-$VERSION.tgz" --access public --tag latest --provenance --ignore-scripts --registry=https://registry.npmjs.org/
+  verify-registry:
+    name: Verify npm registry artifact
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
       - name: Verify the public registry artifact
         env:
           VERSION: ${{ needs.build.outputs.version }}

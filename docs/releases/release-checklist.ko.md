@@ -57,6 +57,9 @@ GitHub Environment `npm`은 `main` 브랜치만 허용하며 `abruption`의 실�
 3. Actions에서 `Publish npm package`를 main 대상으로 수동 실행하고 해당 태그를 입력합니다. 태그 커밋과 workflow 실행의 main SHA가 정확히 같아야 합니다. 실행 전 main이 이동했다면 올바른 커밋을 다시 확인합니다.
 4. 빌드 작업이 타입 검사·빌드·테스트·설치 smoke·패키지 목록을 확인하고 tarball 한 개와 SHA-256을 생성합니다. 빌드 작업에는 OIDC 쓰기 권한이 없습니다.
 5. 빌드 요약의 소스·버전·SHA-256을 확인한 후 **7일 이내에** Environment 배포를 명시적으로 승인합니다. artifact 보존 기간이 지났다면 원래 버전의 발행 여부를 먼저 확인한 뒤 새 실행을 준비합니다. 이것이 해당 버전의 npm 발행 승인 단계입니다. 승인하지 않을 실행은 거부하거나 취소해 후속 실행을 막지 않도록 합니다.
-6. 게시 직전에도 버전 존재 여부와 `latest`보다 높은지 재확인합니다. 게시 작업만 `id-token: write`를 가지며 검증한 tarball을 재빌드 없이 게시합니다. npm 레지스트리에서 내려받은 파일의 SHA-256과 provenance 메타데이터 존재를 확인합니다.
+6. 게시 직전에도 버전 존재 여부와 `latest`보다 높은지 재확인합니다. 게시 작업만 `id-token: write`를 가지며 검증한 tarball을 재빌드 없이 게시합니다. npm 게시 명령이 성공하면 `npm` 환경 배포가 성공으로 기록됩니다.
+7. 별도 `Verify npm registry artifact` 작업이 공개 파일의 SHA-256과 provenance 메타데이터를 확인합니다. 이 작업이 실패하면 실행 전체는 실패로 표시되며, 게시 작업과 `npm` 배포 결과는 성공으로 남습니다.
 
-게시가 성공한 뒤 레지스트리 처리 지연이나 검증 오류가 나면 **전체 워크플로를 무작정 재실행하지 않습니다.** 원래 실행과 해당 버전의 공개 상태·무결성을 먼저 확인합니다. GitHub Release는 확정된 소스·버전·무결성을 기재해 별도로 한국어로 작성합니다. Worker 배포와 기존 설치 업데이트는 이 워크플로에 포함되지 않습니다. 과거 0.2.0 배포물에는 OIDC provenance가 소급 추가되지 않습니다.
+게시 작업이 성공했다면 원래 실행과 해당 버전의 공개 상태·무결성을 확인합니다. 일시적인 레지스트리 오류라면 최초 실행 후 30일 이내에 실패한 `Verify npm registry artifact` 작업만 다시 실행합니다. 이 경우 전체 실행이나 게시 작업의 재실행은 피하세요. 검증 실패 유형과 해시를 릴리즈 기록에 남깁니다. [GitHub 작업 재실행 안내](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs#re-running-a-specific-job-in-a-workflow)
+
+GitHub Release는 확정된 소스·버전·무결성을 기재해 별도로 한국어로 작성합니다. Worker 배포와 기존 설치 업데이트는 이 워크플로에 포함되지 않습니다. 과거 0.2.0 배포물에는 OIDC provenance가 소급 추가되지 않습니다.
