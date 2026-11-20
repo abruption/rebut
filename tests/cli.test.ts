@@ -116,6 +116,8 @@ it("registers and removes a real packaged entry without touching unrelated Codex
     expect(configured.mcp_servers.rebut.args).toEqual([
       resolve("bin/rebut.mjs"),
       "mcp",
+      "--client",
+      "codex",
     ]);
     expect(
       cli(dir, ["remove", "--client", "codex", "--codex-home", home]).status,
@@ -343,6 +345,91 @@ it("configures the Claude provider and host independently without embedding keys
     );
     expect(settings.defaultModel).toBe("claude-opus-5-5");
   }));
+it("selects single-review defaults independently for both clients", async () =>
+  fixture(async (dir) => {
+    const write = (host: string, profile: string) =>
+      cli(dir, ["set", "profile", profile, "--client", host]);
+    expect(write("codex", "claude-medium").status).toBe(0);
+    expect(write("claude", "astra-medium").status).toBe(0);
+    expect(cli(dir, ["set", "profile", "luna-test"]).status).toBe(0);
+    await writeFile(join(dir, "fixture.ts"), "export const n = 1;");
+    const collect = (...choice: string[]) =>
+      cli(dir, [
+        "collect",
+        "--root",
+        dir,
+        "--request-id",
+        "client-collection",
+        "--requirements",
+        "Check code",
+        ...choice,
+        "--",
+        "fixture.ts",
+      ]);
+    const bundle = (...choice: string[]) => {
+      const result = collect(...choice);
+      expect(result.status, result.stderr).toBe(0);
+      return JSON.parse(result.stdout);
+    };
+    const doctor = JSON.parse(cli(dir, ["doctor", "--client", "codex"]).stdout);
+    expect(doctor).toMatchObject({
+      defaultProfile: "claude-medium",
+      profileResolution: "not_checked",
+    });
+    expect(doctor.provider).toBeUndefined();
+    expect(doctor.credentialAvailable).toBeUndefined();
+    expect(cli(dir, ["set", "secret-store", "env"]).status).toBe(0);
+    const codexHome = join(dir, "codex-profile");
+    const setup = cli(dir, [
+      "setup",
+      "--client",
+      "codex",
+      "--codex-home",
+      codexHome,
+    ]);
+    expect(setup.status, setup.stderr).toBe(0);
+    const host = parse(
+      await readFile(join(codexHome, "config.toml"), "utf8"),
+    ) as any;
+    expect(host.mcp_servers.rebut.env_vars).toEqual([
+      "REBUT_ANTHROPIC_API_KEY",
+    ]);
+    const code = bundle("--client", "codex");
+    expect(code).toMatchObject({
+      profile: "claude-medium",
+      provider: "anthropic",
+    });
+    expect(code.input_sha256).toBe(await inputHash(code));
+    expect(bundle("--client", "claude")).toMatchObject({
+      profile: "astra-medium",
+      provider: "openai",
+    });
+    expect(bundle()).toMatchObject({
+      profile: "luna-test",
+      provider: "openai",
+    });
+    expect(collect().stderr).toContain(
+      "This bundle uses the shared review preference",
+    );
+
+    expect(
+      bundle("--client", "codex", "--profile", "astra-medium"),
+    ).toMatchObject({ profile: "astra-medium", provider: "openai" });
+    expect(write("codex", "missing").status).toBe(0);
+    expect(collect("--client", "codex").stderr).toContain(
+      "Requested profile is unavailable or disabled",
+    );
+    expect(bundle("--client", "codex", "--profile", "claude-medium")).toEqual(
+      code,
+    );
+    expect(
+      cli(dir, ["set", "profile", "--client", "codex", "--clear"]).status,
+    ).toBe(0);
+    expect(bundle("--client", "codex").profile).toBe("luna-test");
+    expect(bundle("--client", "claude").profile).toBe("astra-medium");
+    expect(collect("--client", "other").status).toBe(1);
+  }));
+
 it("collects a frozen Claude profile without loading a provider key", async () =>
   fixture(async (dir) => {
     expect(cli(dir, ["set", "provider", "anthropic"]).status).toBe(0);

@@ -61,7 +61,7 @@ describe("portable Codex setup", () => {
       mcp_servers: {
         rebut: {
           command: options.nodePath,
-          args: [options.entrypoint, "mcp"],
+          args: [options.entrypoint, "mcp", "--client", "codex"],
           startup_timeout_sec: 60,
           tool_timeout_sec: 1860,
           enabled_tools: ["review", "review_status"],
@@ -83,7 +83,7 @@ describe("portable Codex setup", () => {
     const server = (parse(raw).mcp_servers as Record<string, unknown>).rebut;
     expect(server).toEqual({
       command: options.nodePath,
-      args: [options.entrypoint, "mcp"],
+      args: [options.entrypoint, "mcp", "--client", "codex"],
       startup_timeout_sec: 60,
       tool_timeout_sec: 1860,
       enabled_tools: ["review", "review_status"],

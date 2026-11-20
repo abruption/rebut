@@ -47,7 +47,7 @@ export async function serveStdio(options: RemoteOptions): Promise<void> {
           title: tool.title,
           description:
             tool.name === "review"
-              ? `${tool.description ?? ""}\n\n${REVIEW_GUIDANCE}${options.preferredProfile ? "\nPreferred profile for new reviews: " + options.preferredProfile.id + " (model " + options.preferredProfile.model + ", reasoning " + (options.preferredProfile.reasoning ?? "provider default") + "). Explicit request profile remains authoritative." : ""}`.trim()
+              ? `${tool.description ?? ""}\n\n${REVIEW_GUIDANCE}${options.preferredProfile ? "\nPreferred profile for new reviews: " + options.preferredProfile.id + " (model " + options.preferredProfile.model + ", reasoning " + (options.preferredProfile.reasoning ?? "provider default") + "). Explicit request profile remains authoritative." : options.clientProfileUnavailable ? "\nCould not resolve the configured client default. Select an enabled profile explicitly." : options.reviewUnavailable ? "\nThe shared review preference is unavailable." : ""}${options.client ? "\nFor new bundles, use rebut collect --client " + options.client + " to apply this client default." : ""}`.trim()
               : tool.description,
           inputSchema: fromJsonSchema<Record<string, unknown>>(
             tool.inputSchema as JsonSchemaType,

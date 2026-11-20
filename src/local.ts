@@ -14,7 +14,11 @@ import { Ledger, monthlyCycleInsert, type LedgerRow } from "./ledger.js";
 import { validMonthlyStartDay } from "./budget-cycle.js";
 import { ProfileRegistry } from "./profiles.js";
 import { resolveProfile } from "./client/profiles.js";
-import { settingsPath, type Settings } from "./client/settings.js";
+import {
+  settingsPath,
+  type Settings,
+  type McpClient,
+} from "./client/settings.js";
 import { loadToken } from "./client/secrets.js";
 
 const PRINCIPAL = "local";
@@ -258,18 +262,21 @@ const toolResult = (value: object) => ({
 export async function localMcpServer(
   runtime: LocalRuntime,
   settings: Settings,
+  client?: McpClient,
 ) {
+  const clientProfile = client && settings.clientProfiles?.[client];
   const records = await runtime.profiles.list();
   const hasPreference = !!(
     settings.defaultModel ||
     settings.defaultReasoning ||
-    settings.defaultProfile
+    settings.defaultProfile ||
+    clientProfile
   );
   let preferred: string | undefined,
     unavailable = false;
   try {
     preferred = resolveProfile(records, {
-      profile: settings.defaultProfile,
+      profile: clientProfile ?? settings.defaultProfile,
       provider: settings.provider,
       model:
         settings.defaultModel || settings.defaultReasoning
@@ -291,7 +298,7 @@ export async function localMcpServer(
   server.registerTool(
     "review",
     {
-      description: `Explicit opt-in provider review. Local per-device ledger; budgets are not shared with another machine or Worker. Keep the original request_id and backend after uncertainty; never replay another backend's uncertain request here. ${preferred ? "Preferred profile: " + preferred : unavailable ? "Configured profile is unavailable." : "Select an enabled profile explicitly."}`,
+      description: `Explicit opt-in provider review. Local per-device ledger; budgets are not shared with another machine or Worker. Keep the original request_id and backend after uncertainty; never replay another backend's uncertain request here. ${preferred ? "Preferred profile: " + preferred : unavailable ? "Configured profile is unavailable." : "Select an enabled profile explicitly."}${client ? " For new bundles, use rebut collect --client " + client + " to apply this client default." : ""}`,
       inputSchema: ReviewInputSchema,
     },
     async (input, extra) => {
@@ -344,11 +351,11 @@ export async function localMcpServer(
   );
   return server;
 }
-export async function serveLocalStdio(settings: Settings) {
+export async function serveLocalStdio(settings: Settings, client?: McpClient) {
   const runtime = await openLocalRuntime(settings);
   let server: McpServer;
   try {
-    server = await localMcpServer(runtime, settings);
+    server = await localMcpServer(runtime, settings, client);
   } catch (error) {
     await runtime.close();
     throw error;

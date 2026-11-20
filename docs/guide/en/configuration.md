@@ -40,6 +40,18 @@ rebut set profile PROFILE_ID
 
 Preferences affect new collection. Explicit `collect --profile` wins; `review` retains the frozen bundle's profile. The default is `astra-medium`. Allowlisting does not grant provider model access.
 
+Use a client-specific preference to share one Rebut configuration and ledger while selecting different default profiles for Codex and Claude Code.
+
+```sh
+rebut set profile claude-medium --client codex
+rebut set profile astra-medium --client claude
+rebut set profile --client codex --clear
+```
+
+The clear command restores the shared preference for that client. In a terminal or an agent command, pass `collect --client codex` or `collect --client claude` to select the corresponding default. An explicit `collect --profile` wins. An unavailable client default stops default collection. Existing frozen bundles keep their profile and provider. Run `rebut doctor --client codex` or `--client claude` to see the preference.
+
+Refresh existing registrations with `rebut setup --client codex --replace` or `rebut setup --client claude --replace` and restart the host. In local environment-variable mode, refresh the registration again when a default change switches the required key variable. `rebut profile set --model` defines a profile's model. Choosing that profile as a default uses its current model, reasoning, and rates. Before rolling back to a version without client defaults, clear both client overrides and use the older CLI to register both MCP hosts again.
+
 The shipped `astra-medium` profile uses GPT-6.2 Astra (`gpt-6.2-astra`) with medium reasoning. The example uses [short-context Standard rates](https://developers.openai.com/api/docs/models/gpt-6.2-astra) of $8 input and $40 output per million tokens. Existing Workers and local profile overrides retain their stored settings. To migrate them, inspect `rebut profile list` and update the model to `gpt-6.2-astra`, reasoning to `medium`, and both rates together in one profile update with the current `--if-revision`, and price version `openai-standard-2026-11-18`. If a client explicitly selects the old model ID, update that preference or select `astra-medium` by profile ID.
 
 The OS owner manages local profiles. Worker changes require migration `0002`, `ADMIN_TOKEN_SHA256`, and a separate administrator token. Listing profiles makes no paid model call.

@@ -64,7 +64,7 @@ function equivalent(a: unknown, b: unknown): boolean {
 function desired(options: CodexSetupOptions): Table {
   return {
     command: options.nodePath ?? process.execPath,
-    args: [resolve(options.entrypoint), "mcp"],
+    args: [resolve(options.entrypoint), "mcp", "--client", "codex"],
     startup_timeout_sec: 60,
     tool_timeout_sec: CODEX_TOOL_TIMEOUT_SECONDS,
     enabled_tools: ["review", "review_status"],
@@ -219,6 +219,13 @@ async function update(
     if (
       existing !== undefined &&
       !equivalent(existing, replacement) &&
+      !(
+        remove &&
+        equivalent(existing, {
+          ...replacement,
+          args: [resolve(options.entrypoint), "mcp"],
+        })
+      ) &&
       !options.replace
     ) {
       throw new CodexSetupError(

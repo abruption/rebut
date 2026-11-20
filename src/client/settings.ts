@@ -15,6 +15,8 @@ import { z } from "zod";
 import type { Provider } from "../contracts.js";
 import { LimitsSchema } from "../config.js";
 import { validateEndpoint } from "./connection.js";
+export type McpClient = "codex" | "claude";
+const ProfileId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/);
 export const SettingsSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -42,9 +44,12 @@ export const SettingsSchema = z
       .string()
       .regex(/^[a-z][a-z0-9_-]{0,31}$/)
       .optional(),
-    defaultProfile: z
-      .string()
-      .regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/)
+    defaultProfile: ProfileId.optional(),
+    clientProfiles: z
+      .strictObject({
+        codex: ProfileId.optional(),
+        claude: ProfileId.optional(),
+      })
       .optional(),
     vaultwardenAdminItem: z
       .string()
@@ -145,7 +150,8 @@ async function snapshotDirectoryChain(
   const paths = pathChain(path);
   return Promise.all(
     paths.map(async (entry, index) => {
-      const requireCurrentOwner = requireDirectoryOwner && index === paths.length - 1;
+      const requireCurrentOwner =
+        requireDirectoryOwner && index === paths.length - 1;
       const options = {
         allowTrustedLink: allowTrustedLinks && !requireCurrentOwner,
         requireCurrentOwner,
@@ -179,8 +185,7 @@ async function createSettingsDirectory(path: string): Promise<void> {
       await lstat(ancestor);
       break;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-        unsafeSettings();
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") unsafeSettings();
       ancestor = dirname(ancestor);
     }
   }

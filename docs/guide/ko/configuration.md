@@ -40,6 +40,18 @@ rebut set profile PROFILE_ID
 
 환경설정은 새 수집에 적용합니다. 명시적 `collect --profile`이 우선하며 `review`는 번들에 고정한 프로필을 유지합니다. 기본은 `astra-medium`입니다. 프로필 허용 목록은 공급자의 모델 사용 권한을 보장하지 않습니다.
 
+설정과 장부를 공유하면서 Codex와 Claude Code의 기본 리뷰 프로필을 각각 지정할 수 있습니다.
+
+```sh
+rebut set profile claude-medium --client codex
+rebut set profile astra-medium --client claude
+rebut set profile --client codex --clear
+```
+
+`--clear`는 해당 호스트를 공통 기본값으로 되돌립니다. 터미널이나 에이전트 명령에서 `collect --client codex` 또는 `collect --client claude`를 사용하면 해당 기본값을 적용하며, `collect --profile`로 명시한 값이 우선합니다. 호스트 기본값을 사용할 수 없으면 기본값으로 번들을 수집할 수 없고, 기존 번들의 프로필과 공급자는 유지됩니다. `rebut doctor --client codex` 또는 `--client claude`로 설정을 확인합니다.
+
+기존 등록은 `rebut setup --client codex --replace` 또는 `rebut setup --client claude --replace`로 갱신한 뒤 호스트를 다시 시작합니다. 로컬 환경변수 방식에서 필요한 키 변수가 바뀌면 다시 등록합니다. 프로필에서 사용할 모델은 `rebut profile set --model`로 정의합니다. 기본값으로 선택한 프로필의 모델·추론·요율이 사용됩니다. 호스트별 기본값을 지원하지 않는 버전으로 되돌릴 때는 두 호스트의 기본값을 먼저 지우고, 이전 CLI로 두 MCP 호스트를 다시 등록합니다.
+
 기본 제공 `astra-medium` 프로필은 GPT-6.2 Astra(`gpt-6.2-astra`)와 medium 추론을 사용합니다. 예제의 [짧은 컨텍스트 Standard 요율](https://developers.openai.com/api/docs/models/gpt-6.2-astra)은 100만 토큰당 입력 $8, 출력 $40입니다. 기존 Worker와 로컬 프로필 오버라이드는 저장된 설정을 유지합니다. 전환하려면 `rebut profile list`를 확인하고 모델 `gpt-6.2-astra`, 추론 `medium`, 두 요율과 가격 버전 `openai-standard-2026-11-18`을 현재 `--if-revision`으로 한 번에 갱신합니다. 클라이언트가 이전 모델 ID를 명시했다면 해당 설정을 갱신하거나 프로필 ID로 `astra-medium`을 선택합니다.
 
 로컬 프로필은 OS 소유자가 관리합니다. Worker 변경에는 `0002` 마이그레이션과 `ADMIN_TOKEN_SHA256`, 별도 관리자 토큰이 필요합니다. 조회는 유료 모델을 호출하지 않습니다.
