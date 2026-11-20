@@ -11,6 +11,27 @@ const verifier = workflow.match(
   /- name: Verify the public registry artifact\n[\s\S]*?node --input-type=module <<'JS'\n([\s\S]*?)^ +JS$/m,
 )?.[1];
 
+it("runs registry verification after publication outside the npm deployment job", () => {
+  const jobs = workflow.split("\njobs:\n")[1]?.split(/^  (?=[\w-]+:\n)/m);
+  const publish = jobs?.find((job) => job.startsWith("publish:\n"));
+  const verify = jobs?.find((job) => job.startsWith("verify-registry:\n"));
+  expect(publish).toBeDefined();
+  expect(verify).toBeDefined();
+  expect(publish).toMatch(/^    environment: npm$/m);
+  expect(publish).toMatch(/^      id-token: write$/m);
+  expect(publish).toMatch(/^ +npm publish /m);
+  expect(publish).not.toContain("Verify the public registry artifact");
+  expect(verify).toMatch(/^    needs: \[build, publish\]$/m);
+  expect(verify).toMatch(/^    permissions: \{\}$/m);
+  expect(verify).not.toMatch(
+    /^ +(?:environment|id-token|if|continue-on-error):/m,
+  );
+  expect(verify).toContain("VERSION: ${{ needs.build.outputs.version }}");
+  expect(verify).toContain("SHA256: ${{ needs.build.outputs.sha256 }}");
+  expect(verify).not.toMatch(/^ +npm publish /m);
+  expect(verify).toContain("Verify the public registry artifact");
+});
+
 const artifact = "synthetic release tarball bytes";
 const sha256 = createHash("sha256").update(artifact).digest("hex");
 const tarball = "https://registry.npmjs.org/rebut-mcp/-/rebut-mcp-0.3.3.tgz";
