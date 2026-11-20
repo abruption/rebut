@@ -50,7 +50,7 @@ Worker 测试使用构建产物。自动测试/包 smoke 模拟供应商，不�
 
 手动 `publish.yml` 从 main 运行，验证标签/源码/版本，并在 `npm` Environment 获得所有者批准。构建和 smoke 没有 OIDC 写权限，只有已验证 tarball 的发布任务有。PR 合并或 GitHub Release 事件不自动发布。
 
-发布/验证出错时先检查原运行及注册表版本、完整性，再决定是否重试。不要重新发布已公开的版本。[韩语发布清单](../../releases/release-checklist.ko.md#github-actions-trusted-publisher)说明设置、批准和七天 artifact 保留期。此工作流不部署 Worker 或更新已有客户端。
+先查看原运行中的发布任务。发布失败或结果不明确时，请在重跑前检查该版本是否已在注册表中公开。发布成功后，请核对注册表中的版本和压缩包摘要。如果验证遇到临时错误，只需重跑 `Verify npm registry artifact` 任务。不要重新发布已上线的版本。设置、审批和构建产物的七天保留期见[韩语发布清单](../../releases/release-checklist.ko.md#github-actions-trusted-publisher)。此工作流不部署 Worker 或更新已安装的客户端。
 
 ## 升级到 0.3.0
 

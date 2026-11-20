@@ -50,7 +50,7 @@ Source boundaries: `service.ts` owns hashing, profiles, reservation/accounting; 
 
 Manual `publish.yml` runs from main, validates tag/source/version, and requires owner approval in the `npm` Environment. Building/smoke testing has no OIDC write permission; only publishing the verified tarball has it. PR merges and GitHub Release events do not publish.
 
-After publication/verification problems, inspect the original run and registry version/integrity before deciding whether to retry. Do not republish an already published version. The [Korean release checklist](../../releases/release-checklist.ko.md#github-actions-trusted-publisher) covers setup, approval, and seven-day artifact retention. The workflow does not deploy Workers or update installed clients.
+Start with the publish job in the original run and check the registry for that version. If publication failed or its result is unclear, confirm whether npm already accepted it before rerunning anything. If it succeeded, compare the registry version and archive digest, then rerun only `Verify npm registry artifact` if verification hit a transient error. Do not publish the same version again. The [Korean release checklist](../../releases/release-checklist.ko.md#github-actions-trusted-publisher) covers setup, approval, and seven-day artifact retention. The workflow does not deploy Workers or update installed clients.
 
 ## Upgrading to 0.3.0
 

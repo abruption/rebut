@@ -61,7 +61,7 @@ rebut profile set PROFILE_ID --model MODEL_ID --reasoning medium --max-output-to
 rebut profile remove PROFILE_ID --if-revision N
 ```
 
-大文字は確認した値に置き換えます。モデル・推論対応と料金を確認し、入力/出力料金と価格バージョンを指定してください。`set` も `--if-revision N` を使えます。競合時は一覧を再取得して判断し、自動上書きしません。
+`PROFILE_ID` や `MODEL_ID` などのプレースホルダーは実際の値に置き換えてください。モデルが対応する推論レベルと料金を確認し、入力料金・出力料金・料金バージョンを指定します。`set` でも `--if-revision N` を使えます。リビジョンが競合した場合は一覧を確認し直してください。自動で上書きしないでください。
 
 変更は後続リクエストに適用します。削除は無効化 tombstone を残し、履歴を消したり初期プロファイルを復活させたりしません。既存 ID のモデル・リビジョン・予約は維持します。動的変更に Worker 再デプロイは不要です。
 
@@ -97,15 +97,15 @@ Worker では新しいコードをデプロイし、D1 マイグレーション 
 SHA-256 はマスク後の `{schema_version,provider,task_kind,requirements,files,diff}`、ファイルキー順は `{path,start_line,content}` です。ID とプロファイルは証拠ハッシュとは別です。[完全なスキーマ](../../../src/contracts.ts)を参照してください。
 
 - `review` は固定資料を検討します。成功は `completed` のみで、ファイル/diff 行の根拠、モデル、入力ハッシュ、使用量、推定費用を返します。空の findings は正しさの証明ではありません。
-- `review_status` は元の principal のメタデータを照会します。同じ ID は追加呼び出しを作らず、ハッシュ/プロファイル変更は競合になります。本文は再取得しません。
+- `review_status` は元の認証主体にのみメタデータを返します。同じバックエンドと認証主体の台帳に ID が記録されていれば、同じ入力ハッシュとプロファイルで `review` を再送してもプロバイダーは再度呼び出されません。入力ハッシュやプロファイルが違う場合は `conflict` を返します。状態照会ではレビュー本文を再取得できません。
 
-台帳にはリクエスト/使用量メタデータだけを残し、コード・レビュー本文・キーは保存しません。資料は OpenAI に送信し、`store:false` はプロバイダーのゼロ保持を保証しません。プロンプトは資料内の指示をレビューデータとして扱うようモデルに指示します。モデルにリポジトリ/URL 取得、シェル、テスト、編集、PR ツールは与えません。
+台帳にはリクエスト/使用量メタデータだけを残し、コード・レビュー本文・キーは保存しません。資料はプロファイルで指定したプロバイダーに送信します。OpenAI の `store:false` はデータが一切保持されないことを保証するものではありません。プロンプトは資料内の指示をレビューデータとして扱うようモデルに指示します。モデルにリポジトリ/URL 取得、シェル、テスト、編集、PR ツールは与えません。
 
 ## Claude プロバイダー — 0.3.0
 
 `rebut set provider anthropic` 後、既存の `rebut set api-key` でキー 1 つを設定します。Keychain サービス/アカウントは `com.abruption.rebut` / `anthropic-api-key`。Vaultwarden は `rebut set vaultwarden-api-key-item NAME` で選択中の項目を指定し、既定は `Rebut — Anthropic API Key`。アカウント別名・キー循環・プロバイダーフォールバックは追加しません。
 
-`claude-medium` は Claude Opus 5.5 / medium です。Anthropic プロファイル新規作成時は `--provider anthropic` を明示します。省略時は既存の有効プロファイルを維持し、新規/無効な項目は OpenAI と扱い、キー選択設定は継承しません。provider のない旧プロファイルは OpenAI です。固定バンドルのプロファイルが実際のプロバイダーとキーを決めるため、設定変更後も元のバンドル/ID を保持します。
+`claude-medium` は Claude Opus 5.5 / medium です。Anthropic プロファイル新規作成時は `--provider anthropic` を明示します。省略すると、有効な既存プロファイルのプロバイダーを維持します。新規または無効なプロファイルには OpenAI が適用されます。キー選択設定は継承しません。provider のない旧プロファイルは OpenAI です。固定バンドルのプロファイルが実際のプロバイダーとキーを決めるため、設定変更後も元のバンドル/ID を保持します。
 
 各ローカル/Worker 台帳で両プロバイダーの予算・同時実行を合算します。新規リクエストの `requested_provider` は予約・完了・エラーでも維持し、旧行は変更しません。thinking 詳細がなければ `reasoning_tokens` を省略します。キャッシュ読み込みは基本入力料金全額で保守的に計上し、要求していないキャッシュ書き込みや非標準使用量は unknown として保持します。
 

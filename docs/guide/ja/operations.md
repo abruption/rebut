@@ -50,7 +50,7 @@ Worker テストはビルド結果を使います。自動テスト/package smok
 
 手動 `publish.yml` は main でタグ・ソース・版を検証し、`npm` Environment で所有者承認を受けます。ビルド/smoke に OIDC 書き込み権限はなく、検証済み tarball の公開ジョブだけが持ちます。PR マージ・GitHub Release イベントでは自動公開しません。
 
-公開・検証の問題後は、元の実行とレジストリの版・完全性を調べてから再試行を判断します。公開済みの同じバージョンは再公開しません。[韓国語リリースチェックリスト](../../releases/release-checklist.ko.md#github-actions-trusted-publisher)に設定・承認・7 日の artifact 保持期間を記載しています。Worker デプロイや既存端末更新は含みません。
+まず元の実行で公開ジョブの結果を確認してください。公開が失敗した場合や結果が不明な場合は、再実行する前にレジストリで公開済みかどうかを確認します。公開に成功した場合はレジストリのバージョンとハッシュを照合し、一時的なエラーで失敗した `Verify npm registry artifact` ジョブだけを再実行します。公開済みのバージョンを再公開しないでください。設定、承認、成果物の 7 日間の保存期間については[韓国語リリースチェックリスト](../../releases/release-checklist.ko.md#github-actions-trusted-publisher)を参照してください。このワークフローには Worker のデプロイや既存クライアントの更新は含まれません。
 
 ## 0.3.0 への更新
 

@@ -12,7 +12,7 @@
 
 </div>
 
-提供したコードと diff を OpenAI または Claude API でレビューする MCP です。資料は選択したプロバイダーに送信します。
+Rebut は、指定したコードや diff を OpenAI または Claude API でレビューする MCP サーバーです。レビュー資料は選択したプロバイダーに送信します。
 
 0.3.0 以降の Claude 対応は `rebut set provider anthropic` → `rebut set api-key` → `rebut setup --client claude` の順です。ホストとプロバイダーは別々に選びます。
 
@@ -31,7 +31,7 @@ rebut doctor --connect
 
 新規インストールはローカル stdio を使います。端末間で予算・台帳を共有する場合は [Worker モード](docs/guide/ja/installation.md#任意の-worker-デプロイ)を選択します。既存 Worker 設定は維持します。
 
-`review` は有料呼び出しです。`doctor --connect` は有料レビューなしで接続確認を行います。結果が不明なら同じリクエスト ID を維持してください。
+`review` は有料レビューを実行します。`doctor --connect` はモデルを呼び出さずに接続を確認します。結果が不明な場合は、新しい ID で再試行せず、同じバックエンドで元のリクエスト ID の状態を確認してください。
 
 ## ガイド
 

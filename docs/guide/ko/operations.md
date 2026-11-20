@@ -52,7 +52,7 @@ Worker 테스트는 빌드 결과를 사용합니다. 자동 테스트·패키�
 
 `publish.yml`은 main에서 수동 실행하며 태그·소스·버전을 검증하고 `npm` Environment에서 소유자 승인을 받습니다. 빌드·smoke에는 OIDC 쓰기 권한이 없고 검증한 tarball의 게시 작업만 권한을 갖습니다. PR 병합·GitHub Release 이벤트로 자동 발행하지 않습니다.
 
-게시 뒤 처리·검증 문제가 생기면 원래 실행과 레지스트리 버전·무결성을 먼저 확인한 뒤 재시도 여부를 판단하세요. 이미 게시된 버전은 재발행하지 않습니다. [한국어 릴리즈 체크리스트](../../releases/release-checklist.ko.md#github-actions-trusted-publisher)에 설정·승인·7일 artifact 기한을 정리했습니다. 이 워크플로는 Worker 배포·기존 설치 업데이트를 수행하지 않습니다.
+원래 실행의 게시 작업과 레지스트리를 먼저 확인하세요. 게시에 실패했거나 결과가 불확실하면 재실행 전에 버전이 이미 공개됐는지 확인하세요. 게시가 성공했다면 레지스트리에서 버전과 파일 해시를 대조하고, 일시적 오류가 난 `Verify npm registry artifact` 작업만 다시 실행하세요. 이미 게시된 버전은 다시 발행하지 마세요. [릴리즈 체크리스트](../../releases/release-checklist.ko.md#github-actions-trusted-publisher)에 설정, 승인, 빌드 산출물의 7일 보존 기간을 정리했습니다. 이 워크플로는 Worker 배포나 설치된 클라이언트의 갱신을 수행하지 않습니다.
 
 ## 0.3.0 업그레이드 주의
 

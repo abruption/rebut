@@ -12,7 +12,7 @@
 
 </div>
 
-OpenAI 또는 Claude API로 제공한 코드·diff를 검토하는 MCP입니다. 자료는 선택한 공급자로 전송합니다.
+Rebut은 지정한 코드와 diff를 OpenAI 또는 Claude API로 보내 검토하는 MCP 서버입니다. 검토 자료는 선택한 공급자에게 전송합니다.
 
 Claude 지원은 0.3.0 이상에서 `rebut set provider anthropic` → `rebut set api-key` → `rebut setup --client claude` 순서로 설정합니다. 호스트와 공급자는 별도 선택입니다.
 
@@ -31,7 +31,7 @@ rebut doctor --connect
 
 새 설치는 로컬 stdio를 사용합니다. 여러 기기의 예산·요청 장부를 공유하려면 [Worker 모드](docs/guide/ko/installation.md#선택적-worker-배포)를 선택하세요. 기존 Worker 설정은 유지됩니다.
 
-`review`는 유료 호출이며 `doctor --connect`는 유료 검토 없이 연결만 확인합니다. 결과가 불확실하면 같은 요청 ID를 유지하세요.
+`review`는 유료 호출입니다. `doctor --connect`로 연결을 확인할 때는 모델을 호출하지 않습니다. 결과가 불확실하면 새 ID로 재시도하지 말고 같은 백엔드에서 원래 요청 ID의 상태를 확인하세요.
 
 ## 사용 안내
 

@@ -40,7 +40,7 @@ rebut set profile PROFILE_ID
 
 偏好应用于新收集的材料。显式 `collect --profile` 优先，`review` 保留冻结材料的配置档。默认 `astra-medium`，允许列表不授予供应商模型权限。
 
-Codex 和 Claude Code 可以共享同一配置与账本，同时各自设置默认审查配置。
+Codex 和 Claude Code 可以共享同一配置与账本，同时各自选择默认审查配置档。
 
 ```sh
 rebut set profile claude-medium --client codex
@@ -48,7 +48,7 @@ rebut set profile astra-medium --client claude
 rebut set profile --client codex --clear
 ```
 
-`--clear` 将该客户端恢复为共享默认配置。在终端或代理命令中用 `collect --client codex` 或 `collect --client claude` 选择对应默认值，显式传入的 `collect --profile` 优先。客户端默认配置不可用时，按默认值收集会失败。已有冻结审查包保留原来的配置和供应商。可用 `rebut doctor --client codex` 或 `--client claude` 查看设置。
+`--clear` 将该客户端恢复为共享默认配置档。在终端或代理命令中用 `collect --client codex` 或 `collect --client claude` 选择对应默认值，显式传入的 `collect --profile` 优先。客户端默认配置不可用时，按默认值收集会失败。已冻结的审查包会保留原有的配置档和供应商。可用 `rebut doctor --client codex` 或 `--client claude` 查看设置。
 
 更新现有注册时，运行 `rebut setup --client codex --replace` 或 `rebut setup --client claude --replace`，然后重启宿主。本地环境变量模式下，如果所需密钥变量变化，请重新注册。通过 `rebut profile set --model` 定义配置中的模型。选为默认值后，将使用该配置的模型、推理设置和费率。 回退到不支持客户端默认值的版本前，先清除两个客户端的覆盖值，再用旧版 CLI 重新注册两个 MCP 宿主。
 
@@ -61,7 +61,7 @@ rebut profile set PROFILE_ID --model MODEL_ID --reasoning medium --max-output-to
 rebut profile remove PROFILE_ID --if-revision N
 ```
 
-将大写占位符替换为已确认值。自行确认模型、推理设置和费率；输入/输出费率及价格版本必填。`set` 也支持 `--if-revision N`。冲突时重新读取列表再决定，不自动覆盖。
+将 `PROFILE_ID` 和 `MODEL_ID` 等占位符替换为实际值。请确认模型支持的推理级别和费率，并填写输入费率、输出费率和价格版本。`set` 也支持 `--if-revision N`。版本冲突时，先重新查询列表，避免自动覆盖。
 
 更改只影响后续请求。删除留下停用 tombstone，不删除历史或恢复初始配置档。已有 ID 保留模型、修订和预留。动态修改配置档不需重新部署 Worker。
 
@@ -97,9 +97,9 @@ Worker 上请先部署新代码并应用 D1 迁移 `0003_budget_cycle.sql`，再
 SHA-256 覆盖屏蔽后的 `{schema_version,provider,task_kind,requirements,files,diff}`，文件键顺序为 `{path,start_line,content}`。ID 和配置档不属于证据哈希。参见[完整 schema](../../../src/contracts.ts)。
 
 - `review` 审查冻结材料。只有 `completed` 表示成功；返回文件/diff 行证据、模型、输入哈希、用量和估算费用。空 findings 不保证正确。
-- `review_status` 查询原 principal 的元数据。相同 ID 不触发新供应商调用，更改哈希/配置档会冲突；不重放正文。
+- `review_status` 仅向原认证主体返回元数据。如果请求 ID 已在同一后端、同一认证主体的账本中登记，使用相同的输入哈希和配置档再次调用 `review`不会调用供应商。输入哈希或配置档与记录不符时，返回 `conflict`。状态查询无法取回审查正文。
 
-账本仅保留请求/用量元数据，不存代码、审查正文或密钥。材料发送至 OpenAI，`store:false` 不保证供应商零保留。提示词要求模型将材料内的指令视为审查数据。模型没有仓库/URL 获取、shell、测试、编辑或 PR 工具。
+账本仅保留请求/用量元数据，不存代码、审查正文或密钥。审查材料会发送给配置档指定的供应商。OpenAI 的 `store:false` 设置并不保证数据零留存。提示词要求模型将材料内的指令视为审查数据。模型没有仓库/URL 获取、shell、测试、编辑或 PR 工具。
 
 ## Claude 供应商 — 0.3.0
 
