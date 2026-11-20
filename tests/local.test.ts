@@ -373,6 +373,7 @@ it("serves genuine local MCP tools and metadata without a provider key", async (
       expect((await client.listTools()).tools.map((t) => t.name)).toEqual([
         "review",
         "review_status",
+        "review_pair",
       ]);
       const status = await client.callTool({
         name: "review_status",
@@ -389,6 +390,95 @@ it("serves genuine local MCP tools and metadata without a provider key", async (
       await server.close();
     }
   }));
+it.each([1, 2])(
+  "handles local pair admission at concurrency %i and preserves stable IDs",
+  async (maxConcurrent) =>
+    fixture(async (directory) => {
+      const configured = SettingsSchema.parse({
+        ...settings(),
+        localLimits: { ...DEFAULT_LOCAL_LIMITS, maxConcurrent },
+      });
+      const fetcher = successfulFetch();
+      const runtime = await openLocalRuntime(configured, {
+        directory,
+        fetcher,
+        loadApiKey: async () => key,
+      });
+      const profile = await runtime.profiles.resolve("luna-test");
+      await runtime.profiles.set("second-test", profile!.profile, 0);
+      const server = await localMcpServer(runtime, configured);
+      const client = new Client({ name: "local-pair-host", version: "1" });
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      try {
+        await Promise.all([client.connect(a), server.connect(b)]);
+        const first = {
+          ...(await input("local-pair-a")),
+          schema_version: 2 as const,
+          provider: "openai" as const,
+        };
+        first.input_sha256 = await inputHash(first);
+        const pair = async () => {
+          const output = await client.callTool({
+            name: "review_pair",
+            arguments: {
+              first,
+              second: {
+                request_id: "local-pair-b",
+                provider: "openai",
+                profile: "second-test",
+              },
+            },
+          });
+          return JSON.parse((output.content[0] as { text: string }).text);
+        };
+        if (maxConcurrent === 1) {
+          expect(await pair()).toMatchObject({
+            status: "pair_concurrency_unavailable",
+          });
+          expect(fetcher).not.toHaveBeenCalled();
+          expect(row(runtime.path, first.request_id)).toBeUndefined();
+          expect(row(runtime.path, "local-pair-b")).toBeUndefined();
+          return;
+        }
+        expect(await pair()).toMatchObject({
+          status: "completed",
+          reviews: [
+            {
+              request_id: first.request_id,
+              has_review: true,
+              result: { status: "completed" },
+            },
+            {
+              request_id: "local-pair-b",
+              has_review: true,
+              result: { status: "completed" },
+            },
+          ],
+        });
+        expect(await pair()).toMatchObject({
+          status: "completed_without_review",
+          reviews: [
+            {
+              request_id: first.request_id,
+              has_review: false,
+              result: { status: "completed", result_replay_available: false },
+            },
+            {
+              request_id: "local-pair-b",
+              has_review: false,
+              result: { status: "completed", result_replay_available: false },
+            },
+          ],
+        });
+        expect(fetcher).toHaveBeenCalledTimes(2);
+        expect(row(runtime.path, "local-pair-b").profile).toBe("second-test");
+      } finally {
+        await client.close();
+        await runtime.close();
+        await server.close();
+      }
+    }),
+);
 it("refuses symlinked databases, linked databases and non-private directories before execution", async () =>
   fixture(async (directory) => {
     await mkdir(directory, { mode: 0o700 });

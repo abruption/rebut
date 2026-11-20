@@ -73,6 +73,14 @@ rebut status review-001
 
 유료 검토는 명시적으로 선택합니다. 응답이 `completed`인지 확인하고 모델·입력 해시를 고정 번들·프로필과 대조한 뒤 각 지적을 원본에서 확인하세요. 독립 리뷰에는 같은 고정 자료를 제공하고 서로의 결과를 섞지 마세요. timeout/unknown 뒤에는 같은 ID·백엔드를 유지하며 새 ID로 다시 호출하지 않습니다. [복구 절차](operations.md#unknown-복구)를 따르세요.
 
+### 두 프로필로 독립 리뷰하기
+
+Codex 또는 Claude Code에서 두 프로필로 유료 리뷰를 실행하겠다고 명시한 경우 `review_pair`를 사용합니다. `first`에는 수집한 스키마 2 번들 전체를 넣고, `second`에는 별도의 `request_id`와 두 번째 `profile`, 해당 프로필의 `provider`를 넣습니다. 예를 들어 `first`를 `astra-medium` / `openai`로 수집했다면 `second`에 `{"request_id":"review-002","profile":"claude-medium","provider":"anthropic"}`을 전달할 수 있습니다. 두 프로필의 실제 설정은 `rebut profile list`에서 확인합니다.
+
+두 요청은 같은 검토 자료를 사용하고 각 공급자에 맞춰 입력 해시를 고정합니다. 각 요청에 예산과 동시 실행 한도가 적용되므로 한쪽만 접수될 수 있습니다. 로컬에서 병렬 리뷰를 쓰려면 `rebut set max-concurrent 2`를 실행하고 MCP 호스트를 다시 시작합니다. 기본 한도는 1이며, 로컬 한도가 2보다 작으면 두 요청을 전송하기 전에 거부합니다. 두 결과에는 각 요청 ID와 `has_review`가 표시됩니다. 본문이 하나면 `partial`, 둘 다 없으면 `incomplete`입니다. 두 요청이 모두 이미 완료됐고 본문을 다시 받을 수 없으면 `completed_without_review`입니다. 응답이 끊기면 같은 백엔드에서 원래 두 ID로 `review_status`를 조회한 뒤에 추가 유료 호출 여부를 판단합니다. 상태 조회로 결과 본문을 다시 받을 수 없습니다.
+
+이 도구는 로컬과 Worker 모드의 Rebut 클라이언트에서 제공됩니다. 기존 Codex 등록은 `rebut setup --client codex --replace`로 갱신하고 호스트를 다시 시작하세요. Claude Code는 호스트를 다시 시작해 도구 목록을 갱신하세요. 로컬에서 서로 다른 공급자를 쓰려면 Rebut 프로세스가 두 키에 모두 접근할 수 있어야 합니다. 환경변수 방식의 호스트 등록은 기본적으로 선호 공급자의 변수만 전달합니다.
+
 ## 선택적 Worker 배포
 
 여러 기기가 예산·요청 장부를 공유할 때 사용합니다. 소스 체크아웃과 자신의 Cloudflare 계정·D1이 필요합니다.

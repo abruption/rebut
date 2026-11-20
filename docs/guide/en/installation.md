@@ -73,6 +73,14 @@ Select files explicitly. The collector rejects unsafe files, symlinks, FIFOs, an
 
 Select paid reviews explicitly. Check for `completed` and compare the returned model and input hash with the frozen bundle/profile, then verify each finding against the source. For independent reviews, supply the same frozen material without sharing reviewers' results. After timeout/unknown, retain the ID and backend rather than submitting a new ID. Follow [recovery](operations.md#unknown-recovery).
 
+### Review independently with two profiles
+
+Use `review_pair` in Codex or Claude Code when the user explicitly selects two paid reviews. Pass the complete collected schema 2 bundle as `first`, and pass a distinct `request_id` and the second `profile` and its `provider` as `second`. For example, collect `first` with `astra-medium` / `openai` and pass `{"request_id":"review-002","profile":"claude-medium","provider":"anthropic"}` as `second`. Confirm the profiles with `rebut profile list`.
+
+Both requests use the same evidence, with each input hash pinned to its provider. Budget and concurrency limits apply to each request, so only one may be admitted. Local concurrency defaults to one. Run `rebut set max-concurrent 2` and restart the MCP host to enable parallel local review. Rebut rejects the pair before dispatch if the local limit is below two. Each result includes its request ID and `has_review`. The pair is `partial` when it includes one review body and `incomplete` when it includes none. When both requests completed earlier and neither body can be replayed, the status is `completed_without_review`. If the response is lost, use `review_status` with both original IDs on the same backend before considering any further paid call. Status lookups do not replay review bodies.
+
+The tool is available in the Rebut client in local and Worker modes. For an existing Codex registration, run `rebut setup --client codex --replace` and restart the host. Restart Claude Code to refresh the tool list. When local reviewers use different providers, the Rebut process needs both keys. Environment-based host registration forwards only the preferred provider variable by default.
+
 ## Optional Worker deployment
 
 Use a Worker to share budgets and request history across devices. Deployment requires a source checkout, your Cloudflare account, and D1.
