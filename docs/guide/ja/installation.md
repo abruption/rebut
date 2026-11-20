@@ -73,6 +73,16 @@ rebut status review-001
 
 有料レビューを明示選択します。`completed` を確認し、返されたモデル・入力ハッシュを固定バンドルとプロファイルに照合して、各指摘を原資料で確認します。独立レビューには同じ固定資料を渡し、各レビュアーの結果を混ぜません。timeout/unknown 後は同じ ID・バックエンドを保ち、新しい ID で再実行せず[復旧](operations.md#unknown-復旧)に従ってください。
 
+### 2 つのプロファイルで独立レビューする
+
+ユーザーが 2 件の有料レビューを明示的に選んだ場合は、Codex または Claude Code で `review_pair` を使います。`first` には収集したスキーマ 2 のバンドル全体を、`second` には別の `request_id` と 2 つ目の `profile`、その `provider` を渡します。たとえば `first` を `astra-medium` / `openai` で収集し、`second` に `{"request_id":"review-002","profile":"claude-medium","provider":"anthropic"}` を渡せます。プロファイルは `rebut profile list` で確認してください。
+
+2 件は同じ資料を使い、入力ハッシュはそれぞれのプロバイダーに固定されます。予算と同時実行上限はリクエストごとに適用され、片方だけ受け付けられる場合があります。ローカルの既定の同時実行上限は 1 です。ローカルで並列レビューを使うには `rebut set max-concurrent 2` を実行して MCP ホストを再起動します。ローカルの上限が 2 未満なら送信前に拒否されます。各結果にリクエスト ID と `has_review` が含まれ、本文が 1 件なら `partial`、0 件なら `incomplete` です。両方がすでに完了し、本文を再取得できない場合は `completed_without_review` です。応答が失われたら、同じバックエンドで元の 2 つの ID を使って `review_status` を呼び出してから、追加の有料呼び出しを検討します。状態照会で本文は再取得できません。
+
+このツールは Rebut クライアントのローカルモードと Worker モードで使えます。既存の Codex 登録は `rebut setup --client codex --replace` で更新してホストを再起動してください。Claude Code は再起動してツール一覧を更新します。
+
+ローカルで異なるプロバイダーを使う場合、Rebut プロセスには両方のキーが必要です。環境変数を使ったホスト登録は、既定では優先プロバイダーの変数だけを渡します。
+
 ## 任意の Worker デプロイ
 
 複数端末で予算・リクエスト台帳を共有する場合に使います。ソース、自分の Cloudflare アカウント、D1 が必要です。
