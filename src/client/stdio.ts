@@ -4,6 +4,7 @@ import {
   type JsonSchemaType,
 } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { registerReviewPair } from "./review-pair.js";
 import {
   connectRemote,
   REMOTE_FAILURE_MESSAGE,
@@ -92,6 +93,9 @@ export async function serveStdio(options: RemoteOptions): Promise<void> {
     ) {
       throw new Error(REMOTE_FAILURE_MESSAGE);
     }
+    registerReviewPair(server, (input, signal) =>
+      remote.callTool({ name: "review", arguments: input }, { signal }),
+    );
     await server.connect(new StdioServerTransport());
     await finished;
   } catch {

@@ -73,6 +73,16 @@ rebut status review-001
 
 明确选择付费审查。确认 `completed`，将返回的模型和输入哈希与冻结材料及配置档对照，再逐条核对原始证据。独立审查应使用同一份冻结材料，不共享各审查者结果。timeout/unknown 后保留原 ID 与后端，不以新 ID 重试，按[恢复流程](operations.md#unknown-恢复)处理。
 
+### 用两个配置进行独立审查
+
+用户明确选择两次付费审查时，可在 Codex 或 Claude Code 中使用 `review_pair`。`first` 传入收集好的完整 schema 2 审查包，`second` 传入不同的 `request_id`、第二个 `profile` 和对应的 `provider`。例如，使用 `astra-medium` / `openai` 收集 `first`，再将 `{"request_id":"review-002","profile":"claude-medium","provider":"anthropic"}` 传给 `second`。请用 `rebut profile list` 确认配置。
+
+两个请求使用相同材料，各自的输入哈希绑定对应供应商。每个请求分别受预算和并发限制，因此可能只接收一个。本地默认并发上限为 1。运行 `rebut set max-concurrent 2` 并重启 MCP 宿主，即可启用本地并行审查。本地并发上限低于 2 时，Rebut 会在发送前拒绝该调用。各结果包含请求 ID 和 `has_review`。只收到一份审查正文时为 `partial`，两份都缺失时为 `incomplete`。如果两个请求均已完成且正文无法重放，则返回 `completed_without_review`。连接中断后，请在同一后端用原来的两个 ID 查询 `review_status`，再判断是否需要新的付费调用。状态查询无法重放审查正文。
+
+该工具由本地模式和 Worker 模式下的 Rebut 客户端提供。已有 Codex 注册时，运行 `rebut setup --client codex --replace` 并重启宿主。请重启 Claude Code 更新工具列表。
+
+本地使用不同供应商时，Rebut 进程必须能访问两把密钥。通过环境变量注册宿主时，默认只转发首选供应商的变量。
+
 ## 可选 Worker 部署
 
 需要跨设备共享预算和请求账本时使用。部署需要源码、自己的 Cloudflare 账户和 D1。

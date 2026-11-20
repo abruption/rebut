@@ -247,6 +247,7 @@ try {
   const tools = await bounded(client.listTools(), "MCP tools/list");
   assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
     "review",
+    "review_pair",
     "review_status",
   ]);
   const preferred = tools.tools.find(
@@ -335,7 +336,7 @@ try {
   await bounded(client.connect(transport), "Local MCP initialize");
   assert.deepEqual(
     (await client.listTools()).tools.map((t) => t.name),
-    ["review", "review_status"],
+    ["review", "review_status", "review_pair"],
   );
   const bundle = {
     schema_version: 1,
@@ -556,7 +557,11 @@ try {
     assert.equal(doctor.status, 0);
     const health = JSON.parse(doctor.stdout);
     assert.equal(health.mode, "local");
-    assert.deepEqual(health.localTools, ["review", "review_status"]);
+    assert.deepEqual(health.localTools, [
+      "review",
+      "review_status",
+      "review_pair",
+    ]);
     assert.deepEqual(JSON.parse(await readFile(doctorHandshake, "utf8")), {
       name: "rebut-local-doctor",
       version: fixtureVersion,

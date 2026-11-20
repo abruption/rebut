@@ -90,6 +90,7 @@ it("source doctor handshakes with the fixture package version and preserves tool
     expect(JSON.parse(doctor.stdout).localTools).toEqual([
       "review",
       "review_status",
+      "review_pair",
     ]);
     await rm(marker);
     const missingKey = run(["doctor", "--connect"], false);

@@ -7,7 +7,12 @@ import { createNodeHttpTransport } from "./client/http.js";
 import { McpServer } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { z } from "zod";
-import { ReviewInputSchema, type Provider } from "./contracts.js";
+import {
+  ReviewInputSchema,
+  type Provider,
+  type ReviewInput,
+} from "./contracts.js";
+import { registerReviewPair } from "./client/review-pair.js";
 import { parseConfig } from "./config.js";
 import { handleReview, metadata, ProviderKeyUnavailable } from "./service.js";
 import { Ledger, monthlyCycleInsert, type LedgerRow } from "./ledger.js";
@@ -295,37 +300,38 @@ export async function localMcpServer(
     unavailable = hasPreference;
   }
   const server = new McpServer({ name: "rebut-mcp", version: "0.3.3" });
+  const review = async (input: ReviewInput, signal: AbortSignal) => {
+    // Preferences are collection/description hints. The explicit frozen
+    // request profile and existing-ID metadata remain authoritative.
+    try {
+      return toolResult(await runtime.review(input, signal));
+    } catch (error) {
+      if (error instanceof ProviderKeyUnavailable)
+        return {
+          isError: true,
+          ...toolResult({
+            status: "provider_key_unavailable",
+            message:
+              "Check local credentials with rebut doctor and query the original ID before any further paid invocation.",
+          }),
+        };
+      return {
+        isError: true,
+        ...toolResult({
+          status: "request_failed",
+          message:
+            "Query review_status with the same request_id before any further paid invocation.",
+        }),
+      };
+    }
+  };
   server.registerTool(
     "review",
     {
       description: `Explicit opt-in provider review. Local per-device ledger; budgets are not shared with another machine or Worker. Keep the original request_id and backend after uncertainty; never replay another backend's uncertain request here. ${preferred ? "Preferred profile: " + preferred : unavailable ? "Configured profile is unavailable." : "Select an enabled profile explicitly."}${client ? " For new bundles, use rebut collect --client " + client + " to apply this client default." : ""}`,
       inputSchema: ReviewInputSchema,
     },
-    async (input, extra) => {
-      // Preferences are collection/description hints. The explicit frozen
-      // request profile and existing-ID metadata remain authoritative.
-      try {
-        return toolResult(await runtime.review(input, extra.mcpReq.signal));
-      } catch (error) {
-        if (error instanceof ProviderKeyUnavailable)
-          return {
-            isError: true,
-            ...toolResult({
-              status: "provider_key_unavailable",
-              message:
-                "Check local credentials with rebut doctor and query the original ID before any further paid invocation.",
-            }),
-          };
-        return {
-          isError: true,
-          ...toolResult({
-            status: "request_failed",
-            message:
-              "Query review_status with the same request_id before any further paid invocation.",
-          }),
-        };
-      }
-    },
+    (input, extra) => review(input, extra.mcpReq.signal),
   );
   server.registerTool(
     "review_status",
@@ -349,6 +355,7 @@ export async function localMcpServer(
       }
     },
   );
+  registerReviewPair(server, review, runtime.config.limits.maxConcurrent);
   return server;
 }
 export async function serveLocalStdio(settings: Settings, client?: McpClient) {

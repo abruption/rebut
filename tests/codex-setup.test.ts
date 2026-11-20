@@ -64,7 +64,7 @@ describe("portable Codex setup", () => {
           args: [options.entrypoint, "mcp", "--client", "codex"],
           startup_timeout_sec: 60,
           tool_timeout_sec: 1860,
-          enabled_tools: ["review", "review_status"],
+          enabled_tools: ["review", "review_status", "review_pair"],
         },
       },
     });
@@ -86,7 +86,7 @@ describe("portable Codex setup", () => {
       args: [options.entrypoint, "mcp", "--client", "codex"],
       startup_timeout_sec: 60,
       tool_timeout_sec: 1860,
-      enabled_tools: ["review", "review_status"],
+      enabled_tools: ["review", "review_status", "review_pair"],
       env_vars: ["REBUT_TOKEN"],
     });
     for (const secret of [

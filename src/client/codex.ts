@@ -67,7 +67,7 @@ function desired(options: CodexSetupOptions): Table {
     args: [resolve(options.entrypoint), "mcp", "--client", "codex"],
     startup_timeout_sec: 60,
     tool_timeout_sec: CODEX_TOOL_TIMEOUT_SECONDS,
-    enabled_tools: ["review", "review_status"],
+    enabled_tools: ["review", "review_status", "review_pair"],
     ...(options.forwardApiKeyEnv
       ? { env_vars: [options.apiKeyEnv ?? "REBUT_OPENAI_API_KEY"] }
       : options.forwardTokenEnv

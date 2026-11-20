@@ -17,6 +17,12 @@ import {
   validateEndpoint,
 } from "../src/client/connection.js";
 import { serveStdio } from "../src/client/stdio.js";
+import {
+  inputHash,
+  MAX_INPUT_BYTES,
+  ReviewInputSchema,
+  type ReviewInput,
+} from "../src/contracts.js";
 
 const stdio = vi.hoisted(() => ({
   transport: undefined as Transport | undefined,
@@ -59,7 +65,10 @@ const options = {
   loadToken: async () => "synthetic-not-a-credential",
 };
 
-function fixture(delayMs = 0) {
+function fixture(
+  delayMs = 0,
+  review?: (input: ReviewInput) => Promise<typeof result>,
+) {
   const calls: Array<{ name: string; args: unknown }> = [];
   const requests: Array<{ headers: Headers }> = [];
   const handler = createMcpHandler(() => {
@@ -69,10 +78,16 @@ function fixture(delayMs = 0) {
         name,
         {
           description: `Remote ${name}`,
-          inputSchema: fromJsonSchema<Record<string, unknown>>(schema),
+          inputSchema: fromJsonSchema<Record<string, unknown>>(
+            review && name === "review"
+              ? { ...schema, additionalProperties: true }
+              : schema,
+          ),
         },
         async (args) => {
           calls.push({ name, args });
+          if (review && name === "review")
+            return review(ReviewInputSchema.parse(args));
           if (delayMs)
             await new Promise((resolve) => setTimeout(resolve, delayMs));
           return result;
@@ -292,8 +307,12 @@ describe("npm stdio bridge", () => {
       expect(tools.map((tool) => tool.name)).toEqual([
         "review",
         "review_status",
+        "review_pair",
       ]);
-      expect(tools.map((tool) => tool.inputSchema)).toEqual([schema, schema]);
+      expect(tools.slice(0, 2).map((tool) => tool.inputSchema)).toEqual([
+        schema,
+        schema,
+      ]);
       expect(tools[0]?.description).toContain("explicitly opts in");
       expect(tools[0]?.description).toContain("luna-test (gpt-6-luna)");
       expect(tools[1]?.description).toBe("Remote review_status");
@@ -321,6 +340,140 @@ describe("npm stdio bridge", () => {
       await running;
     }
   });
+  it("dispatches a valid pair concurrently with the same evidence and preserves the first result after uncertainty", async () => {
+    let bothEntered!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      bothEntered = resolve;
+    });
+    const incoming: ReviewInput[] = [];
+    const f = fixture(0, async (input) => {
+      incoming.push(input);
+      if (incoming.length === 2) bothEntered();
+      await entered;
+      if (input.provider === "anthropic")
+        throw Error("synthetic interrupted review");
+      return {
+        ...result,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              status: "completed",
+              review: { summary: "from first" },
+            }),
+          },
+        ],
+      };
+    });
+    const [local, serverSide] = InMemoryTransport.createLinkedPair();
+    stdio.transport = serverSide;
+    const ready = new Promise<void>((resolve) => {
+      stdio.ready = resolve;
+    });
+    const running = serveStdio({ ...options, reviewUnavailable: true });
+    await ready;
+    const client = new Client({ name: "synthetic-pair-host", version: "1" });
+    await client.connect(local);
+    const first: ReviewInput = {
+      schema_version: 2,
+      provider: "openai",
+      request_id: "pair-a",
+      profile: "luna-test",
+      task_kind: "code",
+      requirements: "Frozen acceptance criteria",
+      files: [{ path: "sample.ts", start_line: 1, content: "return 1;" }],
+      diff: "Frozen diff",
+      input_sha256: "",
+    };
+    first.input_sha256 = await inputHash(first);
+    const second = {
+      request_id: "pair-b",
+      profile: "claude-medium",
+      provider: "anthropic",
+    };
+    const pair = (first: ReviewInput, secondArgs: typeof second) =>
+      client.callTool(
+        { name: "review_pair", arguments: { first, second: secondArgs } },
+        { timeout: 2500 },
+      );
+    try {
+      for (const invalid of [
+        [first, { ...second, profile: first.profile }],
+        [first, { ...second, request_id: first.request_id }],
+        [{ ...first, input_sha256: "f".repeat(64) }, second],
+      ] as const) {
+        expect((await pair(invalid[0], invalid[1])).isError).toBe(true);
+      }
+      const { provider: _provider, ...legacyEvidence } = first;
+      const legacy: ReviewInput = { ...legacyEvidence, schema_version: 1 };
+      expect((await pair(legacy, second)).isError).toBe(true);
+      const oversizedSecond = {
+        ...first,
+        files: [{ path: "sample.ts", start_line: 1, content: "" }],
+      };
+      const byteLength = new TextEncoder().encode(
+        JSON.stringify(oversizedSecond),
+      ).byteLength;
+      oversizedSecond.files[0]!.content = "x".repeat(
+        MAX_INPUT_BYTES - byteLength,
+      );
+      oversizedSecond.input_sha256 = await inputHash(oversizedSecond);
+      const tooLarge = await pair(oversizedSecond, second);
+      expect(tooLarge.isError).toBe(true);
+      expect(
+        JSON.parse((tooLarge.content[0] as { text: string }).text),
+      ).toEqual({
+        status: "invalid_second_bundle",
+      });
+      expect(f.calls).toHaveLength(0);
+      const outcome = await pair(first, second);
+      expect(
+        JSON.parse((outcome.content[0] as { text: string }).text),
+      ).toMatchObject({
+        status: "partial",
+        reviews: [
+          {
+            request_id: "pair-a",
+            provider: "openai",
+            has_review: true,
+            result: { status: "completed" },
+          },
+          {
+            request_id: "pair-b",
+            provider: "anthropic",
+            has_review: false,
+            result: { status: "unknown" },
+          },
+        ],
+      });
+      expect(incoming).toHaveLength(2);
+      expect(
+        incoming.find((input) => input.request_id === first.request_id),
+      ).toEqual(first);
+      const other = incoming.find(
+        (input) => input.request_id === second.request_id,
+      )!;
+      expect(other).toEqual({
+        ...first,
+        ...second,
+        input_sha256: await inputHash(other),
+      });
+      expect(other.input_sha256).not.toBe(first.input_sha256);
+      await client.callTool({
+        name: "review_status",
+        arguments: { request_id: second.request_id },
+      });
+      expect(f.calls).toHaveLength(3);
+      expect(f.calls.at(-1)).toEqual({
+        name: "review_status",
+        args: { request_id: second.request_id },
+      });
+    } finally {
+      bothEntered();
+      await client.close();
+      await running;
+    }
+  });
   it("keeps status available while blocking new reviews with an unavailable preference", async () => {
     const f = fixture();
     const [local, serverSide] = InMemoryTransport.createLinkedPair();
@@ -336,6 +489,7 @@ describe("npm stdio bridge", () => {
       expect((await client.listTools()).tools.map((t) => t.name)).toEqual([
         "review",
         "review_status",
+        "review_pair",
       ]);
       expect(
         (
