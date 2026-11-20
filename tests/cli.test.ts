@@ -431,6 +431,22 @@ it(
       ).toBe(0);
       expect(bundle("--client", "codex").profile).toBe("luna-test");
       expect(bundle("--client", "claude").profile).toBe("astra-medium");
+      const removed = cli(
+        dir,
+        ["remove", "--client", "codex", "--codex-home", codexHome],
+        undefined,
+        {
+          OPENAI_API_KEY: "",
+          REBUT_OPENAI_API_KEY: "",
+          REBUT_ANTHROPIC_API_KEY: "",
+        },
+      );
+      expect(removed.status, removed.stderr).toBe(0);
+      expect(JSON.parse(removed.stdout).changed).toBe(true);
+      const remaining = parse(
+        await readFile(join(codexHome, "config.toml"), "utf8"),
+      ) as any;
+      expect(remaining.mcp_servers?.rebut).toBeUndefined();
       expect(collect("--client", "other").status).toBe(1);
     }),
   20_000,

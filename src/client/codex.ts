@@ -78,6 +78,34 @@ function desired(options: CodexSetupOptions): Table {
       : {}),
   };
 }
+function providerKeyVars(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.length === 1 &&
+      (value[0] === "REBUT_OPENAI_API_KEY" ||
+        value[0] === "OPENAI_API_KEY" ||
+        value[0] === "REBUT_ANTHROPIC_API_KEY"))
+  );
+}
+
+function matchesRemoval(existing: unknown, desired: Table, entrypoint: string) {
+  if (!table(existing)) return false;
+  const { env_vars: existingVars, ...registered } = existing;
+  const { env_vars: desiredVars, ...expected } = desired;
+  // A provider preference can change after setup. Keep all other ownership
+  // checks, including Worker token forwarding and the literal env table.
+  if (
+    !equivalent(existingVars, desiredVars) &&
+    !(providerKeyVars(existingVars) && providerKeyVars(desiredVars))
+  )
+    return false;
+  return (
+    equivalent(registered, expected) ||
+    equivalent(registered, { ...expected, args: [resolve(entrypoint), "mcp"] })
+  );
+}
+
 // Recognize table headers only outside TOML strings, including multiline strings.
 // Parsing each candidate lets the TOML parser handle quoted and dotted table keys.
 function headers(source: string): { start: number; path: string[] }[] {
@@ -219,13 +247,7 @@ async function update(
     if (
       existing !== undefined &&
       !equivalent(existing, replacement) &&
-      !(
-        remove &&
-        equivalent(existing, {
-          ...replacement,
-          args: [resolve(options.entrypoint), "mcp"],
-        })
-      ) &&
+      !(remove && matchesRemoval(existing, replacement, options.entrypoint)) &&
       !options.replace
     ) {
       throw new CodexSetupError(
