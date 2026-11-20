@@ -29,9 +29,9 @@ rebut doctor --connect
 
 등록 후 Codex를 재시작하세요. Linux/env·Vaultwarden 설정은 [설치 안내](docs/guide/ko/installation.md)를 참고하세요.
 
-새 설치는 로컬 stdio를 사용합니다. 여러 기기의 예산·요청 장부를 공유하려면 [Worker 모드](docs/guide/ko/installation.md#선택적-worker-배포)를 선택하세요. 기존 Worker 설정은 유지됩니다.
+새 설치는 로컬 stdio를 사용합니다. 여러 기기에서 예산과 요청 기록을 공유하려면 [Worker 모드](docs/guide/ko/installation.md#선택적-worker-배포)를 선택하세요. 기존 Worker 설정은 유지됩니다.
 
-`review`는 유료 호출입니다. `doctor --connect`로 연결을 확인할 때는 모델을 호출하지 않습니다. 결과가 불확실하면 새 ID로 재시도하지 말고 같은 백엔드에서 원래 요청 ID의 상태를 확인하세요.
+`review`를 실행하면 공급자 API 비용이 발생할 수 있습니다. `doctor --connect`로 연결을 확인할 때는 모델을 호출하지 않습니다. 결과가 불확실하면 새 ID로 재시도하지 말고 같은 백엔드에서 원래 요청 ID의 상태를 확인하세요.
 
 ## 사용 안내
 
