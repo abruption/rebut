@@ -305,7 +305,7 @@ try {
     const write = node([entry, "set", "mode", "local"]);
     assert.ifError(write.error);
     assert.equal(write.status, 1);
-    assert.match(write.stderr, /Local settings path is unsafe/);
+    assert.match(write.stderr, /REBUT_CONFIG_DIR without config\.json/);
     await assert.rejects(access(join(configDir, "config.json")), {
       code: "ENOENT",
     });
@@ -321,7 +321,7 @@ try {
     const configured = node([entry, "doctor"]);
     assert.ifError(configured.error);
     assert.equal(configured.status, 1);
-    assert.match(configured.stderr, /Local settings path is unsafe/);
+    assert.match(configured.stderr, /REBUT_CONFIG_DIR without config\.json/);
     console.log(
       "Windows: npm cmd shim passed. Persistent settings read and write rejected as expected.",
     );

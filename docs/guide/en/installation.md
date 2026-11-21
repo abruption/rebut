@@ -28,7 +28,13 @@ rebut.cmd doctor --connect
 rebut.cmd setup --client codex
 ```
 
+If a global install needs administrator rights, use the user prefix with `npm.cmd install -g --prefix "$env:APPDATA\npm" rebut-mcp`. If PowerShell cannot find `rebut.cmd`, add `%APPDATA%\npm` to your user `PATH` in Windows environment variable settings and reopen PowerShell. Use the same `--prefix` when updating.
+
 Start Codex or Claude Code from the same PowerShell session. If Rebut is already registered, see [how to refresh a registration](#codex-registration-and-updates). Programs started from this shell can inherit the key. After closing the host, you can remove the key from the shell with `Remove-Item Env:REBUT_OPENAI_API_KEY`.
+
+If `rebut.cmd doctor --provider` reports `tls_certificate_error`, use `tls_error_code` to identify the certificate error. If Node.js rejects a certificate that Windows trusts, use Node.js 24.6 or later and set `$env:NODE_USE_SYSTEM_CA = '1'` in PowerShell to also use the certificates trusted by Windows. This includes certificates installed by your organization. Follow your organization's policy for sending API keys and review material on that network. Run the diagnostic again in that shell to check reachability. It only fetches model metadata. [Node.js `NODE_USE_SYSTEM_CA`](https://nodejs.org/download/release/v24.22.2/docs/api/cli.html#node_use_system_ca1)
+
+Claude Code CLI inherits the setting when started from this PowerShell session. To use the same trust store with Codex CLI, add `NODE_USE_SYSTEM_CA = "1"` to the `[mcp_servers.rebut.env]` section in your Codex config (default: `%USERPROFILE%\.codex\config.toml`) and restart Codex. If re-registering Rebut removes the entry, add it back.
 
 Use the same `REBUT_CONFIG_DIR` next time. The request and usage records are in `local\ledger.sqlite` under that directory. If a result is uncertain, run `rebut.cmd status REQUEST_ID` with the original ID and the same `REBUT_CONFIG_DIR`. See [recovery](operations.md#unknown-recovery).
 
