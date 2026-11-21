@@ -4,13 +4,17 @@
 
 [README](../../../README.md) · [설정](configuration.md) · [운영](operations.md)
 
-Node.js 24 이상이 필요합니다. macOS와 Linux를 검증합니다. Windows의 로컬 실행 범위는 아래 절을 참고하세요.
+Node.js 24 이상이 필요합니다. macOS와 Linux에서 동작을 확인했습니다. Windows의 로컬 실행 범위는 아래 절을 참고하세요.
 
-## Windows 로컬 MCP (MVP)
+<a id="windows-로컬-mcp-mvp"></a>
 
-Windows에서는 OpenAI API 키를 환경변수로 전달해 로컬 MCP를 사용할 수 있습니다. 사용자 프로필 아래에 별도 데이터 디렉터리를 지정하세요. 공유 폴더는 피하세요. 그 디렉터리에 `config.json`이 없으면 Rebut은 기본 로컬 모드로 실행됩니다. 이 디렉터리에 `config.json`이 이미 있으면 Rebut은 안전하지 않은 설정 경로로 판단해 실행을 거부합니다. `rebut.cmd set mode local`처럼 설정을 쓰는 명령도 차단됩니다.
+## Windows 로컬 MCP
 
-MVP에서는 Windows 10 x64와 Node 24에서 로컬 MCP 프로세스를 직접 연결해 검증했습니다. 아래 예제의 Codex 등록은 실행기 설정까지 확인했습니다. Codex와 Claude Code 앱의 연결은 검증 범위에 포함되지 않았습니다. Claude Code에 등록하려면 마지막 줄에서 `--client claude`를 사용하세요.
+Windows의 로컬 MCP는 `REBUT_OPENAI_API_KEY` 환경변수에서 OpenAI API 키를 읽습니다. 사용자 프로필 아래에 다른 사용자와 공유되지 않는 전용 데이터 디렉터리를 지정하세요. 그 디렉터리에 `config.json`이 없으면 Rebut이 기본 로컬 설정으로 시작합니다. 파일이 있으면 시작을 거부하며, `rebut.cmd set mode local`처럼 설정을 쓰는 명령도 오류를 반환합니다.
+
+Windows 10 x64와 Node.js 24에서 `rebut-mcp@0.4.1`을 설치했습니다. Codex CLI의 App Server와 Claude Code CLI에서 각각 모의 응답으로 리뷰를 실행하고, 새 MCP 프로세스에서 원래 요청의 상태를 다시 조회했습니다. 0.4.1에서 실제 OpenAI 리뷰를 요청한 건은 전송 오류로 `unknown` 상태가 됐습니다. 데스크톱 앱 연결과 Worker 모드는 별도 검증이 필요합니다.
+
+아래는 처음 설치할 때 쓸 수 있는 예제입니다. 이미 Windows에서 Rebut을 쓰고 있다면 요청·사용량 기록을 이어서 볼 수 있도록 기존 `REBUT_CONFIG_DIR` 값을 사용하세요. Claude Code에 등록하려면 마지막 줄에 `--client claude`를 사용하세요.
 
 ```powershell
 npm.cmd install -g rebut-mcp
