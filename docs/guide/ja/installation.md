@@ -6,11 +6,13 @@
 
 Node.js 24 以上が必要です。macOS と Linux で検証しています。Windows のローカル MCP については下の節を参照してください。
 
-## Windows のローカル MCP（MVP）
+## Windows のローカル MCP
 
-Windows では、環境変数に設定した OpenAI API キーでローカル MCP を使えます。Windows のユーザープロファイル内に専用ディレクトリを指定してください。共有フォルダーは避けてください。そのディレクトリに `config.json` がなければ、Rebut は既定のローカルモードで起動します。そのディレクトリに `config.json` があると、安全でない設定パスとして起動が拒否されます。`rebut.cmd set mode local` など、設定を書き込むコマンドも使えません。
+Windows のローカル MCP は、環境変数 `REBUT_OPENAI_API_KEY` から OpenAI API キーを読み取ります。Windows のユーザープロファイル内に専用のデータフォルダーを指定し、共有フォルダーは避けてください。そのフォルダーに `config.json` がなければ、Rebut は既定のローカル設定で起動します。ファイルがある場合は起動せず、`rebut.cmd set mode local` などの設定を書き込むコマンドもエラーになります。
 
-MVP では Windows 10 x64 と Node 24 でローカル MCP プロセスへの直接接続を確認しました。下の例にある Codex 登録はランチャー設定まで確認しています。Codex や Claude Code アプリからの接続は検証範囲外です。Claude Code に登録する場合は最後の行を `--client claude` に変えてください。
+Windows 10 x64 と Node.js 24 で `rebut-mcp@0.4.1` をインストールしました。Codex CLI の App Server と Claude Code CLI で模擬応答を使ってレビューを完了し、新しい MCP プロセスから元のリクエストの状態を照会しました。0.4.1 で OpenAI API にレビューを依頼した際は、通信エラーで状態が `unknown` になりました。デスクトップアプリからの接続と Worker モードは、Windows での追加検証が必要です。
+
+以下は初回インストールの例です。Windows ですでに Rebut を使っている場合は、リクエストと使用量の記録を引き継げるよう、これまでと同じ `REBUT_CONFIG_DIR` を指定してください。Claude Code に登録する場合は、最後の行で `--client claude` を指定します。
 
 ```powershell
 npm.cmd install -g rebut-mcp

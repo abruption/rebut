@@ -6,11 +6,13 @@
 
 需要 Node.js 24 或更高版本。已在 macOS 和 Linux 上验证。Windows 本地 MCP 的使用范围见下文。
 
-## Windows 本地 MCP（MVP）
+## Windows 本地 MCP
 
-在 Windows 上，可以通过环境变量向本地 MCP 提供 OpenAI API 密钥。请在 Windows 用户配置文件下指定一个专用目录，避开共享文件夹。目录内没有 `config.json` 时，Rebut 会按默认的本地模式启动。如果目录中已有 `config.json`，Rebut 会因设置路径不安全而拒绝启动。`rebut.cmd set mode local` 等写入设置的命令也会被拒绝。
+在 Windows 上，本地 MCP 从环境变量 `REBUT_OPENAI_API_KEY` 读取 OpenAI API 密钥。请在 Windows 用户配置文件目录下选择一个专用数据目录，避开共享文件夹。如果该目录中没有 `config.json`，Rebut 会按默认的本地配置启动。如果文件已存在，Rebut 会拒绝启动。运行 `rebut.cmd set mode local` 等写入配置的命令也会报错。
 
-MVP 在 Windows 10 x64 和 Node 24 上验证了直接连接本地 MCP 进程。下例中的 Codex 注册已验证启动配置。Codex 和 Claude Code 应用本身的连接未纳入测试。若要注册 Claude Code，将最后一行的选项改为 `--client claude`。
+我们在 Windows 10 x64 和 Node.js 24 上安装了 `rebut-mcp@0.4.1`，分别通过 Codex CLI 的 App Server 和 Claude Code CLI 使用模拟响应完成了审查，然后在新的 MCP 进程中查询了原请求的状态。在 0.4.1 上实际向 OpenAI 发起的审查请求遇到传输错误，状态为 `unknown`。桌面应用连接和 Worker 模式仍需在 Windows 上验证。
+
+以下命令适用于首次安装。如果已在 Windows 上使用 Rebut，请继续使用原有的 `REBUT_CONFIG_DIR`，以便查看之前的请求和用量记录。要注册到 Claude Code，请在最后一行使用 `--client claude`。
 
 ```powershell
 npm.cmd install -g rebut-mcp

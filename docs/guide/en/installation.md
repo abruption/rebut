@@ -4,13 +4,15 @@
 
 [README](../../../README.en.md) · [Configuration](configuration.md) · [Operations](operations.md)
 
-Requires Node.js 24+. macOS and Linux are tested. See the Windows section below for the local MCP MVP.
+Requires Node.js 24+. macOS and Linux are tested. See the Windows section below for local MCP setup.
 
-## Local MCP on Windows (MVP)
+## Local MCP on Windows
 
-On Windows, the local MCP can use an OpenAI API key from the environment. Choose a dedicated data directory under your Windows user profile and outside shared folders. Without a `config.json` in that directory, Rebut starts with its local defaults. If this directory already contains `config.json`, Rebut rejects it as an unsafe settings path. Commands that write settings, such as `rebut.cmd set mode local`, are also blocked.
+On Windows, the local MCP reads the OpenAI API key from the `REBUT_OPENAI_API_KEY` environment variable. Choose a dedicated data directory in your Windows user profile, outside shared folders. Rebut starts with local defaults when that directory has no `config.json`. If the file exists, Rebut refuses to start. Commands that write settings, such as `rebut.cmd set mode local`, also return an error.
 
-The MVP was verified with the local MCP process on Windows 10 x64 and Node 24. The commands below show Codex registration, which the PoC checked as launcher configuration. Launching Codex or Claude Code itself was outside the verification. Use `--client claude` on the last line to register Claude Code.
+We installed `rebut-mcp@0.4.1` on Windows 10 x64 with Node.js 24. We ran a review with a simulated provider response in the Codex CLI App Server and the Claude Code CLI, then queried each original request from a fresh MCP process. A live OpenAI review attempt on 0.4.1 returned `unknown` with a transport error. Desktop app connections and Worker mode still need verification on Windows.
+
+The example below is for a new installation. If you already use Rebut on Windows, keep your existing `REBUT_CONFIG_DIR` to retain access to request and usage records. To register with Claude Code, use `--client claude` on the last line.
 
 ```powershell
 npm.cmd install -g rebut-mcp
