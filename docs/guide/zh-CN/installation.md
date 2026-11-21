@@ -28,7 +28,13 @@ rebut.cmd doctor --connect
 rebut.cmd setup --client codex
 ```
 
+如果全局安装需要管理员权限，请运行 `npm.cmd install -g --prefix "$env:APPDATA\npm" rebut-mcp`，安装到当前用户的目录。如果 PowerShell 找不到 `rebut.cmd`，请将 `%APPDATA%\npm` 加入 Windows 环境变量设置中的用户 `PATH`，然后重新打开 PowerShell。更新时也请使用相同的 `--prefix`。
+
 注册后，请从同一个 PowerShell 启动 Codex 或 Claude Code。已经注册过的用户可参阅[更新注册](#codex-注册与更新)。从这个会话启动的程序可能会继承密钥。关闭宿主后，可以用 `Remove-Item Env:REBUT_OPENAI_API_KEY` 清除当前会话中的密钥。
+
+如果 `rebut.cmd doctor --provider` 显示 `tls_certificate_error`，请查看 `tls_error_code` 确认具体的证书错误。如果 Node.js 拒绝了 Windows 信任的证书，请使用 Node.js 24.6 或更高版本，并在 PowerShell 中设置 `$env:NODE_USE_SYSTEM_CA = '1'`，让 Node.js 也使用 Windows 信任的证书，包括所在组织安装的证书。通过该网络发送 API 密钥或审查材料时，请遵循组织的规定。在同一个 PowerShell 会话中重新运行诊断以检查连接。这项诊断只查询模型元数据。[Node.js `NODE_USE_SYSTEM_CA`](https://nodejs.org/download/release/v24.22.2/docs/api/cli.html#node_use_system_ca1)
+
+从同一个 PowerShell 会话启动 Claude Code CLI 时，它会继承这项设置。要让 Codex CLI 使用同一个证书库，请在 Codex 配置文件（默认为 `%USERPROFILE%\.codex\config.toml`）的 `[mcp_servers.rebut.env]` 表中加入 `NODE_USE_SYSTEM_CA = "1"`，然后重启 Codex。如果重新注册 Rebut 后这一项被移除，请再加回去。
 
 下次继续使用同一个 `REBUT_CONFIG_DIR`。请求和用量记录保存在该目录下的 `local\ledger.sqlite`。结果不确定时，在设置了同一 `REBUT_CONFIG_DIR` 的会话中，通过 `rebut.cmd status REQUEST_ID` 查询原请求 ID。参见[恢复流程](operations.md#unknown-恢复)。
 
