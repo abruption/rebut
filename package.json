@@ -6,6 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "test:package": "node scripts/package-smoke.mjs",
+    "test:windows-poc": "node scripts/windows-poc.mjs",
     "test:http-deadline": "tsx scripts/http-deadline-smoke.ts",
     "typecheck": "tsc --noEmit",
     "dev": "wrangler dev",
