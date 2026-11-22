@@ -3,6 +3,17 @@ import { profileProvider, type Profile } from "../contracts.js";
 import { ANTHROPIC_VERSION } from "../anthropic.js";
 import { createNodeHttpTransport } from "./http.js";
 
+const certificateErrorCodes = new Set([
+  "CERT_HAS_EXPIRED",
+  "CERT_NOT_YET_VALID",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+]);
+
 /** Explicit metadata-only diagnostic. Never calls a generation endpoint or changes a ledger. */
 export async function providerDiagnostic(
   profile: Pick<Profile, "model" | "provider">,
@@ -62,7 +73,21 @@ export async function providerDiagnostic(
         }, 15_000);
       }),
     ]);
-  } catch {
+  } catch (error) {
+    const cause = error instanceof Error ? error.cause : undefined;
+    if (
+      cause instanceof Error &&
+      "code" in cause &&
+      typeof cause.code === "string" &&
+      certificateErrorCodes.has(cause.code)
+    )
+      return {
+        provider,
+        model: profile.model,
+        status: "metadata_unavailable",
+        reason: "tls_certificate_error",
+        tls_error_code: cause.code,
+      };
     return { provider, model: profile.model, status: "metadata_unavailable" };
   } finally {
     if (timer) clearTimeout(timer);

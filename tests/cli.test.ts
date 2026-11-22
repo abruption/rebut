@@ -52,6 +52,21 @@ it("packaged CLI help/version run without credentials or creating settings", asy
     }
     await expect(stat(join(dir, "settings"))).rejects.toThrow();
   }));
+it("update rejects invalid arguments and source installs before reading settings", async () =>
+  fixture(async (dir) => {
+    const settingsDir = join(dir, "settings");
+    await mkdir(settingsDir);
+    await writeFile(join(settingsDir, "config.json"), "{malformed");
+    const help = cli(dir, ["update", "--help"]);
+    expect(help.status).toBe(0);
+    expect(help.stdout).toContain("rebut update");
+    const invalid = cli(dir, ["update", "--prefix", "other"]);
+    expect(invalid.status).toBe(1);
+    expect(invalid.stderr).toContain("Invalid arguments");
+    const source = cli(dir, ["update"]);
+    expect(source.status).toBe(1);
+    expect(source.stderr).toContain("global npm installation");
+  }));
 it("writes private nonsecret config, rejects credential URLs and reports only availability", async () =>
   fixture(async (dir) => {
     expect(

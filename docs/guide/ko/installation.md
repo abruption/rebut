@@ -38,7 +38,13 @@ rebut.cmd doctor --connect
 rebut.cmd setup --client codex
 ```
 
+전역 설치에 관리자 권한이 필요하면 `npm.cmd install -g --prefix "$env:APPDATA\npm" rebut-mcp`로 사용자 경로에 설치하세요. `rebut.cmd`를 찾을 수 없다면 `%APPDATA%\npm`을 Windows 환경 변수 설정의 사용자 `PATH`에 추가하고 PowerShell을 다시 여세요. 업데이트할 때도 같은 `--prefix`를 사용하세요.
+
 등록을 마치면 같은 PowerShell에서 Codex 또는 Claude Code를 시작하세요. 이미 등록한 경우 [등록 갱신 안내](#codex-등록과-업데이트)를 따르세요. 이 셸에서 시작한 프로그램은 키를 상속할 수 있습니다. 호스트를 종료한 뒤 `Remove-Item Env:REBUT_OPENAI_API_KEY`로 현재 셸의 키를 지울 수 있습니다.
+
+`rebut.cmd doctor --provider`에서 `tls_certificate_error`가 표시되면 `tls_error_code`로 인증서 오류를 확인하세요. Windows가 신뢰하는 인증서를 Node.js가 거부한 경우, Node.js 24.6 이상을 사용 중이라면 PowerShell에서 `$env:NODE_USE_SYSTEM_CA = '1'`을 설정하면 Windows가 신뢰하는 인증서도 사용할 수 있습니다. 이 설정에는 조직이 설치한 인증서도 포함되므로, 해당 네트워크에서 API 키와 리뷰 자료를 전송할 때는 조직 정책을 따르세요. 같은 셸에서 진단을 다시 실행해 연결을 확인하세요. 이 진단은 모델 메타데이터만 조회합니다. [Node.js `NODE_USE_SYSTEM_CA`](https://nodejs.org/download/release/v24.22.2/docs/api/cli.html#node_use_system_ca1)
+
+Claude Code CLI는 이 PowerShell에서 시작하면 설정을 상속합니다. Codex CLI에서 같은 인증서 저장소를 사용하려면 Codex 설정 파일(기본값 `%USERPROFILE%\.codex\config.toml`)의 `[mcp_servers.rebut.env]` 섹션에 `NODE_USE_SYSTEM_CA = "1"`을 추가하고 Codex를 다시 시작하세요. Rebut을 다시 등록하면서 이 항목이 지워지면 다시 추가하세요.
 
 다음에 사용할 때도 같은 `REBUT_CONFIG_DIR`을 지정하세요. 요청과 사용량은 그 아래 `local\ledger.sqlite`에 기록됩니다. 결과가 불확실하면 같은 `REBUT_CONFIG_DIR`을 지정한 셸에서 원래 ID로 `rebut.cmd status REQUEST_ID`를 실행하세요. [복구 절차](operations.md#unknown-복구)를 참고하세요.
 
@@ -68,6 +74,14 @@ rebut doctor --connect
 Vaultwarden은 항목명을 인자로 받아 비밀 값을 stdout으로 반환하는 `bw-get` 실행 파일과 기존 로그인이 필요합니다. 실행 경로는 MCP 호스트 환경의 `REBUT_BW_GET`로 지정할 수 있습니다.
 
 키·토큰을 CLI 인자나 추적 파일에 넣지 마세요. env 등록에는 변수명만 기록합니다. `OPENAI_API_KEY`를 공유하려면 `rebut set api-key-env OPENAI_API_KEY`로 명시해야 하며 자동 대체하지 않습니다. 역할별 항목은 [설정](configuration.md)에 있습니다.
+
+## Rebut 업데이트
+
+Rebut MCP를 실행 중인 호스트를 종료한 뒤 `rebut update`를 실행하세요. 이 명령은 현재 사용하는 npm 전역 설치를 확인하고, 같은 설치 경로에 npm의 `latest` 버전을 설치합니다. 설치할 때만 `--prefix`를 지정한 경우에도 그 경로를 사용합니다.
+
+`latest`가 시험판을 가리키면 명령이 중단됩니다. 설치를 확인할 수 없거나 갱신 도중 문제가 생기면 처음 설치할 때 사용한 방법으로 같은 경로에 다시 설치하세요.
+
+갱신한 설치본의 `rebut --version`으로 버전을 확인한 뒤 호스트를 다시 시작하세요. 새 버전에서 재등록이 필요하면 사용하는 호스트에 맞춰 `rebut setup --client codex --replace` 또는 `rebut setup --client claude --replace`를 실행하세요.
 
 ## Codex 등록과 업데이트
 

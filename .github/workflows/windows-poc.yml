@@ -1,10 +1,6 @@
-name: Windows MCP PoC
+name: Windows MCP
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/windows-poc.yml'
-      - 'scripts/windows-poc.mjs'
-      - 'package.json'
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
