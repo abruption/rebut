@@ -61,6 +61,14 @@ Vaultwarden은 항목명을 인자로 받아 비밀 값을 stdout으로 반환�
 
 키·토큰을 CLI 인자나 추적 파일에 넣지 마세요. env 등록에는 변수명만 기록합니다. `OPENAI_API_KEY`를 공유하려면 `rebut set api-key-env OPENAI_API_KEY`로 명시해야 하며 자동 대체하지 않습니다. 역할별 항목은 [설정](configuration.md)에 있습니다.
 
+## Rebut 업데이트
+
+Rebut MCP를 실행 중인 호스트를 종료한 뒤 `rebut update`를 실행하세요. 이 명령은 현재 사용하는 npm 전역 설치를 확인하고, 같은 설치 경로에 npm의 `latest` 버전을 설치합니다. 설치할 때만 `--prefix`를 지정한 경우에도 그 경로를 사용합니다.
+
+`latest`가 시험판을 가리키면 명령이 중단됩니다. 설치를 확인할 수 없거나 갱신 도중 문제가 생기면 처음 설치할 때 사용한 방법으로 같은 경로에 다시 설치하세요.
+
+갱신한 설치본의 `rebut --version`으로 버전을 확인한 뒤 호스트를 다시 시작하세요. 새 버전에서 재등록이 필요하면 사용하는 호스트에 맞춰 `rebut setup --client codex --replace` 또는 `rebut setup --client claude --replace`를 실행하세요.
+
 ## Codex 등록과 업데이트
 
 ```sh

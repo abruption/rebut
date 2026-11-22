@@ -59,6 +59,14 @@ Vaultwarden 需要已认证的 `bw-get` 可执行文件：以项目名为参数�
 
 不要把凭据放入 CLI 参数或跟踪文件。env 注册只记录变量名。共享 `OPENAI_API_KEY` 需显式执行 `rebut set api-key-env OPENAI_API_KEY`，没有自动回退。各角色见[配置](configuration.md)。
 
+## 更新 Rebut
+
+关闭正在运行 Rebut MCP 的宿主，然后运行 `rebut update`。命令会确认当前使用的 npm 全局安装，并在同一目录安装 npm 上标记为 `latest` 的版本。即使只在安装时指定过 `--prefix`，也会沿用该目录。
+
+如果 `latest` 指向预发布版本，命令会停止。如果无法验证当前安装，或 npm 在更新过程中失败，请按原来的安装方式在同一目录重新安装。
+
+使用该安装目录中的 `rebut --version` 确认版本，再重启宿主。如果该版本需要重新注册，请根据使用的宿主运行 `rebut setup --client codex --replace` 或 `rebut setup --client claude --replace`。
+
 ## Codex 注册与更新
 
 ```sh

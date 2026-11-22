@@ -59,6 +59,14 @@ Vaultwarden には、項目名を引数として受け取り秘密値を stdout 
 
 認証情報を CLI 引数や追跡ファイルに入れないでください。env 登録は変数名だけを保存します。`OPENAI_API_KEY` の共有は `rebut set api-key-env OPENAI_API_KEY` で明示し、自動フォールバックはしません。役割別項目は[設定](configuration.md)を参照してください。
 
+## Rebut の更新
+
+Rebut MCP を実行しているホストを終了し、`rebut update` を実行してください。現在使っている npm のグローバルインストールを確認し、`latest` タグが付いたバージョンを同じ場所にインストールします。インストール時だけ `--prefix` を指定した場合も、その場所が使われます。
+
+`latest` がプレリリースを指している場合、コマンドはそこで停止します。インストールを確認できない場合や更新途中で npm が失敗した場合は、最初のインストールと同じ方法で、同じ場所にインストールし直してください。
+
+そのインストール先の `rebut --version` でバージョンを確認し、ホストを再起動してください。再登録が必要なリリースの場合は、ホストに合わせて `rebut setup --client codex --replace` または `rebut setup --client claude --replace` を実行してください。
+
 ## Codex 登録と更新
 
 ```sh
