@@ -3,15 +3,18 @@ import { spawnSync } from "node:child_process";
 import {
   mkdtemp,
   mkdir,
+  realpath,
   readFile,
   writeFile,
   rm,
   stat,
+  symlink,
+  truncate,
   readdir,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { parse } from "smol-toml";
+import { basename, join, resolve } from "node:path";
+import { parse, stringify } from "smol-toml";
 import { ReviewInputSchema, inputHash } from "../src/contracts.js";
 const fixtureToken = "synthetic-test-bearer-value-not-real-123456789";
 async function fixture(run: (dir: string) => Promise<void>) {
@@ -54,12 +57,21 @@ it("update rejects invalid arguments and source installs before reading settings
     const settingsDir = join(dir, "settings");
     await mkdir(settingsDir);
     await writeFile(join(settingsDir, "config.json"), "{malformed");
-    const help = cli(dir, ["update", "--help"]);
-    expect(help.status).toBe(0);
-    expect(help.stdout).toContain("rebut update");
-    const invalid = cli(dir, ["update", "--prefix", "other"]);
-    expect(invalid.status).toBe(1);
-    expect(invalid.stderr).toContain("Invalid arguments");
+    for (const args of [["update", "--help"], ["help", "update"]]) {
+      const help = cli(dir, args);
+      expect(help.status).toBe(0);
+      expect(help.stdout).toContain("rebut update");
+      expect(help.stdout).toContain("Restart the hosts");
+      expect(help.stdout).toContain("rebut setup --client codex --replace");
+    }
+    for (const args of [
+      ["update", "--prefix", "other"],
+      ["update", "--prefix", "other", "--help"],
+    ]) {
+      const invalid = cli(dir, args);
+      expect(invalid.status).toBe(1);
+      expect(invalid.stderr).toContain("Invalid arguments");
+    }
     const source = cli(dir, ["update"]);
     expect(source.status).toBe(1);
     expect(source.stderr).toContain("global npm installation");
@@ -684,3 +696,148 @@ it("plain doctor does not initialize SQLite and collection binds an explicit pro
       profile: "astra-medium",
     });
   }));
+
+it("answers command and subcommand help before loading even invalid settings", async () =>
+  fixture(async (dir) => {
+    const settings = join(dir, "settings");
+    await mkdir(settings);
+    await writeFile(join(settings, "config.json"), "{invalid");
+    for (const [args, usage] of [
+      [["setup", "--help"], "rebut setup --check"],
+      [["setup", "--check", "--help"], "rebut setup --check"],
+      [["help", "doctor"], "rebut doctor"],
+      [["help", "--help"], "rebut help"],
+      [["help", "setup", "--help"], "rebut setup --check"],
+      [["profile", "list", "--help"], "rebut profile list"],
+      [["set", "api-key", "-h"], "rebut set api-key"],
+    ] as const) {
+      const result = cli(dir, [...args]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain(usage);
+    }
+    const invalid = cli(dir, ["help", "unknown"]);
+    expect(invalid.status).toBe(1);
+    expect(invalid.stderr).toContain("Unknown help topic");
+    expect(await readdir(settings)).toEqual(["config.json"]);
+  }));
+it("keeps a literal --help after the collect delimiter", async () =>
+  fixture(async (dir) => {
+    await writeFile(join(dir, "--help"), "const answer = 42;\n");
+    const result = cli(dir, [
+      "collect",
+      "--root",
+      dir,
+      "--request-id",
+      "help-filename",
+      "--requirements",
+      "Preserve the example.",
+      "--",
+      "--help",
+    ]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).request_id).toBe("help-filename");
+  }));
+for (const client of ["codex", "claude"] as const) {
+  it(`checks ${client} launcher drift and missing paths without reading Rebut settings or writing host files`, async () =>
+    fixture(async (dir) => {
+      const home = join(dir, "host");
+      const config = join(
+        home,
+        client === "codex" ? "config.toml" : ".claude.json",
+      );
+      const selector =
+        client === "codex"
+          ? ["--codex-home", home]
+          : ["--claude-config", config];
+      const args = ["setup", "--check", "--client", client, ...selector];
+      const settings = join(dir, "settings");
+      await mkdir(settings);
+      await writeFile(join(settings, "config.json"), "{invalid");
+      const check = () => {
+        const r = cli(dir, args);
+        expect(r.status, r.stderr).toBe(0);
+        expect(r.stdout).not.toContain(fixtureToken);
+        return JSON.parse(r.stdout);
+      };
+      expect(check()).toMatchObject({
+        client,
+        configPath: config,
+        status: "not_registered",
+      });
+      await expect(stat(home)).rejects.toThrow();
+      await mkdir(home);
+      const observe = async (registration: Record<string, unknown>) => {
+        const document = {
+          [client === "codex" ? "mcp_servers" : "mcpServers"]: {
+            rebut: registration,
+          },
+        };
+        const source =
+          client === "codex" ? stringify(document) : JSON.stringify(document);
+        await writeFile(config, source, { mode: 0o600 });
+        const result = check();
+        expect(await readFile(config, "utf8")).toBe(source);
+        return result;
+      };
+      const entrypoint = await realpath(resolve("bin/rebut.mjs"));
+      const current = {
+        command: process.execPath,
+        args: [entrypoint, "mcp", "--client", client],
+      };
+      expect(await observe(current)).toMatchObject({
+        status: "current_launcher",
+      });
+      if (process.platform !== "win32") {
+        const linkedNode = join(home, basename(process.execPath));
+        await symlink(process.execPath, linkedNode);
+        expect(
+          await observe({ ...current, command: linkedNode }),
+        ).toMatchObject({
+          status: "current_launcher",
+        });
+      }
+      expect(
+        await observe({ ...current, args: [entrypoint, "mcp"] }),
+      ).toMatchObject({ status: "different_launcher" });
+      expect(
+        await observe({
+          ...current,
+          command: join(dir, "missing", basename(process.execPath)),
+        }),
+      ).toMatchObject({
+        status: "missing_launcher",
+        launcher: { node: "missing", package: "present" },
+      });
+      expect(
+        await observe({ url: "https://example.invalid/", token: fixtureToken }),
+      ).toMatchObject({ status: "custom_registration" });
+      if (client === "codex")
+        expect(await observe({ ...current, enabled: false })).toMatchObject({
+          status: "disabled",
+        });
+      const invalid = cli(dir, [...args, "--replace"]);
+      expect(invalid.status).toBe(1);
+      expect(invalid.stderr).toContain("Choose --check or --replace");
+      expect(cli(dir, ["remove", ...args.slice(1)]).status).toBe(1);
+      await writeFile(config, "{invalid", { mode: 0o600 });
+      const malformed = cli(dir, args);
+      expect(malformed.status).toBe(1);
+      expect(malformed.stderr).toContain(
+        `${client === "codex" ? "Codex" : "Claude"} config`,
+      );
+      expect(malformed.stderr).not.toContain("{invalid");
+      const oversized = 8 * 1024 * 1024 + 1;
+      await truncate(config, oversized);
+      const limited = cli(dir, args);
+      expect(limited.status).toBe(1);
+      expect(limited.stderr).toContain("config exceeds 8 MiB");
+      expect((await stat(config)).size).toBe(oversized);
+      expect(await readdir(settings)).toEqual(["config.json"]);
+      expect((await readdir(home)).sort()).toEqual(
+        (process.platform === "win32"
+          ? [basename(config)]
+          : [basename(config), basename(process.execPath)]
+        ).sort(),
+      );
+    }));
+}

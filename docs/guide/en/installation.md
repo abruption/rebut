@@ -6,6 +6,14 @@
 
 Requires Node.js 24+. macOS and Linux are tested. See the Windows section below for local MCP setup.
 
+## CLI help and registration checks
+
+Use `rebut help setup` or `rebut profile list --help` to see how to use a command.
+
+Run `rebut setup --check --client codex` or `rebut setup --check --client claude` to inspect the Rebut launcher in the host configuration. Codex uses `CODEX_HOME` when set. Use `--codex-home PATH` to override it. Use `--claude-config PATH` for a custom Claude user file or when `CLAUDE_CONFIG_DIR` is set.
+
+`current_launcher` means the registered launcher points to the same Node.js and Rebut CLI files and uses the selected client. The check distinguishes missing registrations (`not_registered`), missing files (`missing_launcher`), and different launchers (`different_launcher`). It also reports custom registrations (`custom_registration`), disabled Codex entries (`disabled`), and paths it could not verify (`unverified_launcher`). The command reads the selected user configuration and checks the launcher files. Check the running host for its connection status.
+
 ## Local MCP on Windows
 
 On Windows, the local MCP reads the OpenAI API key from the `REBUT_OPENAI_API_KEY` environment variable. Choose a dedicated data directory in your Windows user profile, outside shared folders. Rebut starts with local defaults when that directory has no `config.json`. If the file exists, Rebut refuses to start. Commands that write settings, such as `rebut.cmd set mode local`, also return an error.

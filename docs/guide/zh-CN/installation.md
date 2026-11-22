@@ -6,6 +6,14 @@
 
 需要 Node.js 24 或更高版本。已在 macOS 和 Linux 上验证。Windows 本地 MCP 的使用范围见下文。
 
+## CLI 帮助与注册检查
+
+使用 `rebut help setup` 或 `rebut profile list --help` 查看具体命令的用法。
+
+运行 `rebut setup --check --client codex` 或 `rebut setup --check --client claude`，查看宿主配置中 Rebut 的启动设置。如果设置了 `CODEX_HOME`，Codex 会使用该位置，也可以用 `--codex-home PATH` 指定其他位置。如果 Claude 的用户配置文件放在其他位置，或已设置 `CLAUDE_CONFIG_DIR`，请指定 `--claude-config PATH`。
+
+`current_launcher` 表示已注册的 Node.js 和 Rebut CLI 指向当前命令所用的文件，且宿主参数也一致。检查会区分未注册（`not_registered`）、文件缺失（`missing_launcher`）和启动设置不同（`different_launcher`），也会标明自定义注册（`custom_registration`）、已禁用的 Codex 注册（`disabled`）和无法验证的路径（`unverified_launcher`）。此命令读取所选用户配置并检查启动文件。实际连接状态请在宿主中确认。
+
 ## Windows 本地 MCP
 
 在 Windows 上，本地 MCP 从环境变量 `REBUT_OPENAI_API_KEY` 读取 OpenAI API 密钥。请在 Windows 用户配置文件目录下选择一个专用数据目录，避开共享文件夹。如果该目录中没有 `config.json`，Rebut 会按默认的本地配置启动。如果文件已存在，Rebut 会拒绝启动。运行 `rebut.cmd set mode local` 等写入配置的命令也会报错。
