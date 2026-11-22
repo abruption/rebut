@@ -25,6 +25,7 @@ import {
   ClaudeSetupError,
 } from "./client/claude.js";
 import { providerDiagnostic } from "./client/provider.js";
+import { UpdateError, updateGlobalInstallation } from "./client/update.js";
 import { profileProvider } from "./contracts.js";
 import { setupCodex, removeCodex, CodexSetupError } from "./client/codex.js";
 import { collect } from "./client/collector.js";
@@ -73,6 +74,7 @@ rebut profile remove ID [--if-revision N]
 rebut set token [--stdin]        Hidden input; never pass a token as an argument
 rebut setup --client codex|claude [--codex-home PATH | --claude-config PATH] [--replace]
 rebut remove --client codex|claude [--codex-home PATH | --claude-config PATH] [--replace]
+rebut update                   Update the active global npm installation
 rebut mcp [--client codex|claude] Start the local server or Worker bridge
 rebut doctor [--connect] [--provider] [--client codex|claude]         Check selected backend; --connect lists tools, never calls a model
 rebut status --pending           Local reserved/unknown metadata only
@@ -173,6 +175,24 @@ export async function runCli(args: string[]): Promise<void> {
   }
   if (command === "--version" || command === "-v") {
     process.stdout.write((await packageVersion()) + "\n");
+    return;
+  }
+  if (command === "update") {
+    if (rest.length === 1 && (rest[0] === "--help" || rest[0] === "-h")) {
+      process.stdout.write(
+        "rebut update\nStop Rebut MCP hosts before updating. Restart the hosts after the package is updated. If the release requires re-registration, run rebut setup --client codex --replace or rebut setup --client claude --replace.\n",
+      );
+      return;
+    }
+    options(rest, {});
+    const { previousVersion, version } = updateGlobalInstallation(
+      fileURLToPath(import.meta.url),
+    );
+    process.stdout.write(
+      version === previousVersion
+        ? `Rebut ${version} is already up to date.\n`
+        : `Updated Rebut from ${previousVersion} to ${version}. Restart your MCP hosts.\n`,
+    );
     return;
   }
   const settings = await readSettings();
@@ -818,7 +838,8 @@ export async function runCli(args: string[]): Promise<void> {
   throw new CliError("Unknown command. Run rebut --help.");
 }
 export function safeError(error: unknown): string {
-  if (error instanceof CliError) return error.message;
+  if (error instanceof CliError || error instanceof UpdateError)
+    return error.message;
   if (error instanceof CodexSetupError || error instanceof ClaudeSetupError)
     return error.message;
   const profileError = safeProfileError(error);

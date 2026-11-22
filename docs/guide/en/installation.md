@@ -65,6 +65,14 @@ Vaultwarden needs an authenticated `bw-get` executable that accepts the item nam
 
 Keep credentials out of CLI arguments and tracked files. Env registration stores variable names only. Sharing `OPENAI_API_KEY` requires explicit `rebut set api-key-env OPENAI_API_KEY`; there is no fallback. See [credential roles](configuration.md).
 
+## Update Rebut
+
+Stop any hosts running Rebut MCP, then run `rebut update`. The command verifies the active global npm installation and installs the version tagged `latest` in the same prefix, including a prefix specified only at install time with `--prefix`.
+
+If `latest` points to a prerelease, the command stops. If the command cannot verify the installation or npm fails during the update, reinstall in the same prefix using your original installation method.
+
+Check the version with `rebut --version` from that installation, then restart your hosts. If a release requires re-registration, run `rebut setup --client codex --replace` or `rebut setup --client claude --replace` for the host you use.
+
 ## Codex registration and updates
 
 ```sh
