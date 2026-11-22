@@ -31,14 +31,19 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm run test:package
+  windows-mcp:
+    uses: ./.github/workflows/windows-poc.yml
   verify:
     name: verify
-    needs: [matrix]
+    needs: [matrix, windows-mcp]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Require every platform and Node version to pass
+      - name: Require the test matrix and Windows package probe to pass
         env:
           MATRIX_RESULT: ${{ needs.matrix.result }}
-        run: test "$MATRIX_RESULT" = success
+          WINDOWS_RESULT: ${{ needs.windows-mcp.result }}
+        run: |
+          printf 'Test matrix: %s\nWindows package probe: %s\n' "$MATRIX_RESULT" "$WINDOWS_RESULT"
+          test "$MATRIX_RESULT" = success && test "$WINDOWS_RESULT" = success
