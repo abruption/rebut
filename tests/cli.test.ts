@@ -57,12 +57,21 @@ it("update rejects invalid arguments and source installs before reading settings
     const settingsDir = join(dir, "settings");
     await mkdir(settingsDir);
     await writeFile(join(settingsDir, "config.json"), "{malformed");
-    const help = cli(dir, ["update", "--help"]);
-    expect(help.status).toBe(0);
-    expect(help.stdout).toContain("rebut update");
-    const invalid = cli(dir, ["update", "--prefix", "other"]);
-    expect(invalid.status).toBe(1);
-    expect(invalid.stderr).toContain("Invalid arguments");
+    for (const args of [["update", "--help"], ["help", "update"]]) {
+      const help = cli(dir, args);
+      expect(help.status).toBe(0);
+      expect(help.stdout).toContain("rebut update");
+      expect(help.stdout).toContain("Restart the hosts");
+      expect(help.stdout).toContain("rebut setup --client codex --replace");
+    }
+    for (const args of [
+      ["update", "--prefix", "other"],
+      ["update", "--prefix", "other", "--help"],
+    ]) {
+      const invalid = cli(dir, args);
+      expect(invalid.status).toBe(1);
+      expect(invalid.stderr).toContain("Invalid arguments");
+    }
     const source = cli(dir, ["update"]);
     expect(source.status).toBe(1);
     expect(source.stderr).toContain("global npm installation");

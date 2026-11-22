@@ -149,6 +149,10 @@ function commandHelp(command: string | undefined, rest: string[]) {
   const usage = subcommand.length ? subcommand : usageFor(topic);
   if (!usage.length)
     throw new CliError("Unknown help topic. Run rebut --help.");
+  if (topic[0] === "update") {
+    if (!namedHelp) options(rest.slice(0, -1), {});
+    return "rebut update\nStop Rebut MCP hosts before updating. Restart the hosts after the package is updated. If the release requires re-registration, run rebut setup --client codex --replace or rebut setup --client claude --replace.\n";
+  }
   return usage.join("\n") + "\n";
 }
 
@@ -266,12 +270,6 @@ export async function runCli(args: string[]): Promise<void> {
     return;
   }
   if (command === "update") {
-    if (rest.length === 1 && (rest[0] === "--help" || rest[0] === "-h")) {
-      process.stdout.write(
-        "rebut update\nStop Rebut MCP hosts before updating. Restart the hosts after the package is updated. If the release requires re-registration, run rebut setup --client codex --replace or rebut setup --client claude --replace.\n",
-      );
-      return;
-    }
     options(rest, {});
     const { previousVersion, version } = updateGlobalInstallation(
       fileURLToPath(import.meta.url),
