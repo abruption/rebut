@@ -30,7 +30,13 @@ rebut.cmd doctor --connect
 rebut.cmd setup --client codex
 ```
 
+전역 설치에 관리자 권한이 필요하면 `npm.cmd install -g --prefix "$env:APPDATA\npm" rebut-mcp`로 사용자 경로에 설치하세요. `rebut.cmd`를 찾을 수 없다면 `%APPDATA%\npm`을 Windows 환경 변수 설정의 사용자 `PATH`에 추가하고 PowerShell을 다시 여세요. 업데이트할 때도 같은 `--prefix`를 사용하세요.
+
 등록을 마치면 같은 PowerShell에서 Codex 또는 Claude Code를 시작하세요. 이미 등록한 경우 [등록 갱신 안내](#codex-등록과-업데이트)를 따르세요. 이 셸에서 시작한 프로그램은 키를 상속할 수 있습니다. 호스트를 종료한 뒤 `Remove-Item Env:REBUT_OPENAI_API_KEY`로 현재 셸의 키를 지울 수 있습니다.
+
+`rebut.cmd doctor --provider`에서 `tls_certificate_error`가 표시되면 `tls_error_code`로 인증서 오류를 확인하세요. Windows가 신뢰하는 인증서를 Node.js가 거부한 경우, Node.js 24.6 이상을 사용 중이라면 PowerShell에서 `$env:NODE_USE_SYSTEM_CA = '1'`을 설정하면 Windows가 신뢰하는 인증서도 사용할 수 있습니다. 이 설정에는 조직이 설치한 인증서도 포함되므로, 해당 네트워크에서 API 키와 리뷰 자료를 전송할 때는 조직 정책을 따르세요. 같은 셸에서 진단을 다시 실행해 연결을 확인하세요. 이 진단은 모델 메타데이터만 조회합니다. [Node.js `NODE_USE_SYSTEM_CA`](https://nodejs.org/download/release/v24.22.2/docs/api/cli.html#node_use_system_ca1)
+
+Claude Code CLI는 이 PowerShell에서 시작하면 설정을 상속합니다. Codex CLI에서 같은 인증서 저장소를 사용하려면 Codex 설정 파일(기본값 `%USERPROFILE%\.codex\config.toml`)의 `[mcp_servers.rebut.env]` 섹션에 `NODE_USE_SYSTEM_CA = "1"`을 추가하고 Codex를 다시 시작하세요. Rebut을 다시 등록하면서 이 항목이 지워지면 다시 추가하세요.
 
 다음에 사용할 때도 같은 `REBUT_CONFIG_DIR`을 지정하세요. 요청과 사용량은 그 아래 `local\ledger.sqlite`에 기록됩니다. 결과가 불확실하면 같은 `REBUT_CONFIG_DIR`을 지정한 셸에서 원래 ID로 `rebut.cmd status REQUEST_ID`를 실행하세요. [복구 절차](operations.md#unknown-복구)를 참고하세요.
 

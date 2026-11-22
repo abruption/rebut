@@ -270,6 +270,31 @@ it("performs only bounded model metadata GETs with the proper provider identity"
   expect(fetcher).toHaveBeenCalledOnce();
 });
 
+it.each([
+  ["SELF_SIGNED_CERT_IN_CHAIN", true],
+  ["ERR_TLS_CERT_ALTNAME_INVALID", true],
+  ["ECONNRESET", false],
+  ["untrusted details in an error code", false],
+] as const)(
+  "reports only allowlisted certificate codes (%s)",
+  async (code, certificateError) => {
+    const profile = { provider: "openai" as const, model: "gpt-6-luna" };
+    const cause = Object.assign(new Error("sensitive cause details"), { code });
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new TypeError("sensitive transport details", { cause }));
+    expect(
+      await providerDiagnostic(profile, "synthetic-provider-key", fetcher),
+    ).toEqual({
+      ...profile,
+      status: "metadata_unavailable",
+      ...(certificateError
+        ? { reason: "tls_certificate_error", tls_error_code: code }
+        : {}),
+    });
+  },
+);
+
 it("rejects a first-submission supplier change before key loading, reservation or network", async () => {
   const dir = await directory();
   const keys = vi.fn(async () => "synthetic-key-not-real-1234567890123");

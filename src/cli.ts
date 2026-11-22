@@ -858,7 +858,9 @@ export function safeError(error: unknown): string {
       "Configure the selected profile provider key for local mode.",
     SETTINGS_INVALID: "Invalid local settings file.",
     SETTINGS_UNSAFE:
-      "Local settings path is unsafe. Use a user-owned config.json with mode 0600 in a directory you own, and check the parent directory permissions.",
+      process.platform === "win32"
+        ? "Windows local mode requires a private REBUT_CONFIG_DIR without config.json. Set the provider API key in the environment (REBUT_OPENAI_API_KEY for OpenAI). Commands that write Rebut settings are unavailable on Windows."
+        : "Local settings path is unsafe. Use a user-owned config.json with mode 0600 in a directory you own, and check the parent directory permissions.",
     TOKEN_INVALID: "Credential must contain 32–512 non-space ASCII characters.",
     KEYCHAIN_UNSUPPORTED:
       "Keychain backend requires macOS. Select an explicit supported secret store.",
