@@ -6,6 +6,14 @@
 
 Node.js 24 以上が必要です。macOS と Linux で検証しています。Windows のローカル MCP については下の節を参照してください。
 
+## CLI ヘルプと登録の確認
+
+`rebut help setup` や `rebut profile list --help` で、コマンドの使い方を確認できます。
+
+`rebut setup --check --client codex` または `rebut setup --check --client claude` を実行すると、ホストの設定ファイルから Rebut の起動設定を確認できます。Codex は `CODEX_HOME` が設定されていればその場所を使います。`--codex-home PATH` で別の場所を指定できます。Claude のユーザー設定ファイルを別の場所に置いている場合や `CLAUDE_CONFIG_DIR` を設定している場合は、`--claude-config PATH` を指定してください。
+
+`current_launcher` は、登録された Node.js と Rebut CLI が現在のコマンドと同じファイルを指し、ホストの指定も一致していることを示します。未登録（`not_registered`）、ファイルの欠落（`missing_launcher`）、異なる起動設定（`different_launcher`）を区別します。カスタム登録（`custom_registration`）、無効な Codex 登録（`disabled`）、確認できないパス（`unverified_launcher`）も表示します。このコマンドは、選択したユーザー設定ファイルと起動先のファイルを参照します。実際の接続状況はホスト側で確認してください。
+
 ## Windows のローカル MCP
 
 Windows のローカル MCP は、環境変数 `REBUT_OPENAI_API_KEY` から OpenAI API キーを読み取ります。Windows のユーザープロファイル内に専用のデータフォルダーを指定し、共有フォルダーは避けてください。そのフォルダーに `config.json` がなければ、Rebut は既定のローカル設定で起動します。ファイルがある場合は起動せず、`rebut.cmd set mode local` などの設定を書き込むコマンドもエラーになります。

@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { constants } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
   chmod,
   lstat,
   mkdir,
+  open,
   readFile,
   rename,
   unlink,
@@ -12,6 +14,7 @@ import {
 } from "node:fs/promises";
 import { parse, stringify } from "smol-toml";
 import { CODEX_TOOL_TIMEOUT_SECONDS } from "../timeouts.js";
+import { inspectLauncher } from "./setup-check.js";
 
 export interface CodexSetupOptions {
   codexHome?: string;
@@ -192,7 +195,12 @@ function render(
   return stringify(document);
 }
 
-async function readConfig(path: string): Promise<string | undefined> {
+const CHECK_FILE_LIMIT = 8 * 1024 * 1024;
+
+async function readConfig(
+  path: string,
+  check = false,
+): Promise<string | undefined> {
   try {
     const stat = await lstat(path);
     if (!stat.isFile() || stat.isSymbolicLink())
@@ -200,10 +208,97 @@ async function readConfig(path: string): Promise<string | undefined> {
         "UNSAFE_CONFIG",
         "Codex config must be a regular file.",
       );
-    return await readFile(path, "utf8");
+    if (!check) return await readFile(path, "utf8");
+    const file = await open(
+      path,
+      constants.O_RDONLY |
+        (constants.O_NOFOLLOW ?? 0) |
+        (constants.O_NONBLOCK ?? 0),
+    );
+    try {
+      const current = await file.stat();
+      if (
+        !current.isFile() ||
+        current.ino !== stat.ino ||
+        current.dev !== stat.dev
+      )
+        throw new CodexSetupError(
+          "UNSAFE_CONFIG",
+          "Codex config changed during inspection.",
+        );
+      if (current.size <= CHECK_FILE_LIMIT) {
+        const buffers: Buffer[] = [];
+        let total = 0;
+        while (total <= CHECK_FILE_LIMIT) {
+          const buffer = Buffer.alloc(
+            Math.min(65536, CHECK_FILE_LIMIT + 1 - total),
+          );
+          const { bytesRead } = await file.read(buffer);
+          if (!bytesRead) return Buffer.concat(buffers, total).toString("utf8");
+          buffers.push(buffer.subarray(0, bytesRead));
+          total += bytesRead;
+        }
+      }
+      throw new CodexSetupError(
+        "CONFIG_TOO_LARGE",
+        "Codex config exceeds 8 MiB.",
+      );
+    } finally {
+      await file.close();
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
+  }
+}
+
+function configurationPath(options: Pick<CodexSetupOptions, "codexHome">) {
+  return join(
+    resolve(
+      options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), ".codex"),
+    ),
+    "config.toml",
+  );
+}
+
+function parseConfig(source: string | undefined): Table {
+  let document: Table;
+  try {
+    document = parse(source ?? "") as Table;
+  } catch {
+    throw new CodexSetupError(
+      "INVALID_CONFIG",
+      "Codex config contains invalid TOML; no changes were made.",
+    );
+  }
+  if (document.mcp_servers !== undefined && !table(document.mcp_servers))
+    throw new CodexSetupError(
+      "INVALID_CONFIG",
+      "Codex mcp_servers must be a table; no changes were made.",
+    );
+  return document;
+}
+
+export async function checkCodexSetup(
+  options: Pick<CodexSetupOptions, "codexHome" | "entrypoint">,
+) {
+  const configPath = configurationPath(options);
+  try {
+    const document = parseConfig(await readConfig(configPath, true));
+    const entry = (document.mcp_servers as Table | undefined)?.rebut;
+    return {
+      configPath,
+      ...(await inspectLauncher(entry, {
+        client: "codex",
+        entrypoint: options.entrypoint,
+      })),
+    };
+  } catch (error) {
+    if (error instanceof CodexSetupError) throw error;
+    throw new CodexSetupError(
+      "CONFIG_IO",
+      "Unable to read Codex config. Check the file and permissions.",
+    );
   }
 }
 
@@ -211,30 +306,11 @@ async function update(
   options: CodexSetupOptions,
   remove: boolean,
 ): Promise<{ configPath: string; changed: boolean }> {
-  const configPath = join(
-    resolve(
-      options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), ".codex"),
-    ),
-    "config.toml",
-  );
+  const configPath = configurationPath(options);
   let temporary: string | undefined;
   try {
     const original = await readConfig(configPath);
-    let document: Table;
-    try {
-      document = parse(original ?? "") as Table;
-    } catch {
-      throw new CodexSetupError(
-        "INVALID_CONFIG",
-        "Codex config contains invalid TOML; no changes were made.",
-      );
-    }
-    if (document.mcp_servers !== undefined && !table(document.mcp_servers)) {
-      throw new CodexSetupError(
-        "INVALID_CONFIG",
-        "Codex mcp_servers must be a table; no changes were made.",
-      );
-    }
+    const document = parseConfig(original);
     const servers = (document.mcp_servers ?? {}) as Table;
     const existing = servers.rebut;
     const replacement = desired(options);

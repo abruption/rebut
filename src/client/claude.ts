@@ -13,6 +13,7 @@ import {
   type ParseError,
 } from "jsonc-parser";
 import { CODEX_TOOL_TIMEOUT_SECONDS } from "../timeouts.js";
+import { inspectLauncher } from "./setup-check.js";
 export interface ClaudeSetupOptions {
   claudeConfig?: string;
   entrypoint: string;
@@ -209,18 +210,44 @@ function recognized(value: unknown): boolean {
     v.args[1] === "mcp"
   );
 }
-async function update(
-  options: ClaudeSetupOptions,
-  remove: boolean,
-): Promise<{ configPath: string; changed: boolean }> {
+function configurationPath(options: Pick<ClaudeSetupOptions, "claudeConfig">) {
   if (!options.claudeConfig && process.env.CLAUDE_CONFIG_DIR)
     fail(
       "CONFIG_PATH_REQUIRED",
       "Set --claude-config PATH explicitly when CLAUDE_CONFIG_DIR is in use.",
     );
-  const configPath = safePath(
-    options.claudeConfig ?? join(homedir(), ".claude.json"),
-  );
+  return safePath(options.claudeConfig ?? join(homedir(), ".claude.json"));
+}
+
+export async function checkClaudeSetup(
+  options: Pick<ClaudeSetupOptions, "claudeConfig" | "entrypoint">,
+) {
+  const configPath = configurationPath(options);
+  try {
+    const tree = parse((await readConfig(configPath)) ?? "{}");
+    const node = findNodeAtLocation(tree, ["mcpServers", "rebut"]);
+    const entry = node ? getNodeValue(node) : undefined;
+    return {
+      configPath,
+      ...(await inspectLauncher(entry, {
+        client: "claude",
+        entrypoint: options.entrypoint,
+      })),
+    };
+  } catch (error) {
+    if (error instanceof ClaudeSetupError) throw error;
+    throw new ClaudeSetupError(
+      "CONFIG_IO",
+      "Unable to read Claude config. Check the file and permissions.",
+    );
+  }
+}
+
+async function update(
+  options: ClaudeSetupOptions,
+  remove: boolean,
+): Promise<{ configPath: string; changed: boolean }> {
+  const configPath = configurationPath(options);
   let temporary: string | undefined;
   try {
     const original = await readConfig(configPath);

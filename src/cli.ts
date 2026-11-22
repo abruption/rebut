@@ -20,13 +20,19 @@ import {
 } from "./client/connection.js";
 import { serveStdio } from "./client/stdio.js";
 import {
+  checkClaudeSetup,
   setupClaude,
   removeClaude,
   ClaudeSetupError,
 } from "./client/claude.js";
 import { providerDiagnostic } from "./client/provider.js";
 import { profileProvider } from "./contracts.js";
-import { setupCodex, removeCodex, CodexSetupError } from "./client/codex.js";
+import {
+  checkCodexSetup,
+  setupCodex,
+  removeCodex,
+  CodexSetupError,
+} from "./client/codex.js";
 import { collect } from "./client/collector.js";
 import { ReviewInputSchema } from "./contracts.js";
 import {
@@ -72,6 +78,7 @@ rebut profile set ID [--provider openai|anthropic] --model MODEL --reasoning EFF
 rebut profile remove ID [--if-revision N]
 rebut set token [--stdin]        Hidden input; never pass a token as an argument
 rebut setup --client codex|claude [--codex-home PATH | --claude-config PATH] [--replace]
+rebut setup --check --client codex|claude [--codex-home PATH | --claude-config PATH]  Inspect the registered launcher
 rebut remove --client codex|claude [--codex-home PATH | --claude-config PATH] [--replace]
 rebut mcp [--client codex|claude] Start the local server or Worker bridge
 rebut doctor [--connect] [--provider] [--client codex|claude]         Check selected backend; --connect lists tools, never calls a model
@@ -79,11 +86,13 @@ rebut status --pending           Local reserved/unknown metadata only
 rebut status REQUEST_ID          Free metadata query
 rebut review                    Explicit paid review; JSON bundle on stdin
 rebut collect --root PATH --request-id ID --requirements TEXT [--profile ID] [--client codex|claude] -- FILE...
+rebut help [COMMAND [SUBCOMMAND]]
 rebut --version
 
 New installs run locally with your selected provider API key. Host registration does not select the provider. No Cloudflare account is required.
 Worker mode is optional; no private endpoint is bundled. Local budgets are per device.
 Default OpenAI profile: astra-medium. Real API tests: luna-test only.
+Use rebut help COMMAND or rebut COMMAND --help for command usage.
 `;
 class CliError extends Error {}
 function output(value: unknown) {
@@ -109,6 +118,68 @@ function selectedClient(value: unknown): McpClient | undefined {
   if (value === undefined || value === "codex" || value === "claude")
     return value;
   throw new CliError("Specify --client codex or claude.");
+}
+
+function commandHelp(command: string | undefined, rest: string[]) {
+  if (!command || command === "--help" || command === "-h") return HELP;
+  if (command === "--version" || command === "-v") return;
+  const helpFlag = rest.at(-1);
+  const namedHelp = command === "help";
+  const trailingHelp =
+    (helpFlag === "--help" || helpFlag === "-h") && !rest.includes("--");
+  if (!namedHelp && !trailingHelp) return;
+  if (namedHelp && !rest.length) return HELP;
+  const usageFor = (topic: string[]) => {
+    if (
+      topic.length > 2 ||
+      topic.some((part) => !/^[a-z][a-z-]*$/.test(part))
+    )
+      return [];
+    const prefix = "rebut " + topic.join(" ");
+    return HELP.split("\n").filter(
+      (line) => line === prefix || line.startsWith(prefix + " "),
+    );
+  };
+  const namedTopic = trailingHelp ? rest.slice(0, -1) : rest;
+  const topic = namedHelp && namedTopic.length ? namedTopic : [command];
+  const subcommand =
+    !namedHelp && rest.length > 1 ? usageFor([command, rest[0]!]) : [];
+  const usage = subcommand.length ? subcommand : usageFor(topic);
+  if (!usage.length)
+    throw new CliError("Unknown help topic. Run rebut --help.");
+  return usage.join("\n") + "\n";
+}
+
+function hostOptions(args: string[], command: "setup" | "remove") {
+  const parsed = options(args, {
+    client: { type: "string" },
+    "codex-home": { type: "string" },
+    "claude-config": { type: "string" },
+    replace: { type: "boolean" },
+    ...(command === "setup" ? { check: { type: "boolean" } } : {}),
+  });
+  const client = selectedClient(parsed.values.client);
+  if (!client) throw new CliError("Specify --client codex or claude.");
+  if (
+    (client === "claude" && parsed.values["codex-home"]) ||
+    (client === "codex" && parsed.values["claude-config"])
+  )
+    throw new CliError("Use only the selected host configuration option.");
+  if (parsed.values.check && parsed.values.replace)
+    throw new CliError("Choose --check or --replace.");
+  return {
+    client,
+    check: parsed.values.check === true,
+    registrationOptions: {
+      codexHome: parsed.values["codex-home"] as string | undefined,
+      claudeConfig: parsed.values["claude-config"] as string | undefined,
+      replace: parsed.values.replace as boolean | undefined,
+      entrypoint: realpathSync(
+        process.argv[1] ||
+          fileURLToPath(new URL("../bin/rebut.mjs", import.meta.url)),
+      ),
+    },
+  };
 }
 async function stdin(max = 160000): Promise<string> {
   const chunks: Buffer[] = [];
@@ -167,8 +238,25 @@ async function packageVersion(): Promise<string> {
 }
 export async function runCli(args: string[]): Promise<void> {
   const [command, ...rest] = args;
-  if (!command || command === "--help" || command === "-h") {
-    process.stdout.write(HELP);
+  const help = commandHelp(command, rest);
+  if (help !== undefined) {
+    process.stdout.write(help);
+    return;
+  }
+  const host =
+    command === "setup" || command === "remove"
+      ? hostOptions(rest, command)
+      : undefined;
+  if (host?.check) {
+    const registration =
+      host.client === "codex"
+        ? await checkCodexSetup(host.registrationOptions)
+        : await checkClaudeSetup(host.registrationOptions);
+    output({
+      client: host.client,
+      scope: "host_config_snapshot",
+      ...registration,
+    });
     return;
   }
   if (command === "--version" || command === "-v") {
@@ -378,26 +466,10 @@ export async function runCli(args: string[]): Promise<void> {
     );
     return;
   }
-  if (command === "setup" || command === "remove") {
-    const parsed = options(rest, {
-      client: { type: "string" },
-      "codex-home": { type: "string" },
-      "claude-config": { type: "string" },
-      replace: { type: "boolean" },
-    });
-    const client = selectedClient(parsed.values.client);
-    if (!client) throw new CliError("Specify --client codex or claude.");
-    if (
-      (client === "claude" && parsed.values["codex-home"]) ||
-      (client === "codex" && parsed.values["claude-config"])
-    )
-      throw new CliError("Use only the selected host configuration option.");
+  if (host) {
+    const { client, registrationOptions } = host;
     if (command === "setup" && mode === "worker" && !settings.endpoint)
       throw new CliError("Set the Worker endpoint first.");
-    const entrypoint = realpathSync(
-      process.argv[1] ||
-        fileURLToPath(new URL("../bin/rebut.mjs", import.meta.url)),
-    );
     let keyProvider = settings.provider ?? "openai";
     let forwardApiKeyEnv = mode === "local" && settings.secretStore === "env";
     if (command === "setup" && forwardApiKeyEnv) {
@@ -413,10 +485,7 @@ export async function runCli(args: string[]): Promise<void> {
       }
     }
     const value = {
-      codexHome: parsed.values["codex-home"] as string | undefined,
-      claudeConfig: parsed.values["claude-config"] as string | undefined,
-      entrypoint,
-      replace: parsed.values.replace as boolean | undefined,
+      ...registrationOptions,
       forwardTokenEnv: mode === "worker" && settings.secretStore === "env",
       forwardApiKeyEnv,
       apiKeyEnv: providerEnvName(settings, keyProvider),

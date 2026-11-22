@@ -6,6 +6,14 @@
 
 Node.js 24 이상이 필요합니다. macOS와 Linux에서 동작을 확인했습니다. Windows의 로컬 실행 범위는 아래 절을 참고하세요.
 
+## CLI 도움말과 등록 점검
+
+`rebut help setup`이나 `rebut profile list --help`로 필요한 명령의 사용법을 확인하세요.
+
+`rebut setup --check --client codex` 또는 `rebut setup --check --client claude`는 호스트 설정 파일에서 Rebut의 실행 경로를 확인합니다. Codex는 `CODEX_HOME`을 따르며 `--codex-home PATH`로 덮어쓸 수 있습니다. Claude의 사용자 설정 파일을 별도로 관리하거나 `CLAUDE_CONFIG_DIR`을 사용한다면 `--claude-config PATH`를 지정하세요.
+
+`current_launcher`는 등록된 Node.js와 Rebut CLI가 현재 명령과 같은 파일을 가리키고 호스트 선택 인자도 맞는다는 뜻입니다. 미등록(`not_registered`), 실행 파일 누락(`missing_launcher`), 다른 실행기(`different_launcher`)는 별도 상태로 표시합니다. 사용자 지정 등록(`custom_registration`), 비활성화된 Codex 등록(`disabled`), 확인할 수 없는 경로(`unverified_launcher`)도 구분합니다. 이 명령은 선택한 사용자 설정 파일과 실행 경로를 읽어서 점검합니다. 실제 연결 상태는 호스트에서 확인하세요.
+
 <a id="windows-로컬-mcp-mvp"></a>
 
 ## Windows 로컬 MCP
