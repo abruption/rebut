@@ -1,6 +1,7 @@
 import {
   handleReview,
-  metadata,
+  pendingMetadata,
+  statusMetadata,
   sha256,
   ProviderKeyUnavailable,
 } from "./service.js";
@@ -236,7 +237,29 @@ export default {
             },
             async ({ request_id }) => {
               const row = await new Ledger(env.DB).get(principal, request_id);
-              return toolResult(row ? metadata(row) : { status: "not_found" });
+              return toolResult(
+                row ? statusMetadata(row) : { status: "not_found" },
+              );
+            },
+          );
+          server.registerTool(
+            "review_pending",
+            {
+              description:
+                "List up to 100 reserved or unknown requests for the authenticated principal without charging for a review.",
+              inputSchema: z.strictObject({}),
+            },
+            async () => {
+              try {
+                return toolResult(
+                  await pendingMetadata(new Ledger(env.DB), principal),
+                );
+              } catch {
+                return {
+                  isError: true,
+                  ...toolResult({ status: "status_unavailable" }),
+                };
+              }
             },
           );
           return server;

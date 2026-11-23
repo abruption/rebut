@@ -94,9 +94,27 @@ Worker에서 맞춤 시작일을 설정하기 전에 새 코드를 배포하고 
 | diff / 요구사항   | 100,000자 / 16,000자 |
 | 전송 봉투         | 160,000바이트        |
 
-SHA-256 대상은 마스킹한 `{schema_version,provider,task_kind,requirements,files,diff}`이며 파일 키 순서는 `{path,start_line,content}`입니다. ID·프로필은 증거 해시와 별개입니다. [전체 스키마](../../../src/contracts.ts)를 참고하세요.
+SHA-256은 마스킹한 `{schema_version,provider,task_kind,requirements,files,diff}`를 JavaScript의 간결한 JSON 직렬화로 만든 UTF-8 바이트를 사용합니다. 파일 키 순서는 `{path,start_line,content}`입니다. 입력 스키마 1은 `provider`를 생략합니다. 확장 출력을 선택하면 마지막에 `result_format`을 추가하고 내부 키 순서 `{version,criterion_ids}`와 기준 ID 배열 순서를 유지합니다. 요청 ID와 프로필은 해시 대상에서 제외합니다. 입력 `schema_version`과 출력 `result_format.version`은 별개입니다. [전체 스키마](../../../src/contracts.ts)를 참고하세요.
 
-- `review`: 고정 자료로 검토합니다. 성공 상태는 `completed`이며 파일·diff 행 근거, 모델·입력 해시·사용량·예상 비용을 반환합니다. 빈 findings만으로 정확성을 보장하지 않습니다.
+입력 스키마 2에서 기존 출력을 쓰는 예시입니다.
+
+```json
+{"schema_version":2,"provider":"openai","task_kind":"code","requirements":"AC-1: Preserve 순서.","files":[{"path":"sample.ts","start_line":1,"content":"export const value = 1;"}],"diff":""}
+```
+
+같은 자료의 SHA-256은 `provider`를 뺀 입력 스키마 1이 `412b5f538cfa6fac93c83813b6f4b723156f40ae06d50848072c58a5dabc8ca0`, 위 예시가 `f8add8f03abd7292de2918d02a70b435953019074a35d6a45d3a182f177417c5`, 마지막 키에 `result_format: {"version":2,"criterion_ids":["AC-1"]}`을 추가한 입력 스키마 2가 `fd39d1847c3a55e9a318020874a96b55fcaad132c5c7c2df6325d4e8d1cf032a`입니다.
+
+| CLI와 백엔드 | 사용할 출력 |
+| --- | --- |
+| v0.5.0 CLI와 호환 로컬 런타임 또는 Worker | 기존 출력 |
+| 갱신한 CLI와 v0.5.0 Worker | 기본값 또는 `--output-schema 1` |
+| 갱신한 CLI와 확장 출력을 지원하는 로컬 런타임 또는 Worker | 기존 출력 또는 `--criterion-id ID`를 지정한 확장 출력 |
+
+수집할 때 프로필 ID와 공급자를 고정합니다. 실제 모델·추론 수준·요율은 백엔드가 첫 예약 직전에 현재 프로필에서 읽습니다. 이미 기록된 요청은 원래 ID의 저장된 메타데이터를 반환합니다.
+
+셸 자동화에서 `rebut review --strict-exit`은 요청한 형식의 완료 본문이 있을 때만 종료 코드 0을 반환합니다. 이미 처리한 요청에서 `completed` 메타데이터만 받으면 0이 아닌 코드로 종료합니다. stdout의 JSON 형식은 그대로입니다. 불확실한 결과는 JSON의 상태와 원래 요청 ID로 확인하세요.
+
+- `review`: 고정 자료로 검토합니다. 새 `completed` 본문은 파일·diff 행 근거, 모델·입력 해시·사용량·예상 비용을 반환합니다. 빈 findings만으로 정확성을 보장하지 않습니다.
 - `review_status`는 원래 인증 주체에게만 메타데이터를 반환합니다. 같은 백엔드에서 같은 인증 주체의 요청 ID가 이미 기록돼 있으면 같은 입력 해시와 프로필로 `review`를 다시 제출해도 공급자를 다시 호출하지 않습니다. 해시나 프로필이 다르면 `conflict`를 반환합니다. 상태 조회로 리뷰 본문을 다시 받을 수 없습니다.
 
 요청·사용량 기록에는 메타데이터만 저장합니다. 코드와 검토 본문, 키는 이 기록에 포함하지 않습니다. 자료는 프로필에 지정된 공급자로 전송합니다. OpenAI의 `store:false`는 공급자가 자료를 전혀 보관하지 않는다는 보장이 아닙니다. 프롬프트는 자료 속 지시를 검토 데이터로 취급하도록 모델에 지시하며, 모델에 저장소·URL 조회, 셸·테스트·편집·PR 도구는 제공하지 않습니다.

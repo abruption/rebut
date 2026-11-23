@@ -94,9 +94,27 @@ Worker では新しいコードをデプロイし、D1 マイグレーション 
 | diff / 要件       | 100,000 / 16,000 文字 |
 | 転送エンベロープ  | 160,000 bytes         |
 
-SHA-256 はマスク後の `{schema_version,provider,task_kind,requirements,files,diff}`、ファイルキー順は `{path,start_line,content}` です。ID とプロファイルは証拠ハッシュとは別です。[完全なスキーマ](../../../src/contracts.ts)を参照してください。
+SHA-256 はマスク後の `{schema_version,provider,task_kind,requirements,files,diff}` を JavaScript で空白なしの JSON にした UTF-8 バイト列から計算します。ファイルのキー順は `{path,start_line,content}` です。入力スキーマ 1 では `provider` を省きます。拡張出力を選んだ場合は最後に `result_format` を追加し、キー順は `{version,criterion_ids}`、基準 ID の配列順は入力どおりです。リクエスト ID とプロファイルはハッシュの対象外です。入力の `schema_version` と出力の `result_format.version` は別々の値です。 [完全なスキーマ](../../../src/contracts.ts)を参照してください。
 
-- `review` は固定資料を検討します。成功は `completed` のみで、ファイル/diff 行の根拠、モデル、入力ハッシュ、使用量、推定費用を返します。空の findings は正しさの証明ではありません。
+入力スキーマ 2 で従来の出力を使う例です。
+
+```json
+{"schema_version":2,"provider":"openai","task_kind":"code","requirements":"AC-1: Preserve 순서.","files":[{"path":"sample.ts","start_line":1,"content":"export const value = 1;"}],"diff":""}
+```
+
+同じ資料の SHA-256 は、`provider` を省いた入力スキーマ 1 が `412b5f538cfa6fac93c83813b6f4b723156f40ae06d50848072c58a5dabc8ca0`、上の例が `f8add8f03abd7292de2918d02a70b435953019074a35d6a45d3a182f177417c5`、末尾に `result_format: {"version":2,"criterion_ids":["AC-1"]}` を追加した入力スキーマ 2 が `fd39d1847c3a55e9a318020874a96b55fcaad132c5c7c2df6325d4e8d1cf032a` です。
+
+| CLI とバックエンド | 対応する出力 |
+| --- | --- |
+| v0.5.0 CLI と対応するローカルランタイムまたは Worker | 従来の出力 |
+| 更新した CLI と v0.5.0 Worker | 既定値または `--output-schema 1` |
+| 更新した CLI と拡張出力に対応したローカルランタイムまたは Worker | 従来の出力、または `--criterion-id ID` で選ぶ拡張出力 |
+
+収集時にプロファイル ID とプロバイダーを固定します。バックエンドは最初の予約直前に現在のプロファイルからモデル、推論レベル、料金を取得します。記録済みのリクエストには元の ID のメタデータを返します。
+
+シェルで自動化する場合、`rebut review --strict-exit` は指定形式の完了本文があるときだけ終了コード 0 を返します。再送で本文のない `completed` メタデータが返った場合は、0 以外で終了します。標準出力の JSON 形式は変わりません。不明な結果は JSON の状態を確認し、元のリクエスト ID で照会してください。
+
+- `review` は固定資料を検討します。新しい `completed` の本文にはファイル/diff 行の根拠、モデル、入力ハッシュ、使用量、推定費用を返します。空の findings は正しさの証明ではありません。
 - `review_status` は元の認証主体にのみメタデータを返します。同じバックエンドと認証主体の台帳に ID が記録されていれば、同じ入力ハッシュとプロファイルで `review` を再送してもプロバイダーは再度呼び出されません。入力ハッシュやプロファイルが違う場合は `conflict` を返します。状態照会ではレビュー本文を再取得できません。
 
 台帳にはリクエスト/使用量メタデータだけを残し、コード・レビュー本文・キーは保存しません。資料はプロファイルで指定したプロバイダーに送信します。OpenAI の `store:false` はデータが一切保持されないことを保証するものではありません。プロンプトは資料内の指示をレビューデータとして扱うようモデルに指示します。モデルにリポジトリ/URL 取得、シェル、テスト、編集、PR ツールは与えません。

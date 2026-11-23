@@ -94,9 +94,27 @@ Worker 上请先部署新代码并应用 D1 迁移 `0003_budget_cycle.sql`，再
 | diff / 要求       | 100,000 / 16,000 字符 |
 | 传输封套          | 160,000 字节          |
 
-SHA-256 覆盖屏蔽后的 `{schema_version,provider,task_kind,requirements,files,diff}`，文件键顺序为 `{path,start_line,content}`。ID 和配置档不属于证据哈希。参见[完整 schema](../../../src/contracts.ts)。
+SHA-256 对脱敏后的 `{schema_version,provider,task_kind,requirements,files,diff}` 使用 JavaScript 紧凑 JSON 序列化得到的 UTF-8 字节，文件键顺序为 `{path,start_line,content}`。输入模式 1 省略 `provider`。选用扩展输出时，在末尾添加 `result_format`，键顺序为 `{version,criterion_ids}`，基准 ID 按原数组顺序保留。请求 ID 和配置档不纳入哈希。输入 `schema_version` 和输出 `result_format.version` 是两个独立的字段。 参见[完整模式](../../../src/contracts.ts)。
 
-- `review` 审查冻结材料。只有 `completed` 表示成功；返回文件/diff 行证据、模型、输入哈希、用量和估算费用。空 findings 不保证正确。
+下面是输入模式 2 使用原有输出的示例。
+
+```json
+{"schema_version":2,"provider":"openai","task_kind":"code","requirements":"AC-1: Preserve 순서.","files":[{"path":"sample.ts","start_line":1,"content":"export const value = 1;"}],"diff":""}
+```
+
+同一份资料的 SHA-256 分别为：输入模式 1 省略 `provider` 时 `412b5f538cfa6fac93c83813b6f4b723156f40ae06d50848072c58a5dabc8ca0`，上例 `f8add8f03abd7292de2918d02a70b435953019074a35d6a45d3a182f177417c5`，输入模式 2 在末尾添加 `result_format: {"version":2,"criterion_ids":["AC-1"]}` 时 `fd39d1847c3a55e9a318020874a96b55fcaad132c5c7c2df6325d4e8d1cf032a`。
+
+| CLI 和后端 | 支持的输出 |
+| --- | --- |
+| v0.5.0 CLI 与兼容的本地运行时或 Worker | 原有输出 |
+| 已更新的 CLI 与 v0.5.0 Worker | 默认值或 `--output-schema 1` |
+| 已更新的 CLI 与支持扩展输出的本地运行时或 Worker | 原有输出，或使用 `--criterion-id ID` 选择扩展输出 |
+
+收集时固定配置档 ID 和供应商。后端在首次预留预算前从当前配置档读取模型、推理级别和费率。已记录的请求会返回原 ID 的元数据。
+
+在 shell 自动化中，`rebut review --strict-exit` 仅在返回指定格式的已完成审查正文时以状态码 0 退出。重复请求若只返回 `completed` 元数据，则以非零状态码退出。标准输出的 JSON 格式保持不变。结果不确定时，请查看 JSON 状态并使用原请求 ID 查询。
+
+- `review` 审查冻结材料。新 `completed` 结果的正文包含文件/diff 行证据、模型、输入哈希、用量和估算费用。空 findings 不保证正确。
 - `review_status` 仅向原认证主体返回元数据。如果请求 ID 已在同一后端、同一认证主体的账本中登记，使用相同的输入哈希和配置档再次调用 `review`不会调用供应商。输入哈希或配置档与记录不符时，返回 `conflict`。状态查询无法取回审查正文。
 
 账本仅保留请求/用量元数据，不存代码、审查正文或密钥。审查材料会发送给配置档指定的供应商。OpenAI 的 `store:false` 设置并不保证数据零留存。提示词要求模型将材料内的指令视为审查数据。模型没有仓库/URL 获取、shell、测试、编辑或 PR 工具。

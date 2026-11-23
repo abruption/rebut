@@ -8,7 +8,7 @@
 
 `reserved` may still be running or interrupted; `unknown` has an uncertain result or usage. Either may be billed. Neither automatically retries, expires, or refunds. One unresolved request can occupy the default slot and block new reviews.
 
-1. Query `rebut status REQUEST_ID` with the same backend, principal, and `REBUT_CONFIG_DIR`. If the ID is lost, local `rebut status --pending` lists up to 100 entries with `has_more`. Local metadata queries need no OpenAI key; Worker queries use the existing access token. Neither invokes a paid model.
+1. Query `rebut status REQUEST_ID` with the same backend, principal, and `REBUT_CONFIG_DIR`. If the ID is lost, `rebut status --pending` lists up to 100 reserved or unknown requests with `has_more`. On a supported Worker it lists only the authenticated principal’s requests. Older Workers support lookup by ID. Both queries return metadata and make zero model calls. Local lookups use no provider key. Worker lookups use the existing access token.
 2. Stop hosts and back up the closed local SQLite ledger and settings. Back up Worker D1 using Cloudflare export/Time Travel.
 3. Compare the original ID, input hash, profile, and available provider request/usage evidence. `not_found` alone does not prove non-execution; do not retry through a new ID or backend.
 4. Preserve uncertain rows, full accounting reservations, and slots. Only an operator with independent evidence should reconcile the exact `(principal, request_id)`; the app offers no forced release/refund/deletion tool.
