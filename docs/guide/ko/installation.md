@@ -123,6 +123,14 @@ rebut status review-001
 
 `review`는 사용자가 검토를 명시적으로 요청한 경우에만 실행하세요. 응답이 `completed`인지 확인한 뒤 모델과 입력 해시를 번들 및 프로필과 대조하고 각 지적을 원본에서 확인합니다. 독립 리뷰에는 같은 자료를 보내고 서로의 결과는 전달하지 마세요. 시간이 초과되거나 결과가 `unknown`이면 새 ID로 재시도하지 말고 같은 백엔드에서 기존 ID로 상태를 조회하세요. 자세한 내용은 [복구 절차](operations.md#unknown-복구)를 참고하세요.
 
+### 확장 리뷰 출력
+
+`rebut collect`에 `--output-schema 2 --criterion-id AC-1`을 추가하세요. 기준 ID를 1개 이상 최대 12개까지 지정할 수 있습니다. 요구사항에서 각 ID를 `AC-1: 기준 내용`처럼 별도 줄의 맨 앞에 한 번씩 적으세요. 대소문자를 구분합니다. 추가 옵션은 번들의 `result_format`과 해시에 포함됩니다.
+
+확장 결과는 각 지적의 `requirement_refs`와 실행 여부를 주장하지 않는 `reproduction` 제안, 기준별 `requirement_coverage`를 제공합니다. 같은 기준에 연결된 지적과 파일·줄 범위가 정확히 같은 인용은 기준 행에서 생략합니다. 자료가 빠졌거나 기준의 일부만 확인했다면 `unassessed`로 남을 수 있습니다. 모델이 빠뜨린 기준은 Rebut이 `unassessed`로 채웁니다. `assessed`는 모델이 제공된 자료로 기준 전체를 검토했다고 보고한 상태입니다. 수락 여부는 호출자가 판단합니다. 지적과 기준의 연결 및 재현 절차 제안은 모델이 생성합니다.
+
+기본 출력은 기존 형식을 사용합니다. 확장 번들을 제출하려면 이 옵션을 지원하는 로컬 Rebut 또는 Worker가 필요합니다. `review_pair`는 두 리뷰에 같은 옵션을 적용해 결과를 각각 반환합니다. 출력 형식을 바꿔 새 리뷰를 요청할 때는 번들을 다시 수집하고 새 요청 ID를 사용하세요. 상태가 불확실한 요청은 기존 ID로 조회하세요.
+
 ### 두 프로필로 독립 리뷰하기
 
 Codex나 Claude Code에서 사용자가 API 비용이 드는 두 프로필 검토를 명시적으로 요청하면 `review_pair`를 사용하세요. 공급자 API를 호출한 요청마다 요금이 적용됩니다. `first`에는 수집한 스키마 2 번들 전체를 넣고, `second`에는 별도의 `request_id`와 두 번째 `profile`, 해당 프로필의 `provider`를 넣습니다. 예를 들어 `first`를 `astra-medium` / `openai`로 수집했다면 `second`에 `{"request_id":"review-002","profile":"claude-medium","provider":"anthropic"}`을 전달할 수 있습니다. 두 프로필의 실제 설정은 `rebut profile list`에서 확인합니다.

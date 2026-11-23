@@ -85,6 +85,7 @@ export async function handleReview(
   const snapshot = {
     requested_provider: provider,
     bundle_schema_version: input.schema_version,
+    ...(input.result_format ? { output_schema_version: 2 } : {}),
     requested_model: profile.model,
     requested_reasoning: profile.reasoning,
     profile_revision: selected.revision,
@@ -146,6 +147,7 @@ export async function handleReview(
     ...outcomeInfo,
     requested_provider: provider,
     bundle_schema_version: input.schema_version,
+    ...(input.result_format ? { output_schema_version: 2 } : {}),
     requested_reasoning: profile.reasoning,
     profile_revision: selected.revision,
   };

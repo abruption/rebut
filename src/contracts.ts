@@ -11,6 +11,13 @@ const SafeId = z
   .string()
   .min(1)
   .regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/);
+const CriterionId = SafeId.max(40);
+const MAX_CRITERIA = 12;
+export const ReviewResultFormatSchema = z.strictObject({
+  version: z.literal(2),
+  criterion_ids: z.array(CriterionId).min(1).max(MAX_CRITERIA),
+});
+export type ReviewResultFormat = z.infer<typeof ReviewResultFormatSchema>;
 export const ReviewInputSchema = z
   .strictObject({
     schema_version: z
@@ -39,8 +46,32 @@ export const ReviewInputSchema = z
       )
       .max(40),
     diff: z.string().max(100_000),
+    result_format: ReviewResultFormatSchema.optional().describe(
+      "Opt in to review output version 2. List the criterion IDs from ID: text lines in requirements.",
+    ),
   })
   .superRefine((value, ctx) => {
+    if (value.result_format) {
+      const ids = value.result_format.criterion_ids;
+      const labels = value.requirements.split(/\r?\n/).flatMap((line) => {
+        const label = /^([A-Za-z0-9][A-Za-z0-9_.-]{0,39}):(.*)$/.exec(line);
+        return label ? [{ id: label[1], text: label[2]!.trim() }] : [];
+      });
+      if (
+        value.schema_version !== 2 ||
+        new Set(ids).size !== ids.length ||
+        ids.some((id) => {
+          const matching = labels.filter((label) => label.id === id);
+          return matching.length !== 1 || !matching[0]?.text;
+        })
+      )
+        ctx.addIssue({
+          code: "custom",
+          path: ["result_format"],
+          message:
+            "Review output version 2 requires input schema 2 and unique IDs with one matching nonempty ID: text line per criterion",
+        });
+    }
     if (
       (value.schema_version === 2 && value.provider === undefined) ||
       (value.schema_version === 1 && value.provider !== undefined)
@@ -85,7 +116,12 @@ export function inputProvider(
 export async function inputHash(
   input: Pick<
     ReviewInput,
-    "schema_version" | "task_kind" | "requirements" | "files" | "diff"
+    | "schema_version"
+    | "task_kind"
+    | "requirements"
+    | "files"
+    | "diff"
+    | "result_format"
   > & { provider?: Provider },
 ): Promise<string> {
   const bytes = new TextEncoder().encode(
@@ -100,6 +136,14 @@ export async function inputHash(
         content,
       })),
       diff: input.diff,
+      ...(input.result_format
+        ? {
+            result_format: {
+              version: input.result_format.version,
+              criterion_ids: input.result_format.criterion_ids,
+            },
+          }
+        : {}),
     }),
   );
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -126,25 +170,67 @@ export interface Profile {
   priceVersion: string;
 }
 
+const EvidenceSchema = z.strictObject({
+  path: PathSchema,
+  line: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  end_line: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
+export type ReviewEvidence = z.infer<typeof EvidenceSchema>;
+const FindingSchema = z.strictObject({
+  severity: z.enum(["critical", "high", "medium", "low"]),
+  title: z.string().min(1).max(1000),
+  explanation: z.string().min(1).max(16_000),
+  ...EvidenceSchema.shape,
+  counterexample: z.string().min(1).max(16_000),
+  remediation: z.string().min(1).max(16_000),
+});
 export const ReviewSchema = z.strictObject({
   summary: z.string().min(1).max(16_000),
   additional_evidence: z.array(z.string().max(8000)).max(40),
+  findings: z.array(FindingSchema).max(100),
+});
+export const ExtendedReviewSchema = ReviewSchema.extend({
   findings: z
     .array(
-      z.strictObject({
-        severity: z.enum(["critical", "high", "medium", "low"]),
-        title: z.string().min(1).max(1000),
-        explanation: z.string().min(1).max(16_000),
-        path: PathSchema,
-        line: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-        end_line: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-        counterexample: z.string().min(1).max(16_000),
-        remediation: z.string().min(1).max(16_000),
+      FindingSchema.extend({
+        requirement_refs: z.array(CriterionId).max(MAX_CRITERIA),
+        reproduction: z
+          .array(
+            z.strictObject({
+              kind: z.enum(["command", "test", "scenario"]),
+              suggestion: z.string().min(1).max(400),
+            }),
+          )
+          .max(1),
       }),
     )
     .max(100),
+  requirement_coverage: z
+    .array(
+      z.strictObject({
+        criterion_ref: CriterionId,
+        status: z.enum(["assessed", "unassessed"]),
+        evidence: z.array(EvidenceSchema).max(3),
+      }),
+    )
+    .max(MAX_CRITERIA),
 });
-export type Review = z.infer<typeof ReviewSchema>;
+export type ExtendedReview = z.infer<typeof ExtendedReviewSchema>;
+export type Review = z.infer<typeof ReviewSchema> | ExtendedReview;
+export function reviewResponseSchema(input: ReviewInput) {
+  return input.result_format ? ExtendedReviewSchema : ReviewSchema;
+}
+export function reviewMaterial(input: ReviewInput) {
+  return {
+    task_kind: input.task_kind,
+    requirements: input.requirements,
+    files: input.files,
+    diff: input.diff,
+    ...(input.result_format
+      ? { criterion_ids: input.result_format.criterion_ids }
+      : {}),
+  };
+}
 export interface ReviewUsage {
   input_tokens: number;
   output_tokens: number;
@@ -161,7 +247,8 @@ export type InvalidOutputReason =
   | "multiple_final_outputs"
   | "invalid_json"
   | "schema_mismatch"
-  | "ungrounded_finding";
+  | "ungrounded_finding"
+  | "invalid_requirement_coverage";
 export type UnknownReason =
   | "review_execution_error"
   | "execution_aborted"
@@ -182,6 +269,7 @@ export interface ReviewOutcome {
   requested_provider?: Provider;
   status: "completed" | "refused" | "incomplete" | "invalid_output" | "unknown";
   review?: Review;
+  output_schema_version?: 2;
   response_id?: string;
   api_request_id?: string;
   requested_model: string;

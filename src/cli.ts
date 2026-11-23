@@ -35,7 +35,7 @@ import {
   CodexSetupError,
 } from "./client/codex.js";
 import { collect } from "./client/collector.js";
-import { ReviewInputSchema } from "./contracts.js";
+import { ReviewInputSchema, ReviewResultFormatSchema } from "./contracts.js";
 import {
   profileCommand,
   workerBudget,
@@ -87,7 +87,7 @@ rebut doctor [--connect] [--provider] [--client codex|claude]         Check sele
 rebut status --pending           Local reserved/unknown metadata only
 rebut status REQUEST_ID          Free metadata query
 rebut review                    Explicit paid review; JSON bundle on stdin
-rebut collect --root PATH --request-id ID --requirements TEXT [--profile ID] [--client codex|claude] -- FILE...
+rebut collect --root PATH --request-id ID --requirements TEXT [--profile ID] [--client codex|claude] [--output-schema 2 --criterion-id ID ...] -- FILE...
 rebut help [COMMAND [SUBCOMMAND]]
 rebut --version
 
@@ -529,6 +529,8 @@ export async function runCli(args: string[]): Promise<void> {
         requirements: { type: "string" },
         profile: { type: "string" },
         client: { type: "string" },
+        "output-schema": { type: "string" },
+        "criterion-id": { type: "string", multiple: true },
       },
       true,
     );
@@ -541,6 +543,17 @@ export async function runCli(args: string[]): Promise<void> {
       throw new CliError(
         "Collect requires root, request-id, requirements and explicit source files.",
       );
+    const outputVersion = p.values["output-schema"];
+    const criterionIds = p.values["criterion-id"];
+    const resultFormat =
+      outputVersion === undefined && criterionIds === undefined
+        ? undefined
+        : ReviewResultFormatSchema.safeParse({
+            version: outputVersion === "2" ? 2 : undefined,
+            criterion_ids: criterionIds,
+          });
+    if (resultFormat && !resultFormat.success)
+      throw new CliError("Use --output-schema 2 with 1 to 12 --criterion-id ID options (IDs of up to 40 characters).");
     // Resolve the current profile metadata while collecting, then freeze its supplier.
     const client = selectedClient(p.values.client);
     if (
@@ -564,6 +577,7 @@ export async function runCli(args: string[]): Promise<void> {
         p.values["request-id"] as string,
         chosen.id,
         chosen.provider,
+        resultFormat?.data,
       ),
     );
     return;
@@ -923,6 +937,8 @@ export function safeError(error: unknown): string {
       "Local review cancelled before execution; query the original request ID.",
     PROVIDER_KEY_UNAVAILABLE:
       "Configure the selected profile provider key for local mode.",
+    INVALID_REVIEW_RESULT_FORMAT:
+      "Each --criterion-id must appear once at the start of a nonempty ID: text line in the requirements.",
     SETTINGS_INVALID: "Invalid local settings file.",
     SETTINGS_UNSAFE:
       process.platform === "win32"

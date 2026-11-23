@@ -841,3 +841,54 @@ for (const client of ["codex", "claude"] as const) {
       );
     }));
 }
+
+it("collects opt-in output criteria and rejects incomplete CLI selections", async () =>
+  fixture(async (dir) => {
+    await writeFile(join(dir, "sample.ts"), "export const count = 1;\n");
+    const base = [
+      "collect",
+      "--root",
+      dir,
+      "--request-id",
+      "opt-in-format",
+      "--requirements",
+      "AC-2: Preserve order.\nAC-1: Preserve count.",
+    ];
+    const result = cli(dir, [
+      ...base,
+      "--output-schema",
+      "2",
+      "--criterion-id",
+      "AC-2",
+      "--criterion-id",
+      "AC-1",
+      "--",
+      "sample.ts",
+    ]);
+    expect(result.status, result.stderr).toBe(0);
+    const bundle = JSON.parse(result.stdout);
+    expect(bundle.result_format).toEqual({
+      version: 2,
+      criterion_ids: ["AC-2", "AC-1"],
+    });
+    expect(bundle.input_sha256).toBe(await inputHash(bundle));
+    const missing = cli(dir, [
+      ...base,
+      "--output-schema",
+      "2",
+      "--criterion-id",
+      "AC-9",
+      "--",
+      "sample.ts",
+    ]);
+    expect(missing.status).toBe(1);
+    expect(missing.stderr).toContain("Each --criterion-id must appear once");
+    for (const flags of [
+      ["--output-schema", "2"],
+      ["--criterion-id", "AC-2"],
+    ]) {
+      const invalid = cli(dir, [...base, ...flags, "--", "sample.ts"]);
+      expect(invalid.status).toBe(1);
+      expect(invalid.stderr).toContain("Use --output-schema 2");
+    }
+  }));

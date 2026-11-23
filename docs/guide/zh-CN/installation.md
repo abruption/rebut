@@ -121,6 +121,14 @@ rebut status review-001
 
 仅在用户明确选择付费审查后发起调用。响应为 `completed` 时，核对模型和输入哈希是否与冻结的审查包及配置档相符，并逐条核对原始证据。独立审查使用同一份材料，各审查方之间不共享结果。如果调用超时或结果为 `unknown`，请在同一后端查询原请求 ID，避免用新 ID 重试。参见[恢复流程](operations.md#unknown-恢复)。
 
+### 扩展审查输出
+
+在 `rebut collect` 中加上 `--output-schema 2 --criterion-id AC-1`。请指定 1 至 12 个基准 ID。在需求中为每个 ID 单独写一行，把区分大小写的 ID 放在行首，例如 `AC-1: 保持输入顺序`。这项设置会写入资料包的 `result_format`，并纳入哈希计算。
+
+扩展输出包含问题对应的 `requirement_refs`、建议的复现步骤 `reproduction`，以及各项基准的 `requirement_coverage`。与已关联问题完全相同的引用会在基准依据中省略。资料不足或只能审查部分内容时，基准可以保留为 `unassessed`。模型遗漏的基准由 Rebut 补为 `unassessed`。`assessed` 表示模型报告所收到的材料足以审查整项基准，是否验收由调用方判断。基准关联和复现步骤均由模型提出。
+
+默认使用原有输出格式。提交扩展资料包时，本地 Rebut 或 Worker 必须支持此功能。`review_pair` 会将同一设置用于两次审查，并分别返回结果。如需换一种输出格式重新发起审查，请使用新请求 ID 重新收集资料。状态不确定的请求请使用原 ID 查询。
+
 ### 用两个配置进行独立审查
 
 用户明确选择两次付费审查时，可在 Codex 或 Claude Code 中使用 `review_pair`。`first` 传入收集好的完整 schema 2 审查包，`second` 传入不同的 `request_id`、第二个 `profile` 和对应的 `provider`。例如，使用 `astra-medium` / `openai` 收集 `first`，再将 `{"request_id":"review-002","profile":"claude-medium","provider":"anthropic"}` 传给 `second`。请用 `rebut profile list` 确认配置。
