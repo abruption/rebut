@@ -87,7 +87,7 @@ rebut doctor [--connect] [--provider] [--client codex|claude]         Check sele
 rebut status --pending           Local reserved/unknown metadata only
 rebut status REQUEST_ID          Free metadata query
 rebut review                    Explicit paid review; JSON bundle on stdin
-rebut collect --root PATH --request-id ID --requirements TEXT [--profile ID] [--client codex|claude] [--output-schema 2 --criterion-id ID ...] -- FILE...
+rebut collect --root PATH --request-id ID --requirements TEXT [--profile ID] [--client codex|claude] [--output-schema 1|2] [--criterion-id ID ...] -- FILE...
 rebut help [COMMAND [SUBCOMMAND]]
 rebut --version
 
@@ -545,15 +545,23 @@ export async function runCli(args: string[]): Promise<void> {
       );
     const outputVersion = p.values["output-schema"];
     const criterionIds = p.values["criterion-id"];
+    if (
+      outputVersion !== undefined &&
+      outputVersion !== "1" &&
+      outputVersion !== "2"
+    )
+      throw new CliError("Use --output-schema 1 or 2.");
+    if (outputVersion === "1" && criterionIds !== undefined)
+      throw new CliError("Remove --criterion-id when selecting --output-schema 1.");
     const resultFormat =
-      outputVersion === undefined && criterionIds === undefined
-        ? undefined
-        : ReviewResultFormatSchema.safeParse({
-            version: outputVersion === "2" ? 2 : undefined,
+      outputVersion === "2" || criterionIds !== undefined
+        ? ReviewResultFormatSchema.safeParse({
+            version: 2,
             criterion_ids: criterionIds,
-          });
+          })
+        : undefined;
     if (resultFormat && !resultFormat.success)
-      throw new CliError("Use --output-schema 2 with 1 to 12 --criterion-id ID options (IDs of up to 40 characters).");
+      throw new CliError("Use 1 to 12 --criterion-id ID options for output schema 2 (IDs of up to 40 characters).");
     // Resolve the current profile metadata while collecting, then freeze its supplier.
     const client = selectedClient(p.values.client);
     if (
