@@ -8,7 +8,7 @@
 
 `reserved` 可能仍在运行或已中断；`unknown` 表示结果或用量不确定。两者均可能已计费，不自动重试、到期或退款。一个未解决请求就可能占用默认槽位并阻止新审查。
 
-1. 用相同后端、principal 和 `REBUT_CONFIG_DIR` 查询 `rebut status REQUEST_ID`。ID 丢失时，本地 `rebut status --pending` 最多列出 100 条并显示 `has_more`。本地查询无需 OpenAI 密钥，Worker 查询使用已有接入令牌；均不调用付费模型。
+1. 用相同后端、身份和 `REBUT_CONFIG_DIR` 查询 `rebut status REQUEST_ID`。ID 丢失时，可用 `rebut status --pending` 查看最多 100 条预留或状态未知的请求。支持此命令的 Worker 只显示当前认证身份的请求，`has_more` 表示还有未列出的记录。旧 Worker 支持按 ID 查询。两种查询都不会调用模型。 本地查询无需供应商密钥，Worker 查询使用已有的接入令牌。
 2. 停止宿主，备份已关闭的本地 SQLite 和设置。Worker D1 使用 Cloudflare 导出/Time Travel 备份。
 3. 对照原 ID、输入哈希、配置档及可用的供应商请求/用量证据。仅 `not_found` 不证明未执行，不以其他后端或新 ID 重试。
 4. 不确定时保留行、全额记账预留和槽位。只有具有独立证据的操作者才可核对并结算对应 `(principal, request_id)`；应用没有强制释放、退款或删除工具。

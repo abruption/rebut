@@ -35,7 +35,8 @@ import {
   CodexSetupError,
 } from "./client/codex.js";
 import { collect } from "./client/collector.js";
-import { ReviewInputSchema, ReviewResultFormatSchema } from "./contracts.js";
+import { ReviewInputSchema, ReviewResultFormatSchema, type ReviewInput } from "./contracts.js";
+import { hasCompletedReview, toolPayload } from "./client/tool-result.js";
 import {
   profileCommand,
   workerBudget,
@@ -84,9 +85,9 @@ rebut remove --client codex|claude [--codex-home PATH | --claude-config PATH] [-
 rebut update                   Update the active global npm installation
 rebut mcp [--client codex|claude] Start the local server or Worker bridge
 rebut doctor [--connect] [--provider] [--client codex|claude]         Check selected backend; --connect lists tools, never calls a model
-rebut status --pending           Local reserved/unknown metadata only
+rebut status --pending           Reserved/unknown metadata for the selected backend
 rebut status REQUEST_ID          Free metadata query
-rebut review                    Explicit paid review; JSON bundle on stdin
+rebut review [--strict-exit]     Explicit paid review from JSON on stdin; strict mode requires a completed review body for exit 0
 rebut collect --root PATH --request-id ID --requirements TEXT [--profile ID] [--client codex|claude] [--output-schema 1|2] [--criterion-id ID ...] -- FILE...
 rebut help [COMMAND [SUBCOMMAND]]
 rebut --version
@@ -99,6 +100,18 @@ Use rebut help COMMAND or rebut COMMAND --help for command usage.
 class CliError extends Error {}
 function output(value: unknown) {
   process.stdout.write(JSON.stringify(value, null, 2) + "\n");
+}
+function outputToolResult(
+  value: Parameters<typeof toolPayload>[0],
+  strictBundle?: ReviewInput,
+) {
+  output(value);
+  if (strictBundle && !hasCompletedReview(value, strictBundle)) {
+    if (!process.exitCode) process.exitCode = 1;
+    process.stderr.write(
+      "No completed review body. Check the JSON outcome and query the original request ID before any further paid invocation.\n",
+    );
+  }
 }
 function options(
   args: string[],
@@ -867,16 +880,30 @@ export async function runCli(args: string[]): Promise<void> {
     return;
   }
   if (command === "status" && rest.length === 1 && rest[0] === "--pending") {
-    if (mode !== "local")
-      throw new CliError("Pending request listing is local mode only.");
-    output({
-      backend: "local",
-      ...(await withLocal((runtime) => runtime.pending())),
-    });
+    if (mode === "local") {
+      output({
+        backend: "local",
+        ...(await withLocal((runtime) => runtime.pending())),
+      });
+      return;
+    }
+    const client = await connectRemote(remote);
+    try {
+      const result = await client.callTool({ name: "review_pending", arguments: {} });
+      const payload = toolPayload(result);
+      if (!Array.isArray(payload?.requests) || typeof payload.has_more !== "boolean")
+        throw new Error("Invalid pending request response");
+      output({ backend: "worker", requests: payload.requests, has_more: payload.has_more });
+    } catch {
+      throw new CliError("Worker pending status unavailable. Check Worker support or query rebut status REQUEST_ID.");
+    } finally {
+      await client.close();
+    }
     return;
   }
   if (command === "status" || command === "review") {
     let tool: string, input: Record<string, unknown>;
+    let strictBundle: ReviewInput | undefined;
     if (command === "status") {
       if (
         rest.length !== 1 ||
@@ -887,11 +914,12 @@ export async function runCli(args: string[]): Promise<void> {
       tool = "review_status";
       input = { request_id: rest[0] };
     } else {
-      if (rest.length)
-        throw new CliError("Review accepts the JSON bundle on stdin only.");
+      const flags = options(rest, { "strict-exit": { type: "boolean" } });
       tool = "review";
       try {
-        input = ReviewInputSchema.parse(JSON.parse(await stdin()));
+        const bundle = ReviewInputSchema.parse(JSON.parse(await stdin()));
+        input = bundle;
+        if (flags.values["strict-exit"]) strictBundle = bundle;
       } catch {
         throw new CliError(
           "Invalid review bundle. Check schema, limits and supplied evidence.",
@@ -906,19 +934,19 @@ export async function runCli(args: string[]): Promise<void> {
             : runtime.review(input),
         command === "review",
       );
-      output({
+      outputToolResult({
         content: [
           {
             type: "text",
             text: JSON.stringify({ backend: "local", ...value }),
           },
         ],
-      });
+      }, strictBundle);
       return;
     }
     const client = await connectRemote(remote);
     try {
-      output(await client.callTool({ name: tool, arguments: input }));
+      outputToolResult(await client.callTool({ name: tool, arguments: input }), strictBundle);
     } finally {
       await client.close();
     }

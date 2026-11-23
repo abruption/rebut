@@ -49,6 +49,16 @@ export class Ledger {
       .bind(principal, id)
       .first<LedgerRow>();
   }
+  async pending(principal: string) {
+    const result = await this.db
+      .prepare(
+        "SELECT * FROM requests WHERE principal=? AND state IN ('reserved','unknown') ORDER BY created_at DESC, request_id ASC LIMIT 101",
+      )
+      .bind(principal)
+      .all<LedgerRow & { created_at: string }>();
+    if (!result.success) throw Error("LOCAL_STORAGE_UNAVAILABLE");
+    return result.results;
+  }
   async monthlyCycle(): Promise<MonthlyCycle | null> {
     // Unmigrated Workers keep the calendar-month path until an operator enables a cycle.
     const table = await this.db

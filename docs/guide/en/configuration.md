@@ -94,9 +94,27 @@ For a Worker, deploy the new code and apply D1 migration `0003_budget_cycle.sql`
 | Diff / requirements   | 100,000 / 16,000 characters |
 | Transport envelope    | 160,000 bytes               |
 
-SHA-256 covers masked `{schema_version,provider,task_kind,requirements,files,diff}` with file keys ordered `{path,start_line,content}`. ID and profile are separate from the evidence hash. See [the full schema](../../../src/contracts.ts).
+SHA-256 uses UTF-8 bytes from compact JavaScript JSON serialization of masked `{schema_version,provider,task_kind,requirements,files,diff}`, with file keys ordered `{path,start_line,content}`. Input schema 1 omits `provider`. When selected, append `result_format` with keys ordered `{version,criterion_ids}` and preserve the criterion ID order. The request ID and profile stay outside the hash. Input `schema_version` and output `result_format.version` are separate. See [the full schema](../../../src/contracts.ts).
 
-- `review` processes frozen material. Only `completed` means success; results include file/diff line evidence, model, input hash, usage, and estimated cost. Empty findings do not prove correctness.
+Base example with input schema 2 and legacy output:
+
+```json
+{"schema_version":2,"provider":"openai","task_kind":"code","requirements":"AC-1: Preserve 순서.","files":[{"path":"sample.ts","start_line":1,"content":"export const value = 1;"}],"diff":""}
+```
+
+SHA-256 examples for this material: schema 1 without `provider` → `412b5f538cfa6fac93c83813b6f4b723156f40ae06d50848072c58a5dabc8ca0`, schema 2 as shown → `f8add8f03abd7292de2918d02a70b435953019074a35d6a45d3a182f177417c5`, schema 2 with the final property `{"version":2,"criterion_ids":["AC-1"]}` under `result_format` → `fd39d1847c3a55e9a318020874a96b55fcaad132c5c7c2df6325d4e8d1cf032a`.
+
+| Client and backend | Compatible output |
+| --- | --- |
+| v0.5.0 CLI with a supported local runtime or Worker | Legacy |
+| Updated CLI with a v0.5.0 Worker | Legacy default or `--output-schema 1` |
+| Updated CLI with an extended-output-capable local runtime or Worker | Legacy or extended via `--criterion-id ID` |
+
+Collection freezes the profile ID and provider. The backend resolves the current model, reasoning, and rates immediately before the first reservation. Requests already in the ledger return their saved metadata for the original ID.
+
+For shell automation, `rebut review --strict-exit` exits 0 only with a completed review body in the requested format. A repeated request can return `completed` metadata without a body and exits nonzero in strict mode. Stdout stays in the same JSON format. Inspect its status and use the original ID to look up uncertain requests.
+
+- `review` processes frozen material. Fresh `completed` bodies include file/diff line evidence, model, input hash, usage, and estimated cost. Empty findings do not prove correctness.
 - `review_status` returns metadata only for the original principal. When the ID is already in the ledger for the same backend and principal, resubmitting `review` with the same input hash and profile makes no new provider call. A different input hash or profile returns `conflict`. Status lookups do not replay review bodies.
 
 Ledgers retain request/usage metadata, not code, review text, or keys. Review material goes to the provider selected by the profile. OpenAI’s `store:false` setting does not guarantee zero retention. The prompt instructs the model to treat instructions inside supplied material as review data. Models receive no repository/URL fetching, shell, test, editing, or PR tools.

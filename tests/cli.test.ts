@@ -14,6 +14,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parse, stringify } from "smol-toml";
 import { ReviewInputSchema, inputHash } from "../src/contracts.js";
 const fixtureToken = "synthetic-test-bearer-value-not-real-123456789";
@@ -901,3 +902,193 @@ it("selects v2 from criterion IDs and preserves the legacy bundle by default", a
       expect(invalid.stderr).toContain(message);
     }
   }));
+
+async function mockReviewTransport(dir: string) {
+  const preload = join(dir, "review-transport.mjs");
+  const callsFile = join(dir, "mock-calls");
+  await writeFile(
+    preload,
+    `
+import { appendFileSync } from "node:fs";
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === "string" ? input : String(input.url ?? input);
+  if (url !== "https://api.openai.com/v1/responses" && url !== "http://127.0.0.1/mcp")
+    throw Error("Unexpected fixture endpoint");
+  if (init?.method !== "POST") return new Response(null, { status: 405 });
+  const req = JSON.parse(init.body);
+  const mode = process.env.FIXTURE_MODE;
+  const review = { summary: "No supported defects.", additional_evidence: [], findings: [] };
+  if (url.startsWith("http://")) {
+    const reply = result => Response.json({ jsonrpc: "2.0", id: req.id, result });
+    if (req.method === "initialize")
+      return reply({ protocolVersion: req.params.protocolVersion, capabilities: {tools:{}}, serverInfo:{name:"mock",version:"1"} });
+    if (req.method.startsWith("notifications/")) return new Response(null,{status:202});
+    if (req.method !== "tools/call") throw Error("Unexpected fixture method");
+    appendFileSync(process.env.FIXTURE_CALLS, req.params.name + "\\n");
+    if (req.params.name === "review_pending") {
+      if (mode === "unsupported")
+        return Response.json({ jsonrpc:"2.0", id:req.id, error:{code:-32602,message:"Unknown tool"} });
+      return reply({content:[{type:"text",text:JSON.stringify({requests:[{request_id:"pending-id",status:"unknown",budget_reserved_microusd:100,budget_accounted_microusd:100}],has_more:false})}]});
+    }
+    if (req.params.name !== "review") throw Error("Unexpected fixture tool");
+    const bundle = req.params.arguments;
+    if (mode === "unexpected-format") review.requirement_coverage = [];
+    if (bundle.result_format) review.requirement_coverage = bundle.result_format.criterion_ids.map(criterion_ref => ({
+      criterion_ref: mode === "wrong-criterion" ? "AC-99" : criterion_ref, status:"unassessed", evidence:[],
+    }));
+    const payload = { status: "completed", review, input_sha256: bundle.input_sha256, result_replay_available: false };
+    if (mode === "replay") delete payload.review;
+    if (mode === "mismatch") payload.input_sha256 = "0".repeat(64);
+    const text = mode === "malformed" ? "plain text" : JSON.stringify(payload);
+    return reply({ ...(mode==="error" ? {isError:true} : {}),content:[{type:"text",text}] });
+  }
+  appendFileSync(process.env.FIXTURE_CALLS, "provider\\n");
+  if (mode === "unknown") return new Response("synthetic invalid JSON");
+  return Response.json({
+    model: "gpt-6-luna",
+    status: mode === "incomplete" ? "incomplete" : "completed",
+    usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120,
+      input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } },
+    output: [{ type: "message", role: "assistant", status: "completed",
+      content: mode === "refused" ? [{type:"refusal"}] : [{type:"output_text",text:JSON.stringify(review)}] }],
+  });
+};
+`,
+  );
+  return {
+    callsFile,
+    env: {
+      NODE_OPTIONS: "--import=" + pathToFileURL(preload).href,
+      FIXTURE_CALLS: callsFile,
+      REBUT_OPENAI_API_KEY: "synthetic-local-provider-key-not-real",
+    },
+  };
+}
+
+async function reviewFixture(request_id: string) {
+  const input = {
+    schema_version: 2 as const,
+    provider: "openai" as const,
+    request_id,
+    profile: "luna-test",
+    task_kind: "code" as const,
+    requirements: "Preserve input.",
+    files: [{ path: "sample.ts", start_line: 1, content: "return input;" }],
+    diff: "",
+  };
+  return JSON.stringify({ ...input, input_sha256: await inputHash(input) });
+}
+
+it(
+  "uses strict exit status for local reviews without replaying or discarding stdout",
+  async () =>
+    fixture(async (dir) => {
+      expect(cli(dir, ["set", "secret-store", "env"]).status).toBe(0);
+      const { env, callsFile } = await mockReviewTransport(dir);
+      const review = async (id: string, mode: string, strict = true) =>
+        cli(
+          dir,
+          ["review", ...(strict ? ["--strict-exit"] : [])],
+          await reviewFixture(id),
+          { ...env, FIXTURE_MODE: mode },
+        );
+      const completed = await review("strict-fresh", "completed");
+      expect(completed.status, completed.stderr).toBe(0);
+      const original = JSON.parse(JSON.parse(completed.stdout).content[0].text);
+      expect(original).toMatchObject({
+        status: "completed",
+        review: { findings: [] },
+        result_replay_available: false,
+      });
+      const replay = await review("strict-fresh", "completed");
+      expect(replay.status).toBe(1);
+      expect(replay.stderr).toContain("original request ID");
+      const normal = await review("strict-fresh", "completed", false);
+      expect(normal.status).toBe(0);
+      expect(normal.stdout).toBe(replay.stdout);
+      expect(
+        JSON.parse(JSON.parse(replay.stdout).content[0].text),
+      ).not.toHaveProperty("review");
+      for (const state of ["incomplete", "refused", "unknown"]) {
+        const result = await review("strict-" + state, state);
+        expect(result.status).toBe(1);
+        expect(
+          JSON.parse(JSON.parse(result.stdout).content[0].text).status,
+        ).toBe(state);
+      }
+      expect((await readFile(callsFile, "utf8")).trim().split("\n")).toEqual(
+        Array(4).fill("provider"),
+      );
+    }),
+  20000,
+);
+
+it(
+  "guards Worker review envelopes and unwraps pending status without calling review",
+  async () =>
+    fixture(async (dir) => {
+      expect(cli(dir, ["set", "endpoint", "http://127.0.0.1/mcp"]).status).toBe(
+        0,
+      );
+      expect(cli(dir, ["set", "secret-store", "env"]).status).toBe(0);
+      const { env, callsFile } = await mockReviewTransport(dir);
+      const bundle = await reviewFixture("worker-strict-fixture");
+      const review = (mode: string, strict = true) =>
+        cli(dir, ["review", ...(strict ? ["--strict-exit"] : [])], bundle, {
+          ...env,
+          FIXTURE_MODE: mode,
+        });
+      const success = review("completed");
+      expect(success.status, success.stderr).toBe(0);
+      for (const mode of ["error", "malformed", "replay", "mismatch", "unexpected-format"]) {
+        const strict = review(mode);
+        const normal = review(mode, false);
+        expect(strict.status).toBe(1);
+        expect(normal.status).toBe(0);
+        expect(strict.stdout).toBe(normal.stdout);
+      }
+      const extended = {
+        ...JSON.parse(bundle),
+        requirements: "AC-1: Preserve input.",
+        result_format: { version: 2, criterion_ids: ["AC-1"] },
+      };
+      extended.input_sha256 = await inputHash(extended);
+      for (const [mode, expected] of [
+        ["completed", 0],
+        ["wrong-criterion", 1],
+      ] as const) {
+        const result = cli(
+          dir,
+          ["review", "--strict-exit"],
+          JSON.stringify(extended),
+          {
+            ...env,
+            FIXTURE_MODE: mode,
+          },
+        );
+        expect(result.status, result.stderr).toBe(expected);
+      }
+      const pending = cli(dir, ["status", "--pending"], undefined, {
+        ...env,
+        FIXTURE_MODE: "pending",
+      });
+      expect(pending.status, pending.stderr).toBe(0);
+      expect(JSON.parse(pending.stdout)).toMatchObject({
+        backend: "worker",
+        requests: [{ request_id: "pending-id", budget_reserved_microusd: 100 }],
+        has_more: false,
+      });
+      const unsupported = cli(dir, ["status", "--pending"], undefined, {
+        ...env,
+        FIXTURE_MODE: "unsupported",
+      });
+      expect(unsupported.status).toBe(1);
+      expect(unsupported.stderr).toContain("Worker pending status unavailable");
+      expect((await readFile(callsFile, "utf8")).trim().split("\n")).toEqual([
+        ...Array(13).fill("review"),
+        "review_pending",
+        "review_pending",
+      ]);
+    }),
+  25000,
+);

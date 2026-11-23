@@ -8,6 +8,8 @@ let mf: Miniflare,
 let malformedProviderBody = false;
 let anthropicCalls = 0;
 const token = "synthetic-test-token-not-a-secret";
+const recoveryToken = "synthetic-recovery-token-not-a-secret";
+const otherToken = "synthetic-other-token-not-a-secret";
 const cfg = JSON.parse(readFileSync("config.example.json", "utf8"));
 cfg.hostname = "127.0.0.1";
 beforeAll(async () => {
@@ -24,6 +26,10 @@ beforeAll(async () => {
             REBUT_CONFIG: JSON.stringify(cfg),
             AUTH_TOKENS: JSON.stringify({
               test: createHash("sha256").update(token).digest("hex"),
+              other: createHash("sha256").update(otherToken).digest("hex"),
+              recovery: createHash("sha256")
+                .update(recoveryToken)
+                .digest("hex"),
             }),
             OPENAI_API_KEY: "fake",
             ANTHROPIC_API_KEY: "fake-anthropic",
@@ -132,7 +138,11 @@ async function decode(r: any) {
     );
   return JSON.parse(text);
 }
-async function rpc(method: string, params?: unknown, authenticated = true) {
+async function rpc(
+  method: string,
+  params?: unknown,
+  authenticated: boolean | string = true,
+) {
   return mf.dispatchFetch("http://127.0.0.1/mcp", {
     method: "POST",
     headers: {
@@ -140,7 +150,11 @@ async function rpc(method: string, params?: unknown, authenticated = true) {
       "content-type": "application/json",
       Accept: "application/json, text/event-stream",
       "MCP-Protocol-Version": "2025-03-26",
-      ...(authenticated ? { Authorization: `Bearer ${token}` } : {}),
+      ...(authenticated
+        ? {
+            Authorization: `Bearer ${typeof authenticated === "string" ? authenticated : token}`,
+          }
+        : {}),
     },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
   });
@@ -235,6 +249,7 @@ it("lists real MCP tools and runs synthetic review exactly once", async () => {
   expect(body.result.tools.map((t: any) => t.name)).toEqual([
     "review",
     "review_status",
+    "review_pending",
   ]);
   const input = {
     schema_version: 1 as const,
@@ -286,6 +301,7 @@ it("lists real MCP tools and runs synthetic review exactly once", async () => {
     actual_model: "gpt-6.2-astra",
     price_version: "openai-standard-2026-11-18",
     estimated_cost_microusd: 1600,
+    budget_accounted_microusd: 1600,
   });
   expect(metadata.review).toBeUndefined();
 });
@@ -711,6 +727,121 @@ it("keeps Worker metadata available without a provider key and never reserves a 
     } finally {
       await isolated.dispose();
     }
+  }
+}, 20000);
+
+it("lists only the caller's pending rows, formats authoritative amounts, and truncates at 100", async () => {
+  const db = await mf.getD1Database("DB");
+  const before = calls + anthropicCalls;
+  const insert = (
+    principal: string,
+    id: string,
+    state: string,
+    reserved: number,
+    charged: number,
+  ) =>
+    db
+      .prepare(
+        "INSERT INTO requests (principal,request_id,fingerprint,input_sha256,profile,claim,created_at,day,month,state,reserved_microusd,charged_microusd,metadata) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      )
+      .bind(
+        principal,
+        id,
+        "fixture-fingerprint",
+        "fixture-hash",
+        "fixture-profile",
+        "fixture-claim",
+        "2026-11-23T00:00:00.000Z",
+        "2026-11-23",
+        "2026-11",
+        state,
+        reserved,
+        charged,
+        JSON.stringify({
+          request_id: "wrong-id",
+          budget_reserved_microusd: 99999,
+        }),
+      );
+  await db.batch([
+    ...Array.from({ length: 101 }, (_, i) =>
+      insert(
+        "recovery",
+        "pending-" + String(i).padStart(3, "0"),
+        i % 2 ? "unknown" : "reserved",
+        42,
+        7,
+      ),
+    ),
+    insert("other", "pending-private", "unknown", 88, 80),
+    insert("recovery", "pending-ignored", "completed", 43, 9),
+  ]);
+  try {
+    const call = async (bearer: string, name: string, args: object) =>
+      JSON.parse(
+        (
+          await decode(
+            await rpc("tools/call", { name, arguments: args }, bearer),
+          )
+        ).result.content[0].text,
+      );
+    const own = await call(recoveryToken, "review_pending", {});
+    expect(own.requests).toHaveLength(100);
+    expect(own.has_more).toBe(true);
+    expect(own.requests[0]).toMatchObject({
+      request_id: "pending-000",
+      status: "reserved",
+      profile: "fixture-profile",
+      budget_reserved_microusd: 42,
+      budget_accounted_microusd: 7,
+      result_replay_available: false,
+    });
+    expect(Object.keys(own.requests[0]).sort()).toEqual([
+      "budget_accounted_microusd",
+      "budget_reserved_microusd",
+      "created_at",
+      "input_sha256",
+      "profile",
+      "request_id",
+      "result_replay_available",
+      "status",
+    ]);
+    expect(own.requests.at(-1).request_id).toBe("pending-099");
+    expect(
+      own.requests.some(
+        (request: any) => "principal" in request || "review" in request,
+      ),
+    ).toBe(false);
+    expect(await call(otherToken, "review_pending", {})).toMatchObject({
+      requests: [
+        {
+          request_id: "pending-private",
+          status: "unknown",
+          budget_reserved_microusd: 88,
+          budget_accounted_microusd: 80,
+        },
+      ],
+      has_more: false,
+    });
+    expect(
+      await call(recoveryToken, "review_status", {
+        request_id: "pending-private",
+      }),
+    ).toEqual({ status: "not_found" });
+    expect(
+      await call(otherToken, "review_status", { request_id: "pending-000" }),
+    ).toEqual({ status: "not_found" });
+    expect(
+      await call(recoveryToken, "review_status", { request_id: "pending-100" }),
+    ).toMatchObject({
+      status: "reserved",
+      budget_reserved_microusd: 42,
+      budget_accounted_microusd: 7,
+    });
+    expect(calls + anthropicCalls).toBe(before);
+  } finally {
+    await db
+      .prepare("DELETE FROM requests WHERE request_id LIKE 'pending-%'")
+      .run();
   }
 }, 20000);
 

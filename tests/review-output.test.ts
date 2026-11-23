@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
 import {
   inputHash,
@@ -503,4 +504,34 @@ it("compares one fixture across the two providers, output modes and token caps",
   expect(rows).toHaveLength(8);
   if (process.env.REBUT_PRINT_OUTPUT_MATRIX === "1")
     console.log("OUTPUT_MATRIX " + JSON.stringify(rows));
+});
+
+it("keeps the packaged hash examples aligned with canonical UTF-8 serialization", async () => {
+  const material = {
+    schema_version: 2 as const,
+    provider: "openai" as const,
+    task_kind: "code" as const,
+    requirements: "AC-1: Preserve 순서.",
+    files: [
+      { path: "sample.ts", start_line: 1, content: "export const value = 1;" },
+    ],
+    diff: "",
+  };
+  const selection = { version: 2 as const, criterion_ids: ["AC-1"] };
+  const hashes = await Promise.all([
+    inputHash({ ...material, schema_version: 1, provider: undefined }),
+    inputHash(material),
+    inputHash({ ...material, result_format: selection }),
+  ]);
+  expect(hashes).toEqual([
+    "412b5f538cfa6fac93c83813b6f4b723156f40ae06d50848072c58a5dabc8ca0",
+    "f8add8f03abd7292de2918d02a70b435953019074a35d6a45d3a182f177417c5",
+    "fd39d1847c3a55e9a318020874a96b55fcaad132c5c7c2df6325d4e8d1cf032a",
+  ]);
+  for (const locale of ["en", "ko", "ja", "zh-CN"]) {
+    const guide = readFileSync(`docs/guide/${locale}/configuration.md`, "utf8");
+    expect(guide).toContain(JSON.stringify(material));
+    expect(guide).toContain(JSON.stringify(selection));
+    for (const hash of hashes) expect(guide).toContain(hash);
+  }
 });

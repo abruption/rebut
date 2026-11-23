@@ -14,8 +14,13 @@ import {
 } from "./contracts.js";
 import { registerReviewPair } from "./client/review-pair.js";
 import { parseConfig } from "./config.js";
-import { handleReview, metadata, ProviderKeyUnavailable } from "./service.js";
-import { Ledger, monthlyCycleInsert, type LedgerRow } from "./ledger.js";
+import {
+  handleReview,
+  pendingMetadata,
+  statusMetadata,
+  ProviderKeyUnavailable,
+} from "./service.js";
+import { Ledger, monthlyCycleInsert } from "./ledger.js";
 import { validMonthlyStartDay } from "./budget-cycle.js";
 import { ProfileRegistry } from "./profiles.js";
 import { resolveProfile } from "./client/profiles.js";
@@ -212,35 +217,10 @@ export async function openLocalRuntime(
         active.delete(work);
       }
     },
-    async pending() {
-      const result = await db
-        .prepare(
-          "SELECT * FROM requests WHERE principal=? AND state IN ('reserved','unknown') ORDER BY created_at DESC, request_id ASC LIMIT 101",
-        )
-        .bind(PRINCIPAL)
-        .all<LedgerRow & { created_at: string }>();
-      if (!result.success) throw Error("LOCAL_STORAGE_UNAVAILABLE");
-      return {
-        requests: result.results.slice(0, 100).map((row) => ({
-          ...metadata(row),
-          request_id: row.request_id,
-          created_at: row.created_at,
-          profile: row.profile,
-          budget_reserved_microusd: row.reserved_microusd,
-          budget_accounted_microusd: row.charged_microusd,
-        })),
-        has_more: result.results.length > 100,
-      };
-    },
+    pending: () => pendingMetadata(ledger, PRINCIPAL),
     async status(id: string) {
-      const row = await new Ledger(db).get(PRINCIPAL, id);
-      return row
-        ? {
-            ...metadata(row),
-            budget_reserved_microusd: row.reserved_microusd,
-            budget_accounted_microusd: row.charged_microusd,
-          }
-        : { status: "not_found" };
+      const row = await ledger.get(PRINCIPAL, id);
+      return row ? statusMetadata(row) : { status: "not_found" };
     },
     close() {
       return (closing ??= (async () => {

@@ -6,7 +6,7 @@ import {
   type Provider,
 } from "./contracts.js";
 import { parseConfig } from "./config.js";
-import { Ledger } from "./ledger.js";
+import { Ledger, type LedgerRow } from "./ledger.js";
 import { ProfileRegistry } from "./profiles.js";
 import { buildReviewBody, estimateReservation, runReview } from "./review.js";
 export class ProviderKeyUnavailable extends Error {
@@ -44,6 +44,27 @@ export function metadata(row: {
     status: row.state,
     input_sha256: row.input_sha256,
     result_replay_available: false,
+  };
+}
+
+export function statusMetadata(row: LedgerRow) {
+  return {
+    ...metadata(row),
+    budget_reserved_microusd: row.reserved_microusd,
+    budget_accounted_microusd: row.charged_microusd,
+  };
+}
+
+export async function pendingMetadata(ledger: Ledger, principal: string) {
+  const rows = await ledger.pending(principal);
+  return {
+    requests: rows.slice(0, 100).map((row) => ({
+      ...statusMetadata(row),
+      request_id: row.request_id,
+      created_at: row.created_at,
+      profile: row.profile,
+    })),
+    has_more: rows.length > 100,
   };
 }
 export async function handleReview(
