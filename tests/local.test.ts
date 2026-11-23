@@ -57,7 +57,13 @@ async function input(id = "local-request") {
   value.input_sha256 = await inputHash(value);
   return value;
 }
-function successfulFetch() {
+function successfulFetch(
+  review: unknown = {
+    summary: privateReview,
+    findings: [],
+    additional_evidence: [],
+  },
+) {
   return vi.fn<typeof fetch>().mockImplementation(
     async () =>
       new Response(
@@ -81,11 +87,7 @@ function successfulFetch() {
               content: [
                 {
                   type: "output_text",
-                  text: JSON.stringify({
-                    summary: privateReview,
-                    findings: [],
-                    additional_evidence: [],
-                  }),
+                  text: JSON.stringify(review),
                 },
               ],
             },
@@ -897,5 +899,143 @@ it("uses authoritative ledger state and identity after an operator settlement", 
       expect((await runtime.pending()).requests).toEqual([]);
     } finally {
       await runtime.close();
+    }
+  }));
+
+it("binds output selection to the request and preserves it across pair dispatch and status", async () =>
+  fixture(async (directory) => {
+    const configured = SettingsSchema.parse({
+      ...settings(),
+      localLimits: { ...DEFAULT_LOCAL_LIMITS, maxConcurrent: 2 },
+    });
+    const oldResponse = successfulFetch();
+    const extendedReview = {
+      summary: "More evidence is needed.",
+      findings: [],
+      additional_evidence: [],
+      requirement_coverage: [],
+    };
+    const newResponse = successfulFetch(extendedReview);
+    const haiku = vi.fn<typeof fetch>().mockImplementation(async () =>
+      Response.json({
+        id: "msg_fixture",
+        model: "claude-haiku-5-5",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: JSON.stringify(extendedReview) }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 100, output_tokens: 50 },
+      }),
+    );
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation((resource, init) =>
+        (String(resource) === "https://api.anthropic.com/v1/messages"
+          ? haiku
+          : JSON.parse(String(init?.body)).text.format.name ===
+              "rebut_review_v2"
+            ? newResponse
+            : oldResponse)(resource, init),
+      );
+    const runtime = await openLocalRuntime(configured, {
+      directory,
+      fetcher,
+      loadApiKey: async () => key,
+    });
+    const seed = await runtime.profiles.resolve("luna-test");
+    await runtime.profiles.set(
+      "format-second",
+      {
+        ...seed!.profile,
+        provider: "anthropic",
+        model: "claude-haiku-5-5",
+      },
+      0,
+    );
+    const server = await localMcpServer(runtime, configured);
+    const client = new Client({ name: "output-pair-host", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    try {
+      const original = {
+        ...(await input("format-legacy")),
+        schema_version: 2 as const,
+        provider: "openai" as const,
+        requirements: "AC-1: Preserve the selected item.",
+      };
+      original.input_sha256 = await inputHash(original);
+      expect(await runtime.review(original)).toMatchObject({
+        status: "completed",
+      });
+      const selected = {
+        ...original,
+        result_format: { version: 2 as const, criterion_ids: ["AC-1"] },
+      };
+      expect(await runtime.review(selected)).toMatchObject({
+        status: "input_hash_mismatch",
+      });
+      selected.input_sha256 = await inputHash(selected);
+      expect(await runtime.review(selected)).toMatchObject({
+        status: "conflict",
+      });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+
+      await Promise.all([client.connect(a), server.connect(b)]);
+      const first = { ...selected, request_id: "format-first" };
+      const args = {
+        first,
+        second: {
+          request_id: "format-second",
+          profile: "format-second",
+          provider: "anthropic",
+        },
+      };
+      const invoke = async () => {
+        const reply = await client.callTool({
+          name: "review_pair",
+          arguments: args,
+        });
+        return JSON.parse((reply.content[0] as { text: string }).text);
+      };
+      expect(await invoke()).toMatchObject({
+        status: "completed",
+        reviews: [
+          {
+            request_id: "format-first",
+            has_review: true,
+            result: { status: "completed", output_schema_version: 2 },
+          },
+          {
+            request_id: "format-second",
+            has_review: true,
+            result: { status: "completed", output_schema_version: 2 },
+          },
+        ],
+      });
+      expect(newResponse).toHaveBeenCalledTimes(1);
+      for (const [, init] of newResponse.mock.calls) {
+        const wire = JSON.parse(String(init?.body));
+        expect(JSON.parse(wire.input).criterion_ids).toEqual(["AC-1"]);
+      }
+      expect(haiku).toHaveBeenCalledTimes(1);
+      const wire = JSON.parse(String(haiku.mock.calls[0]?.[1]?.body));
+      expect(JSON.parse(wire.messages[0].content).criterion_ids).toEqual([
+        "AC-1",
+      ]);
+      expect(wire.output_config.format.schema.required).toContain(
+        "requirement_coverage",
+      );
+      expect(await runtime.status("format-second")).toMatchObject({
+        status: "completed",
+        output_schema_version: 2,
+      });
+      expect(await runtime.status("format-second")).not.toHaveProperty(
+        "review",
+      );
+      await invoke();
+      expect(fetcher).toHaveBeenCalledTimes(3);
+    } finally {
+      await client.close();
+      await runtime.close();
+      await server.close();
     }
   }));

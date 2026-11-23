@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { ReviewSchema, type Profile, type ReviewInput } from "./contracts.js";
+import {
+  reviewMaterial,
+  reviewResponseSchema,
+  type Profile,
+  type ReviewInput,
+} from "./contracts.js";
 
 export const ANTHROPIC_VERSION = "2026-10-21";
 const record = (v: unknown): v is Record<string, unknown> =>
@@ -82,12 +87,7 @@ export function buildAnthropicBody(
     messages: [
       {
         role: "user",
-        content: JSON.stringify({
-          task_kind: input.task_kind,
-          requirements: input.requirements,
-          files: input.files,
-          diff: input.diff,
-        }),
+        content: JSON.stringify(reviewMaterial(input)),
       },
     ],
     output_config: {
@@ -95,7 +95,7 @@ export function buildAnthropicBody(
       format: {
         type: "json_schema",
         schema: anthropicSchema(
-          z.toJSONSchema(ReviewSchema, { target: "draft-7" }),
+          z.toJSONSchema(reviewResponseSchema(input), { target: "draft-7" }),
         ),
       },
     },

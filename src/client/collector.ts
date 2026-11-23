@@ -7,6 +7,7 @@ import {
   safePath,
   type ReviewInput,
   type Provider,
+  type ReviewResultFormat,
 } from "../contracts.js";
 const forbidden =
   /(^|\/)(\.git|node_modules|\.env(?:\..*)?|\.dev\.vars.*|\.ssh|\.aws|\.config|.*\.(pem|key|p12|pfx|sqlite|db)|(?:credentials|secrets|id_rsa|id_ed25519)(?:\..*)?)$/i;
@@ -87,6 +88,7 @@ export async function collect(
   request_id: string,
   profile = "astra-medium",
   provider: Provider = "openai",
+  resultFormat?: ReviewResultFormat,
 ): Promise<ReviewInput> {
   if (files.length === 0 || files.length > 40 || requirements.length > 16000)
     throw new Error("Collection exceeds input limits");
@@ -106,11 +108,16 @@ export async function collect(
       })),
     ),
     diff: "",
+    ...(resultFormat ? { result_format: resultFormat } : {}),
   };
-  return ReviewInputSchema.parse({
+  const parsed = ReviewInputSchema.safeParse({
     ...material,
     request_id,
     profile,
     input_sha256: await inputHash(material),
   });
+  if (parsed.success) return parsed.data;
+  if (parsed.error.issues.some((issue) => issue.path[0] === "result_format"))
+    throw new Error("INVALID_REVIEW_RESULT_FORMAT");
+  throw parsed.error;
 }

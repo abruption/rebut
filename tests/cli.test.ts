@@ -841,3 +841,63 @@ for (const client of ["codex", "claude"] as const) {
       );
     }));
 }
+
+it("selects v2 from criterion IDs and preserves the legacy bundle by default", async () =>
+  fixture(async (dir) => {
+    await writeFile(join(dir, "sample.ts"), "export const count = 1;\n");
+    const base = [
+      "collect",
+      "--root",
+      dir,
+      "--request-id",
+      "opt-in-format",
+      "--requirements",
+      "AC-2: Preserve order.\nAC-1: Preserve count.",
+    ];
+    const criteria = [
+      "--criterion-id",
+      "AC-2",
+      "--criterion-id",
+      "AC-1",
+    ];
+    const collect = (flags: string[]) =>
+      cli(dir, [...base, ...flags, "--", "sample.ts"]);
+    const result = collect(criteria);
+    expect(result.status, result.stderr).toBe(0);
+    const bundle = JSON.parse(result.stdout);
+    expect(bundle.result_format).toEqual({
+      version: 2,
+      criterion_ids: ["AC-2", "AC-1"],
+    });
+    expect(bundle.input_sha256).toBe(await inputHash(bundle));
+    const explicitV2 = collect(["--output-schema", "2", ...criteria]);
+    expect(explicitV2.status, explicitV2.stderr).toBe(0);
+    expect(explicitV2.stdout).toBe(result.stdout);
+    const legacy = collect([]);
+    const explicitV1 = collect(["--output-schema", "1"]);
+    expect(legacy.status, legacy.stderr).toBe(0);
+    expect(explicitV1.status, explicitV1.stderr).toBe(0);
+    expect(explicitV1.stdout).toBe(legacy.stdout);
+    expect(JSON.parse(legacy.stdout)).not.toHaveProperty("result_format");
+    expect(JSON.parse(legacy.stdout).input_sha256).not.toBe(bundle.input_sha256);
+    const missing = cli(dir, [
+      ...base,
+      "--output-schema",
+      "2",
+      "--criterion-id",
+      "AC-9",
+      "--",
+      "sample.ts",
+    ]);
+    expect(missing.status).toBe(1);
+    expect(missing.stderr).toContain("Each --criterion-id must appear once");
+    for (const [flags, message] of [
+      [["--output-schema", "2"], "Use 1 to 12 --criterion-id"],
+      [["--output-schema", "1", ...criteria], "Remove --criterion-id"],
+      [["--output-schema", "3"], "Use --output-schema 1 or 2"],
+    ] as const) {
+      const invalid = collect([...flags]);
+      expect(invalid.status).toBe(1);
+      expect(invalid.stderr).toContain(message);
+    }
+  }));
