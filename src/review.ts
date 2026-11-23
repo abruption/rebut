@@ -178,10 +178,6 @@ function grounded(
   return false;
 }
 
-function citationKey({ path, line, end_line }: ReviewEvidence) {
-  return JSON.stringify([path, line, end_line]);
-}
-
 function normalizedCoverage(
   review: ExtendedReview,
   ids: string[],
@@ -214,21 +210,10 @@ function normalizedCoverage(
         : row.evidence.length
     )
       return;
-    const seen = new Set(linked.map(citationKey));
-    const evidence = row.evidence.filter((citation) => {
-      const key = citationKey(citation);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    reviewed.set(row.criterion_ref, { ...row, evidence });
+    reviewed.set(row.criterion_ref, row);
   }
   return {
     ...review,
-    findings: review.findings.map((finding) => ({
-      ...finding,
-      requirement_refs: [...new Set(finding.requirement_refs)],
-    })),
     requirement_coverage: ids.map(
       (criterion_ref) =>
         reviewed.get(criterion_ref) ?? {

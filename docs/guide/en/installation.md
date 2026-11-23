@@ -121,14 +121,6 @@ Name the files you want the reviewer to see. The collector rejects unsafe files,
 
 Run a paid review only when the user explicitly requests one. Once the response is `completed`, compare the returned model and input hash with the frozen bundle and profile. Check each finding against the source. Give independent reviewers the same material and keep their results separate. After a timeout or `unknown` response, check the original ID on the same backend. Do not retry with a new ID. See [recovery](operations.md#unknown-recovery).
 
-### Extended review output
-
-Add `--output-schema 2 --criterion-id AC-1` to `rebut collect`. Specify 1–12 IDs with the criterion flag. Start a separate requirements line with each case-sensitive ID followed by a colon and nonempty text, as in `AC-1: Preserve input order`. The bundle includes these options in `result_format` and in its hash.
-
-Extended results include `requirement_refs`, suggested `reproduction` steps, and `requirement_coverage`. A coverage row omits citations that exactly match a linked finding. A criterion can remain `unassessed` when evidence is missing or only part of it was reviewed. Rebut fills omitted criteria with `unassessed`. `assessed` means the model reports that it could evaluate the whole criterion from the supplied material. The caller decides acceptance. The model proposes both the links and the reproduction steps.
-
-Reviews use the existing format by default. Submit extended bundles to a local Rebut server or Worker that supports the option. `review_pair` carries the selection into both reviews and returns them separately. To request a new review with a different format, collect a new bundle with a new request ID. Look up any uncertain request using its original ID.
-
 ### Review independently with two profiles
 
 Use `review_pair` in Codex or Claude Code when the user explicitly selects two paid reviews. Pass the complete collected schema 2 bundle as `first`, and pass a distinct `request_id` and the second `profile` and its `provider` as `second`. For example, collect `first` with `astra-medium` / `openai` and pass `{"request_id":"review-002","profile":"claude-medium","provider":"anthropic"}` as `second`. Confirm the profiles with `rebut profile list`.

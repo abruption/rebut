@@ -92,10 +92,10 @@ function respond(
   provider: "openai" | "anthropic",
   review: unknown,
   cutoff = false,
+  output = cutoff ? profile(provider).maxOutputTokens : 500,
 ) {
   const text = cutoff ? '{"summary":' : JSON.stringify(review);
   const selected = profile(provider);
-  const output = cutoff ? selected.maxOutputTokens : 500;
   return vi.fn<typeof fetch>().mockImplementation(async () =>
     Response.json(
       provider === "anthropic"
@@ -244,7 +244,7 @@ it.each(["openai", "anthropic"] as const)(
           {
             criterion_ref: "AC-1",
             status: "assessed",
-            evidence: [{ ...reference, line: 11, end_line: 11 }],
+            evidence: extendedReview.requirement_coverage[0]!.evidence,
           },
           { criterion_ref: "AC-2", status: "unassessed", evidence: [] },
         ],
@@ -265,7 +265,7 @@ it.each(["openai", "anthropic"] as const)(
   },
 );
 
-it("rejects unapproved references and unsupported coverage before dropping duplicate citations", async () => {
+it("rejects unapproved references and unsupported coverage", async () => {
   const selected = await input("openai");
   for (const edit of [
     (r: typeof extendedReview) => {
@@ -364,26 +364,143 @@ it("bounds coverage rows and still reports truncation at the configured limit", 
   expect(cutoff).not.toHaveProperty("review");
 });
 
-it("deduplicates repeated IDs and exact evidence without dropping a distinct citation", async () => {
-  const duplicate = structuredClone(extendedReview);
-  duplicate.findings[0]!.requirement_refs.push("AC-1");
-  duplicate.requirement_coverage[0]!.evidence.push({
-    ...duplicate.requirement_coverage[0]!.evidence[1]!,
-  });
+it("retains repeated references and citations, including a citation in a linked finding", async () => {
+  const repeated = structuredClone(extendedReview);
+  repeated.findings[0]!.requirement_refs.push("AC-1");
+  repeated.requirement_coverage[0]!.evidence.push(reference);
   const result = await runReview(
     await input("anthropic"),
     profile("anthropic"),
     "synthetic",
-    respond("anthropic", duplicate),
+    respond("anthropic", repeated),
   );
   expect(result.review).toMatchObject({
-    findings: [{ requirement_refs: ["AC-1"] }],
+    findings: [{ requirement_refs: ["AC-1", "AC-1"] }],
     requirement_coverage: [
       {
         criterion_ref: "AC-1",
-        evidence: [{ ...reference, line: 11, end_line: 11 }],
+        evidence: [
+          reference,
+          { ...reference, line: 11, end_line: 11 },
+          reference,
+        ],
       },
       { criterion_ref: "AC-2", evidence: [] },
     ],
   });
+});
+
+it("does not interpret an execution claim in suggestion prose", async () => {
+  const review = structuredClone(extendedReview);
+  const suggestion = "I ran the test and confirmed the failure.";
+  review.findings[0]!.reproduction[0]!.suggestion = suggestion;
+  const result = await runReview(
+    await input("openai"),
+    profile("openai"),
+    "synthetic",
+    respond("openai", review),
+  );
+  expect(result).toMatchObject({
+    status: "completed",
+    review: { findings: [{ reproduction: [{ kind: "test", suggestion }] }] },
+  });
+});
+
+it("accepts structural coverage when a linked finding concerns only part of a criterion", async () => {
+  const selected = {
+    ...(await input("openai")),
+    requirements:
+      "AC-1: Preserve entries and preserve the caller state.\nAC-2: Preserve caller behavior.",
+  };
+  selected.input_sha256 = await inputHash(selected);
+  const review = structuredClone(extendedReview);
+  review.requirement_coverage[0]!.evidence = [];
+  const result = await runReview(
+    selected,
+    profile("openai"),
+    "synthetic",
+    respond("openai", review),
+  );
+  expect(result).toMatchObject({
+    status: "completed",
+    review: {
+      requirement_coverage: [
+        { criterion_ref: "AC-1", status: "assessed", evidence: [] },
+        { criterion_ref: "AC-2", status: "unassessed", evidence: [] },
+      ],
+    },
+  });
+});
+
+it("compares one fixture across the two providers, output modes and token caps", async () => {
+  const rows: object[] = [];
+  for (const provider of ["openai", "anthropic"] as const) {
+    for (const useExtended of [false, true]) {
+      const selected = await input(provider, useExtended);
+      const report = useExtended ? extendedReview : oldReview;
+      for (const cap of [8192, 10240]) {
+        const configured = { ...profile(provider), maxOutputTokens: cap };
+        const complete = respond(provider, report);
+        let responseBytes = 0;
+        const result = await runReview(
+          selected,
+          configured,
+          "synthetic",
+          async (resource, init) => {
+            const response = await complete(resource, init);
+            responseBytes = Buffer.byteLength(
+              await response.clone().text(),
+              "utf8",
+            );
+            return response;
+          },
+        );
+        expect(result.status).toBe("completed");
+        expect(result.review).toBeDefined();
+        expect(complete).toHaveBeenCalledTimes(1);
+        const posted = String(complete.mock.calls[0]![1]?.body);
+        const requestBytes = Buffer.byteLength(posted, "utf8");
+        const body = JSON.parse(posted);
+        expect(
+          provider === "openai" ? body.max_output_tokens : body.max_tokens,
+        ).toBe(cap);
+        const reservation = estimateReservation(selected, configured, posted);
+        expect(reservation).toBe(
+          Math.ceil(
+            ((requestBytes + 4096) * configured.inputMicrousdPerMillion +
+              cap * configured.outputMicrousdPerMillion) /
+              1_000_000,
+          ),
+        );
+
+        const demand = 9000;
+        const cutoff = cap < demand;
+        const capped = respond(provider, report, cutoff, Math.min(demand, cap));
+        const simulated = await runReview(
+          selected,
+          configured,
+          "synthetic",
+          capped,
+        );
+        expect(simulated.status).toBe(cutoff ? "incomplete" : "completed");
+        expect(simulated.usage?.output_tokens).toBe(Math.min(demand, cap));
+        if (cutoff) expect(simulated).not.toHaveProperty("review");
+        expect(capped).toHaveBeenCalledTimes(1);
+
+        rows.push({
+          provider,
+          format: useExtended ? "v2" : "legacy",
+          cap,
+          requestBytes,
+          responseBytes,
+          reviewBytes: Buffer.byteLength(JSON.stringify(result.review), "utf8"),
+          reservation,
+          mockStatus: simulated.status,
+        });
+      }
+    }
+  }
+  expect(rows).toHaveLength(8);
+  if (process.env.REBUT_PRINT_OUTPUT_MATRIX === "1")
+    console.log("OUTPUT_MATRIX " + JSON.stringify(rows));
 });
