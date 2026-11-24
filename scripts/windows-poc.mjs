@@ -157,6 +157,13 @@ try {
         "Windows npx runtime check",
       );
     assert.equal(check(), "verified", "npx.cmd falls back to the PATH Node");
+    for (const component of [".", "\\bin", '""']) {
+      assert.equal(
+        check([component, runtimeDir, shimDir]),
+        "NPX_RUNTIME_UNVERIFIED",
+        "ambiguous PATH components prevent migration",
+      );
+    }
     const ordinaryShim = join(runtimeDir, "npx.cmd");
     await writeFile(ordinaryShim, "@echo off\r\n");
     assert.equal(check(), "verified", "npx.cmd selects the verified sibling Node");

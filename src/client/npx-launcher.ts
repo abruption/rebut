@@ -101,14 +101,17 @@ export async function checkNpxPath(entry: Record<string, unknown>) {
     ? Object.entries(env).find(([key]) => key.toUpperCase() === "PATH")?.[1]
     : env.PATH;
   const path = typeof hostPath === "string" ? hostPath : (process.env.PATH ?? "");
-  const directories = path
-    .split(delimiter)
-    .map((directory) =>
-      windows && directory.startsWith('"') && directory.endsWith('"')
-        ? directory.slice(1, -1)
-        : directory,
-    )
-    .filter(fullyQualifiedPath);
+  const directories = path.split(delimiter).map((directory) =>
+    windows && directory.startsWith('"') && directory.endsWith('"')
+      ? directory.slice(1, -1)
+      : directory,
+  );
+  // A relative or empty component can resolve against the MCP host's cwd.
+  if (directories.some((directory) => !fullyQualifiedPath(directory)))
+    throw new NpxLauncherError(
+      "Use only absolute directories in the host's PATH. Remove relative and empty entries, including trailing separators, before running rebut update.",
+      "NPX_RUNTIME_UNVERIFIED",
+    );
   async function executableOnPath(names: string[]) {
     for (const directory of directories) {
       for (const name of names) {

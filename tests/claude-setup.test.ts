@@ -12,7 +12,7 @@ import {
   link,
   open,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   checkClaudeSetup,
@@ -148,6 +148,36 @@ it("does not switch a launcher to a different, unverified Node executable", asyn
     message: expect.stringContaining("same Node.js 24+ executable"),
   });
   expect(await readFile(path, "utf8")).toBe(source);
+});
+
+it.each([
+  { kind: "a relative", component: "./bin" },
+  { kind: "an empty", component: "" },
+])("preserves the direct launcher with $kind PATH component", async ({ component }) => {
+  const { root, path, options } = await fixture();
+  const windows = process.platform === "win32";
+  await writeFile(join(root, windows ? "npx.cmd" : "npx"), "", { mode: 0o700 });
+  const source = JSON.stringify({
+    mcpServers: {
+      rebut: {
+        command: process.execPath,
+        args: [join(root, "node_modules", "rebut-mcp", "bin", "rebut.mjs"), "mcp"],
+        env: {
+          PATH: [component, dirname(process.execPath), root].join(delimiter),
+        },
+      },
+    },
+  });
+  await writeFile(path, source, { mode: 0o600 });
+  await expect(migrateClaudeToNpx(options)).rejects.toMatchObject({
+    code: "NPX_RUNTIME_UNVERIFIED",
+    message: expect.stringContaining("absolute directories"),
+  });
+  expect(await readFile(path, "utf8")).toBe(source);
+  expect((await readdir(root)).sort()).toEqual([
+    ".claude.json",
+    windows ? "npx.cmd" : "npx",
+  ]);
 });
 
 it("creates a user-only entry at the documented default without granting permissions", async () => {
