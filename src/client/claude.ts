@@ -1,8 +1,8 @@
 import { constants } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
-import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { lstat, mkdir, open, rename, stat, unlink } from "node:fs/promises";
 import {
   parseTree,
   findNodeAtLocation,
@@ -16,6 +16,7 @@ import { CODEX_TOOL_TIMEOUT_SECONDS } from "../timeouts.js";
 import { inspectLauncher } from "./setup-check.js";
 import {
   checkNpxPath,
+  fullyQualifiedPath,
   isNpmLauncher,
   matchesNpxLauncher,
   NpxLauncherError,
@@ -232,6 +233,42 @@ function npxPrefix(configPath: string) {
   return join(dirname(configPath), ".rebut-claude-npx");
 }
 
+function windowsNpxScript(node: string) {
+  return join(dirname(node), "node_modules", "npm", "bin", "npx-cli.js");
+}
+
+function isWindowsNodePath(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    fullyQualifiedPath(value) &&
+    basename(value).toLowerCase() === "node.exe"
+  );
+}
+
+function isManagedClaudeNpx(entry: unknown, args: string[]) {
+  if (matchesNpxLauncher(entry, args)) return true;
+  const command = (entry as { command?: unknown } | undefined)?.command;
+  return (
+    process.platform === "win32" &&
+    isWindowsNodePath(command) &&
+    matchesNpxLauncher(entry, [windowsNpxScript(command), ...args], command)
+  );
+}
+
+async function windowsNpxStatus(command: string) {
+  try {
+    const [node, npx] = await Promise.all([
+      stat(command),
+      lstat(windowsNpxScript(command)),
+    ]);
+    return node.isFile() && npx.isFile() ? "present" : "unverified";
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT"
+      ? "missing"
+      : "unverified";
+  }
+}
+
 async function prepareConfigParent(configPath: string) {
   const path = dirname(configPath);
   await mkdir(path, { recursive: true, mode: 0o700 });
@@ -257,12 +294,24 @@ export async function checkClaudeSetup(
     const node = findNodeAtLocation(tree, ["mcpServers", "rebut"]);
     const entry = node ? getNodeValue(node) : undefined;
     const prefix = npxPrefix(configPath);
-    if (matchesNpxLauncher(entry, npxLauncherArgs("claude", prefix)))
+    const args = npxLauncherArgs("claude", prefix);
+    if (isManagedClaudeNpx(entry, args)) {
+      let status = "npx_launcher";
+      if (process.platform === "win32") {
+        if (matchesNpxLauncher(entry, args)) {
+          status = "legacy_npx_launcher";
+        } else {
+          const runtime = await windowsNpxStatus(entry.command);
+          if (runtime === "missing") status = "missing_launcher";
+          if (runtime === "unverified") status = "unverified_launcher";
+        }
+      }
       return {
         configPath,
-        status: "npx_launcher",
+        status,
         launcher: { prefix: await npxProjectStatus(prefix) },
       };
+    }
     return {
       configPath,
       ...(await inspectLauncher(entry, {
@@ -296,30 +345,44 @@ async function update(
     const existing = node ? getNodeValue(node) : undefined;
     const prefix = npxPrefix(configPath);
     const args = npxLauncherArgs("claude", prefix);
-    const managedNpx = matchesNpxLauncher(existing, args);
+    const managedNpx = isManagedClaudeNpx(existing, args);
     let output: string;
     if (migrate) {
-      if (managedNpx) {
-        await prepareConfigParent(configPath);
-        await prepareNpxWorkingDirectory(prefix);
-        return { configPath, changed: false };
-      }
-      if (!isNpmLauncher(existing, "claude"))
+      if (!managedNpx && !isNpmLauncher(existing, "claude"))
         fail(
           "UNSUPPORTED_NPX_MIGRATION",
           "Migration requires an existing Claude Code Rebut npm registration.",
         );
-      await checkNpxPath(existing);
+      const windows = process.platform === "win32";
+      const command = windows ? safePath(process.execPath) : "npx";
+      const launchArgs = windows ? [windowsNpxScript(command), ...args] : args;
+      if (
+        windows &&
+        (!isWindowsNodePath(command) ||
+          Number(process.versions.node.split(".")[0]) < 24 ||
+          (await windowsNpxStatus(command)) !== "present")
+      )
+        throw new NpxLauncherError(
+          "Could not verify the npx CLI paired with the Node.js 24+ installation running rebut update.",
+          "NPX_RUNTIME_UNVERIFIED",
+        );
+      if (matchesNpxLauncher(existing, launchArgs, command)) {
+        await prepareConfigParent(configPath);
+        await prepareNpxWorkingDirectory(prefix);
+        return { configPath, changed: false };
+      }
+      if (!windows) await checkNpxPath(existing);
       // Claude Code's stdio launcher does not use a cwd field. npm's
       // explicit prefix controls package resolution without changing the
-      // child working directory. Edit only the two launcher fields.
+      // child working directory. On Windows, absolute paths prevent the
+      // project directory from supplying the executable.
       const withCommand = applyEdits(
         source,
-        modify(source, ["mcpServers", "rebut", "command"], "npx", {}),
+        modify(source, ["mcpServers", "rebut", "command"], command, {}),
       );
       output = applyEdits(
         withCommand,
-        modify(withCommand, ["mcpServers", "rebut", "args"], args, {}),
+        modify(withCommand, ["mcpServers", "rebut", "args"], launchArgs, {}),
       );
     } else {
       const replacement = remove ? undefined : desired(options);

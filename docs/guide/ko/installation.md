@@ -105,7 +105,7 @@ rebut doctor --connect
 
 기존 설정과 도구 승인 정보는 보존합니다. 두 호스트 모두 설치 스크립트를 끄고 npx로 `rebut-mcp@latest`를 실행합니다. Codex는 설정 폴더의 `rebut-npx`에서 시작합니다. Claude Code는 npx의 `--prefix`로 `.claude.json` 옆의 `.rebut-claude-npx`를 지정합니다. 해당 npm 폴더에는 자동 생성된 `package.json`만 두세요. 사용자 npm 레지스트리와 캐시 설정은 계속 적용됩니다.
 
-호스트를 다시 시작해 Rebut 도구가 표시되는지 확인하세요. 호스트의 `PATH`에는 Node.js 24 이상과 `npx`가 필요합니다. 데스크톱 앱의 `PATH`는 업데이트를 실행한 터미널과 다를 수 있습니다. 호스트의 `PATH`가 가리키는 Node와 같은 설치본으로 업데이트하세요. 버전 관리자의 shim으로 실제 Node를 확인할 수 없으면 직접 실행 등록을 유지합니다. 전환하려면 호스트의 `PATH`에서 실제 Node의 `bin` 폴더를 shim보다 앞에 두세요. 전환 대상 등록에서 오류가 나면 명령은 해당 등록을 보존하고 두 호스트를 모두 확인한 뒤 오류를 반환합니다.
+호스트를 다시 시작해 Rebut 도구가 표시되는지 확인하세요. Windows의 Claude Code는 업데이트를 실행한 Node 설치본의 절대 경로를 사용해 `npx` CLI를 실행합니다. 설치 위치가 바뀌었거나 `rebut setup --check --client claude`가 `legacy_npx_launcher`를 표시하면 `rebut update`를 다시 실행하세요. 다른 등록에서는 호스트의 `PATH`에 Node.js 24 이상과 `npx`가 필요합니다. 데스크톱 앱의 `PATH`는 업데이트를 실행한 터미널과 다를 수 있습니다. 호스트의 `PATH`가 가리키는 Node와 같은 설치본으로 업데이트하세요. 버전 관리자의 shim으로 실제 Node를 확인할 수 없으면 직접 실행 등록을 유지합니다. 전환하려면 호스트의 `PATH`에서 실제 Node의 `bin` 폴더를 shim보다 앞에 두세요. 전환 대상 등록에서 오류가 나면 명령은 해당 등록을 보존하고 두 호스트를 모두 확인한 뒤 오류를 반환합니다.
 
 캐시가 비어 있으면 레지스트리에 연결해야 합니다. 캐시가 있어도 npm이 레지스트리를 조회할 수 있고, 재시작 때 실행 버전이 달라질 수 있습니다. 시작 제한을 직접 지정할 때는 다운로드 시간도 고려하세요. `rebut setup --check --client codex` 또는 `rebut setup --check --client claude`로 등록과 npm 폴더를 점검할 수 있습니다. `CLAUDE_CONFIG_DIR`을 쓰면 점검 명령에 `--claude-config PATH`로 `.claude.json`의 전체 경로를 지정하세요.
 

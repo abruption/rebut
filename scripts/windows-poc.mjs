@@ -11,11 +11,12 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { parse } from "smol-toml";
+import { tsImport } from "tsx/esm/api";
 import { verifyNpxRuntime } from "./npx-runtime-smoke.mjs";
 
 const npm = process.env.npm_execpath;
@@ -284,6 +285,48 @@ try {
   assert(registrations.codex.enabled_tools.includes("review_pair"));
   assert.equal(registrations.codex.env.REBUT_CONFIG_DIR, configDir);
   assert.equal(registrations.claude.env.REBUT_CONFIG_DIR, configDir);
+  if (windows) {
+    const { checkClaudeSetup, migrateClaudeToNpx } = await tsImport(
+      "../src/client/claude.ts",
+      import.meta.url,
+    );
+    const npxConfig = join(dirname(claudeConfig), "npx settings.json");
+    const options = { claudeConfig: npxConfig, entrypoint: entry };
+    const original = { ...registrations.claude, env: { PATH: fixture } };
+    const save = (registration) =>
+      writeFile(npxConfig, JSON.stringify({ mcpServers: { rebut: registration } }));
+    await save(original);
+    assert.equal((await migrateClaudeToNpx(options)).changed, true);
+    const migrated = JSON.parse(await readFile(npxConfig, "utf8")).mcpServers.rebut;
+    const npx = (node) =>
+      join(dirname(node), "node_modules", "npm", "bin", "npx-cli.js");
+    assert.equal(migrated.command, process.execPath);
+    assert.equal(migrated.args[0], npx(process.execPath));
+    assert.deepEqual(migrated.env, original.env);
+    assert.equal((await checkClaudeSetup(options)).status, "npx_launcher");
+    assert.equal((await migrateClaudeToNpx(options)).changed, false);
+
+    const oldNode = join(fixture, "previous Node", "node.exe");
+    const npxArgs = migrated.args.slice(1);
+    for (const [launcher, status] of [
+      [{ command: "npx", args: npxArgs }, "legacy_npx_launcher"],
+      [{ command: oldNode, args: [npx(oldNode), ...npxArgs] }, "missing_launcher"],
+    ]) {
+      await save({ ...migrated, ...launcher });
+      assert.equal((await checkClaudeSetup(options)).status, status);
+      assert.equal((await migrateClaudeToNpx(options)).changed, true);
+      assert.deepEqual(
+        JSON.parse(await readFile(npxConfig, "utf8")).mcpServers.rebut,
+        migrated,
+      );
+    }
+    await save({ ...migrated, args: [join(fixture, "npx-cli.js"), ...npxArgs] });
+    const unfamiliar = await readFile(npxConfig, "utf8");
+    await assert.rejects(migrateClaudeToNpx(options), {
+      code: "UNSUPPORTED_NPX_MIGRATION",
+    });
+    assert.equal(await readFile(npxConfig, "utf8"), unfamiliar);
+  }
 
   await writeFile(join(fixture, "sample.ts"), "export const fixture = 1;\n");
   const requestId = "windows-poc-001";

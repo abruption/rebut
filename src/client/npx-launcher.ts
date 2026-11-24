@@ -96,12 +96,16 @@ export function npxLauncherArgs(client: McpClient, prefix: string) {
   ];
 }
 
-export function matchesNpxLauncher(entry: unknown, expectedArgs: string[]) {
+export function matchesNpxLauncher(
+  entry: unknown,
+  expectedArgs: string[],
+  expectedCommand = "npx",
+) {
   if (
     !record(entry) ||
     (entry.type !== undefined && entry.type !== "stdio") ||
     entry.url !== undefined ||
-    entry.command !== "npx" ||
+    entry.command !== expectedCommand ||
     !Array.isArray(entry.args)
   )
     return false;

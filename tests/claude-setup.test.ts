@@ -82,10 +82,14 @@ it("migrates an existing npm launcher to Claude npx without rewriting other fiel
   expect(await migrateClaudeToNpx(options)).toEqual({ configPath: path, changed: true });
   const output = await readFile(path, "utf8");
   expect(output).toContain('"large":9007199254740993');
+  const args = npxLauncherArgs("claude", join(root, ".rebut-claude-npx"));
+  const windows = process.platform === "win32";
   expect(JSON.parse(output).mcpServers.rebut).toMatchObject({
     ...legacy,
-    command: "npx",
-    args: npxLauncherArgs("claude", join(root, ".rebut-claude-npx")),
+    command: windows ? process.execPath : "npx",
+    args: windows
+      ? [join(dirname(process.execPath), "node_modules", "npm", "bin", "npx-cli.js"), ...args]
+      : args,
   });
   expect(await checkClaudeSetup(options)).toMatchObject({
     status: "npx_launcher",
@@ -108,7 +112,7 @@ it("leaves a Claude HTTP server with the same name unchanged", async () => {
   expect(await readFile(path, "utf8")).toBe(source);
 });
 
-it("leaves the direct launcher in place when the configured PATH lacks npx", async () => {
+it.runIf(process.platform !== "win32")("leaves the direct launcher in place when the configured PATH lacks npx", async () => {
   const { root, path, options } = await fixture();
   const source = JSON.stringify({
     mcpServers: {
@@ -126,7 +130,7 @@ it("leaves the direct launcher in place when the configured PATH lacks npx", asy
   expect(await readFile(path, "utf8")).toBe(source);
 });
 
-it("does not switch a launcher to a different, unverified Node executable", async () => {
+it.runIf(process.platform !== "win32")("does not switch a launcher to a different, unverified Node executable", async () => {
   const { root, path, options } = await fixture();
   const windows = process.platform === "win32";
   await writeFile(join(root, windows ? "node.exe" : "node"), "", { mode: 0o700 });
@@ -148,7 +152,7 @@ it("does not switch a launcher to a different, unverified Node executable", asyn
   expect(await readFile(path, "utf8")).toBe(source);
 });
 
-it.each([
+it.runIf(process.platform !== "win32").each([
   { kind: "a relative", component: "./bin" },
   { kind: "an empty", component: "" },
 ])("preserves the direct launcher with $kind PATH component", async ({ component }) => {

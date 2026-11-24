@@ -103,7 +103,7 @@ rebut doctor --connect
 
 迁移会保留现有设置和工具审批。两个宿主都通过 npx 运行 `rebut-mcp@latest`，并禁用安装脚本。Codex 从配置目录下的 `rebut-npx` 启动。Claude Code 通过 npx 的 `--prefix` 指定 `.claude.json` 旁的 `.rebut-claude-npx`。请只在相应的 npm 目录中保留自动生成的 `package.json`。用户的 npm 注册表和缓存设置继续生效。
 
-重启宿主，确认列表中出现 Rebut 工具。宿主需要在 `PATH` 中找到 Node.js 24 或更新版本以及 `npx`。桌面应用的 `PATH` 可能与执行更新的终端不同。请使用宿主从 `PATH` 找到的同一个 Node 来更新。如果无法验证版本管理器的 shim，直接启动的注册会保留。如需迁移，请在宿主的 `PATH` 中将实际 Node 的 `bin` 目录放到 shim 前面。如果支持迁移的注册遇到错误，命令会保留该注册，在检查两个宿主后返回错误。
+重启宿主，确认列表中出现 Rebut 工具。在 Windows 上，Claude Code 使用运行更新的 Node 安装中的绝对路径来启动 `npx` CLI。如果安装位置发生变更，或 `rebut setup --check --client claude` 显示 `legacy_npx_launcher`，请再次运行 `rebut update`。其他注册需要在宿主的 `PATH` 中找到 Node.js 24 或更新版本以及 `npx`。桌面应用的 `PATH` 可能与执行更新的终端不同。请使用宿主从 `PATH` 找到的同一个 Node 来更新。如果无法验证版本管理器的 shim，直接启动的注册会保留。如需迁移，请在宿主的 `PATH` 中将实际 Node 的 `bin` 目录放到 shim 前面。如果支持迁移的注册遇到错误，命令会保留该注册，在检查两个宿主后返回错误。
 
 缓存为空时需要连接注册表。即使已有缓存，npm 也可能查询注册表，重启后运行的 Rebut 版本也可能改变。自定义启动超时时，请留出下载时间。可用 `rebut setup --check --client codex` 或 `rebut setup --check --client claude` 检查注册和 npm 目录。使用 `CLAUDE_CONFIG_DIR` 时，请在检查命令中通过 `--claude-config PATH` 指定 `.claude.json` 的完整路径。
 
