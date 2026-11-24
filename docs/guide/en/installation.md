@@ -95,17 +95,19 @@ For 0.2.x → 0.3.0, use **Worker code with existing OpenAI configuration → CL
 
 `rebut remove --client codex` removes registration, not settings, credentials, or the ledger. Follow [operations](operations.md) for backups and downgrades.
 
-### Optional npx launcher for Codex
+## Updating an MCP registration to npx
 
-Upgrade to a Rebut CLI that supports migration first. If your installed version has `rebut update`, run it once to upgrade. Then switch your existing npm-based Codex registration with this command. Add `--codex-home PATH` if you use another Codex home.
+When `rebut update` succeeds, it also switches supported existing npm registrations for Codex and Claude Code to npx. It checks registrations even when the global CLI is already current. If you start from Rebut 0.5.0 or another build without migration support, run `rebut update` once to install the new CLI and run the same command again to migrate.
 
-```sh
-rebut update --migrate-npx --client codex
-```
+For a nondefault profile, set `CODEX_HOME` or `CLAUDE_CONFIG_DIR` to the absolute path of the directory containing the host config before running the update.
 
-Restart Codex and look for the Rebut tools. Migration preserves existing settings and tool approvals, and uses `npx -y --ignore-scripts rebut-mcp@latest mcp --client codex` from the `rebut-npx` directory in the Codex home. Keep the generated `package.json` there and leave other project files out of that directory. Your npm registry and cache settings still apply.
+Migration preserves settings and tool approvals. Both hosts run `rebut-mcp@latest` through npx with install scripts disabled. Codex starts from `rebut-npx` in its config directory. Claude Code uses npx’s `--prefix` to select `.rebut-claude-npx` next to `.claude.json`. Keep the generated `package.json` as the only file in the selected npm directory. User npm registry and cache settings still apply.
 
-Codex needs Node.js 24 or newer and `npx` on its `PATH`. An empty cache requires registry access. npm can also check the registry with a populated cache because `@latest` follows a tag. The running Rebut version can change on restart. Allow time for npm to download the package when setting a custom startup timeout. `rebut setup --check --client codex` reports `npx_launcher` and checks the working directory of the migrated entry. Plain `rebut update` updates the global npm installation. To switch back to the direct launcher, back up `config.toml` and run `rebut setup --client codex --replace` from a global Rebut installation. Reapply any custom registration values, such as environment overrides, tool approvals, and timeouts, from your backup.
+Restart the host and check that the Rebut tools appear. The host needs Node.js 24 or newer and `npx` on its `PATH`. A desktop app can start with a different `PATH` from the update terminal. Run the update with the same Node installation the host resolves on its configured or inherited `PATH`. If a version manager shim cannot be verified, the update keeps the direct registration. Put the actual Node `bin` directory before the shim on the host’s `PATH` to migrate. If a supported registration cannot migrate, the command reports the host, preserves its registration, and exits with an error after checking both hosts.
+
+An empty cache requires registry access. npm may query the registry with a populated cache, and the Rebut version can change on restart. Allow time for downloads when setting a custom startup timeout. Use `rebut setup --check --client codex` or `rebut setup --check --client claude` to inspect the registration and npm directory. When using `CLAUDE_CONFIG_DIR`, pass `--claude-config PATH` to the check with the full `.claude.json` path.
+
+To switch back, back up the host config and use the global installation to run `rebut setup --client codex --replace` or `rebut setup --client claude --replace`. Reapply custom environment overrides, tool approvals, and timeouts from the backup. A later successful `rebut update` can migrate the direct registration again.
 
 ## Run a review
 

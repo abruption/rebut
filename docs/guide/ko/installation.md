@@ -97,17 +97,19 @@ rebut doctor --connect
 
 등록 제거는 `rebut remove --client codex`입니다. 설정, 키, 요청·사용량 기록은 남습니다. 백업·다운그레이드는 [운영](operations.md)을 따르세요.
 
-### Codex에서 npx로 실행하기
+## MCP 등록을 npx로 전환하기
 
-먼저 마이그레이션을 지원하는 Rebut CLI로 올리세요. 기존 버전에 `rebut update`가 있다면 이 명령으로 먼저 업데이트할 수 있습니다. 그런 다음 아래 명령으로 npm 기반 Codex 등록을 전환하세요. 별도 Codex 설정 폴더를 사용한다면 `--codex-home PATH`를 추가하세요.
+`rebut update`가 성공하면 전환 가능한 기존 Codex와 Claude Code의 npm 등록도 npx로 바꿉니다. 전역 CLI가 이미 최신이어도 등록을 확인합니다. Rebut 0.5.0처럼 마이그레이션을 지원하지 않는 버전에서는 `rebut update`로 새 CLI를 설치한 뒤 같은 명령을 한 번 더 실행하세요.
 
-```sh
-rebut update --migrate-npx --client codex
-```
+별도 프로필을 쓰는 경우 업데이트 명령을 실행하기 전에 호스트 설정 파일이 있는 폴더의 절대 경로를 `CODEX_HOME` 또는 `CLAUDE_CONFIG_DIR`로 지정하세요.
 
-Codex를 다시 시작해 Rebut 도구가 나타나는지 확인하세요. 기존 설정과 도구 승인 정보는 보존합니다. 실행 명령은 `npx -y --ignore-scripts rebut-mcp@latest mcp --client codex`로 바뀌고, Codex 설정 폴더 아래의 `rebut-npx`에서 npm을 실행합니다. 이 폴더에는 자동으로 생성된 `package.json`만 두세요. 기존 npm 레지스트리와 캐시 설정은 계속 적용됩니다.
+기존 설정과 도구 승인 정보는 보존합니다. 두 호스트 모두 설치 스크립트를 끄고 npx로 `rebut-mcp@latest`를 실행합니다. Codex는 설정 폴더의 `rebut-npx`에서 시작합니다. Claude Code는 npx의 `--prefix`로 `.claude.json` 옆의 `.rebut-claude-npx`를 지정합니다. 해당 npm 폴더에는 자동 생성된 `package.json`만 두세요. 사용자 npm 레지스트리와 캐시 설정은 계속 적용됩니다.
 
-Codex의 `PATH`에서 Node.js 24 이상과 `npx`를 찾을 수 있어야 합니다. 캐시가 비어 있으면 레지스트리에 연결해야 합니다. `@latest` 태그를 사용하므로 캐시가 있어도 npm이 레지스트리를 조회할 수 있고, 재시작할 때 실행 버전이 달라질 수 있습니다. 시작 제한을 직접 지정한다면 패키지를 내려받는 시간도 고려하세요. `rebut setup --check --client codex`는 전환한 등록을 `npx_launcher`로 표시하고 작업 폴더를 점검합니다. 옵션 없는 `rebut update`는 npm 전역 설치본을 업데이트합니다. 이전 실행 방식으로 돌아가려면 `config.toml`을 백업한 뒤 npm 전역 설치본으로 `rebut setup --client codex --replace`를 실행하세요. 직접 지정한 환경 변수, 도구 승인, 시간 제한은 백업을 보고 다시 적용하세요.
+호스트를 다시 시작해 Rebut 도구가 표시되는지 확인하세요. 호스트의 `PATH`에는 Node.js 24 이상과 `npx`가 필요합니다. 데스크톱 앱의 `PATH`는 업데이트를 실행한 터미널과 다를 수 있습니다. 호스트의 `PATH`가 가리키는 Node와 같은 설치본으로 업데이트하세요. 버전 관리자의 shim으로 실제 Node를 확인할 수 없으면 직접 실행 등록을 유지합니다. 전환하려면 호스트의 `PATH`에서 실제 Node의 `bin` 폴더를 shim보다 앞에 두세요. 전환 대상 등록에서 오류가 나면 명령은 해당 등록을 보존하고 두 호스트를 모두 확인한 뒤 오류를 반환합니다.
+
+캐시가 비어 있으면 레지스트리에 연결해야 합니다. 캐시가 있어도 npm이 레지스트리를 조회할 수 있고, 재시작 때 실행 버전이 달라질 수 있습니다. 시작 제한을 직접 지정할 때는 다운로드 시간도 고려하세요. `rebut setup --check --client codex` 또는 `rebut setup --check --client claude`로 등록과 npm 폴더를 점검할 수 있습니다. `CLAUDE_CONFIG_DIR`을 쓰면 점검 명령에 `--claude-config PATH`로 `.claude.json`의 전체 경로를 지정하세요.
+
+직접 실행으로 돌아가려면 호스트 설정을 백업하고 전역 설치본에서 `rebut setup --client codex --replace` 또는 `rebut setup --client claude --replace`를 실행하세요. 직접 지정한 환경 변수, 도구 승인, 시간 제한은 백업을 보고 다시 적용하세요. 이후 `rebut update`가 성공하면 직접 실행 등록이 다시 전환될 수 있습니다.
 
 ## 검토 실행
 

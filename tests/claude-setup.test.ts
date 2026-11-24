@@ -14,7 +14,12 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { setupClaude, removeClaude } from "../src/client/claude.js";
+import {
+  checkClaudeSetup,
+  migrateClaudeToNpx,
+  removeClaude,
+  setupClaude,
+} from "../src/client/claude.js";
 const state = vi.hoisted(() => ({ home: undefined as string | undefined }));
 vi.mock("node:os", async (original) => ({
   ...(await original<typeof import("node:os")>()),
@@ -53,6 +58,98 @@ afterEach(async () => {
     roots.splice(0).map((p) => rm(p, { recursive: true, force: true })),
   );
 });
+it("migrates an existing npm launcher to Claude npx without rewriting other fields", async () => {
+  const { root, path, options } = await fixture();
+  const legacy = {
+    type: "stdio",
+    command: join(root, "removed", "node"),
+    args: [
+      join(root, "removed", "node_modules", "rebut-mcp", "bin", "rebut.mjs"),
+      "mcp",
+      "--client",
+      "claude",
+    ],
+    env: { REBUT_TOKEN: "${REBUT_TOKEN:-}", REBUT_CONFIG_DIR: "./old-data" },
+    timeout: 1800,
+  };
+  const servers = { rebut: { ...legacy, large: 1 }, other: { command: "other" } };
+  const source = JSON.stringify({ mcpServers: servers }).replace(
+    '"large":1',
+    '"large":9007199254740993',
+  );
+  await writeFile(path, source, { mode: 0o600 });
+  expect(await migrateClaudeToNpx(options)).toEqual({ configPath: path, changed: true });
+  const output = await readFile(path, "utf8");
+  expect(output).toContain('"large":9007199254740993');
+  expect(JSON.parse(output).mcpServers.rebut).toMatchObject({
+    ...legacy,
+    command: "npx",
+    args: [
+      "--prefix", join(root, ".rebut-claude-npx"), "-y", "--ignore-scripts",
+      "rebut-mcp@latest", "mcp", "--client", "claude",
+    ],
+  });
+  expect(await checkClaudeSetup(options)).toMatchObject({
+    status: "npx_launcher",
+    launcher: { prefix: "present" },
+  });
+  expect((await migrateClaudeToNpx(options)).changed).toBe(false);
+  expect(await readFile(path, "utf8")).toBe(output);
+  expect((await removeClaude(options)).changed).toBe(true);
+  expect(JSON.parse(await readFile(path, "utf8")).mcpServers).toEqual({
+    other: servers.other,
+  });
+});
+
+it("leaves a Claude HTTP server with the same name unchanged", async () => {
+  const source = '{"mcpServers":{"rebut":{"type":"http","url":"https://example.invalid/mcp"}}}';
+  const { path, options } = await fixture(source);
+  await expect(migrateClaudeToNpx(options)).rejects.toMatchObject({
+    code: "UNSUPPORTED_NPX_MIGRATION",
+  });
+  expect(await readFile(path, "utf8")).toBe(source);
+});
+
+it("leaves the direct launcher in place when the configured PATH lacks npx", async () => {
+  const { root, path, options } = await fixture();
+  const source = JSON.stringify({
+    mcpServers: {
+      rebut: {
+        command: join(root, "runtime", "node"),
+        args: [join(root, "node_modules", "rebut-mcp", "bin", "rebut.mjs"), "mcp"],
+        env: { PATH: root },
+      },
+    },
+  });
+  await writeFile(path, source, { mode: 0o600 });
+  await expect(migrateClaudeToNpx(options)).rejects.toMatchObject({
+    code: "NPX_UNAVAILABLE",
+  });
+  expect(await readFile(path, "utf8")).toBe(source);
+});
+
+it("does not switch a launcher to a different, unverified Node executable", async () => {
+  const { root, path, options } = await fixture();
+  const windows = process.platform === "win32";
+  await writeFile(join(root, windows ? "node.exe" : "node"), "", { mode: 0o700 });
+  await writeFile(join(root, windows ? "npx.cmd" : "npx"), "", { mode: 0o700 });
+  const source = JSON.stringify({
+    mcpServers: {
+      rebut: {
+        command: join(root, "old", windows ? "node.exe" : "node"),
+        args: [join(root, "node_modules", "rebut-mcp", "bin", "rebut.mjs"), "mcp"],
+        env: { [windows ? "Path" : "PATH"]: root },
+      },
+    },
+  });
+  await writeFile(path, source, { mode: 0o600 });
+  await expect(migrateClaudeToNpx(options)).rejects.toMatchObject({
+    code: "NPX_RUNTIME_UNVERIFIED",
+    message: expect.stringContaining("same Node.js 24+ executable"),
+  });
+  expect(await readFile(path, "utf8")).toBe(source);
+});
+
 it("creates a user-only entry at the documented default without granting permissions", async () => {
   const { path, options } = await fixture();
   vi.stubEnv("CLAUDE_CONFIG_DIR", "");

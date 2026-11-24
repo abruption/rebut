@@ -95,17 +95,19 @@ rebut doctor --connect
 
 `rebut remove --client codex` 仅删除注册，不删除设置、凭据或账本。备份与降级见[运维](operations.md)。
 
-### 在 Codex 中使用 npx 启动
+## 将 MCP 注册切换为 npx
 
-请先升级到支持迁移的 Rebut CLI。如果旧版提供 `rebut update`，可先用它升级。接着运行以下命令，切换 Codex 中已有的 npm 版 Rebut 注册。如果使用其他 Codex 配置目录，请加上 `--codex-home PATH`。
+`rebut update` 成功后，会将 Codex 和 Claude Code 中支持迁移的现有 npm 注册切换为 npx。即使全局 CLI 已是最新版，命令也会检查注册。若从 Rebut 0.5.0 等不支持迁移的版本升级，请先运行 `rebut update` 安装新版 CLI，再运行一次同一条命令完成迁移。
 
-```sh
-rebut update --migrate-npx --client codex
-```
+若使用自定义配置，请在更新前将 `CODEX_HOME` 或 `CLAUDE_CONFIG_DIR` 设为宿主配置文件所在目录的绝对路径。
 
-重启 Codex，确认 Rebut 工具已出现在列表中。迁移会保留现有设置和工具审批设置，并从 Codex 配置目录下的 `rebut-npx` 运行 `npx -y --ignore-scripts rebut-mcp@latest mcp --client codex`。该目录中只需保留自动生成的 `package.json`。npm 的注册表和缓存设置继续生效。
+迁移会保留现有设置和工具审批。两个宿主都通过 npx 运行 `rebut-mcp@latest`，并禁用安装脚本。Codex 从配置目录下的 `rebut-npx` 启动。Claude Code 通过 npx 的 `--prefix` 指定 `.claude.json` 旁的 `.rebut-claude-npx`。请只在相应的 npm 目录中保留自动生成的 `package.json`。用户的 npm 注册表和缓存设置继续生效。
 
-Codex 必须能从 `PATH` 找到 Node.js 24 或更新版本以及 `npx`。缓存为空时需要连接 npm 注册表。使用 `@latest` 标签时，即使已有缓存，npm 也可能查询注册表。重启后运行的 Rebut 版本可能会改变。自定义启动超时时间时，请留出下载软件包所需的时间。`rebut setup --check --client codex` 会将已迁移的注册显示为 `npx_launcher`，并检查工作目录。不带选项的 `rebut update` 用于升级 npm 全局安装。如需切回直接启动，请备份 `config.toml`，然后使用 npm 全局安装的 Rebut 运行 `rebut setup --client codex --replace`。如果曾自定义环境变量、工具审批或超时时间，请参照备份重新设置。
+重启宿主，确认列表中出现 Rebut 工具。宿主需要在 `PATH` 中找到 Node.js 24 或更新版本以及 `npx`。桌面应用的 `PATH` 可能与执行更新的终端不同。请使用宿主从 `PATH` 找到的同一个 Node 来更新。如果无法验证版本管理器的 shim，直接启动的注册会保留。如需迁移，请在宿主的 `PATH` 中将实际 Node 的 `bin` 目录放到 shim 前面。如果支持迁移的注册遇到错误，命令会保留该注册，在检查两个宿主后返回错误。
+
+缓存为空时需要连接注册表。即使已有缓存，npm 也可能查询注册表，重启后运行的 Rebut 版本也可能改变。自定义启动超时时，请留出下载时间。可用 `rebut setup --check --client codex` 或 `rebut setup --check --client claude` 检查注册和 npm 目录。使用 `CLAUDE_CONFIG_DIR` 时，请在检查命令中通过 `--claude-config PATH` 指定 `.claude.json` 的完整路径。
+
+如需切回直接启动，请备份宿主配置文件，然后使用全局安装的 Rebut 运行 `rebut setup --client codex --replace` 或 `rebut setup --client claude --replace`。自定义环境变量、工具审批和超时时间可参照备份重新设置。后续成功执行 `rebut update` 时，直接启动的注册可能再次迁移。
 
 ## 执行审查
 

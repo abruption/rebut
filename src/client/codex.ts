@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   chmod,
   lstat,
   mkdir,
   open,
-  readdir,
   readFile,
   rename,
   unlink,
@@ -16,6 +15,16 @@ import {
 import { parse, stringify } from "smol-toml";
 import { CODEX_TOOL_TIMEOUT_SECONDS } from "../timeouts.js";
 import { inspectLauncher } from "./setup-check.js";
+import {
+  checkNpxPath,
+  fullyQualifiedPath,
+  isNpmLauncher,
+  matchesNpxLauncher,
+  NpxLauncherError,
+  npxLauncherArgs,
+  npxProjectStatus,
+  prepareNpxWorkingDirectory,
+} from "./npx-launcher.js";
 
 export interface CodexSetupOptions {
   codexHome?: string;
@@ -84,50 +93,14 @@ function desired(options: CodexSetupOptions): Table {
   };
 }
 
-const npxArgs = [
-  "-y",
-  "--ignore-scripts",
-  "rebut-mcp@latest",
-  "mcp",
-  "--client",
-  "codex",
-];
+const npxArgs = npxLauncherArgs("codex");
 
 function npxWorkingDirectory(configPath: string) {
   return join(dirname(configPath), "rebut-npx");
 }
 
 function isManagedNpx(entry: unknown, cwd: string) {
-  return (
-    table(entry) &&
-    (entry.type === undefined || entry.type === "stdio") &&
-    entry.url === undefined &&
-    entry.command === "npx" &&
-    equivalent(entry.args, npxArgs) &&
-    entry.cwd === cwd
-  );
-}
-
-function isNpmLauncher(entry: unknown): entry is Table {
-  if (
-    !table(entry) ||
-    (entry.type !== undefined && entry.type !== "stdio") ||
-    entry.url !== undefined ||
-    typeof entry.command !== "string" ||
-    !fullyQualifiedPath(entry.command) ||
-    !/^node(?:\.exe)?$/i.test(basename(entry.command)) ||
-    !Array.isArray(entry.args)
-  )
-    return false;
-  const [script, subcommand, clientFlag, client] = entry.args;
-  return (
-    typeof script === "string" &&
-    fullyQualifiedPath(script) &&
-    /[\\/]node_modules[\\/]rebut-mcp[\\/]bin[\\/]rebut\.mjs$/i.test(script) &&
-    subcommand === "mcp" &&
-    (entry.args.length === 2 ||
-      (entry.args.length === 4 && clientFlag === "--client" && client === "codex"))
-  );
+  return table(entry) && entry.cwd === cwd && matchesNpxLauncher(entry, npxArgs);
 }
 
 function usesWorkingDirectory(entry: Table) {
@@ -147,76 +120,6 @@ function usesWorkingDirectory(entry: Table) {
   );
 }
 
-function fullyQualifiedPath(value: string) {
-  return (
-    isAbsolute(value) &&
-    (process.platform !== "win32" || /^(?:[A-Za-z]:[\\/]|[\\/]{2})/.test(value))
-  );
-}
-
-const npxProjectFile = "package.json";
-const npxProject = '{"private":true}\n';
-
-function unsafeNpxDirectory() {
-  return new CodexSetupError(
-    "UNSAFE_NPX_CWD",
-    "The rebut-npx folder under the Codex configuration must be private and contain only Rebut's package.json.",
-  );
-}
-
-async function npxDirectoryEntries(cwd: string) {
-  const stat = await lstat(cwd);
-  const uid = process.getuid?.();
-  if (
-    !stat.isDirectory() ||
-    stat.isSymbolicLink() ||
-    (uid !== undefined && (stat.uid !== uid || (stat.mode & 0o077) !== 0))
-  )
-    throw unsafeNpxDirectory();
-  return readdir(cwd);
-}
-
-async function verifyNpxProject(cwd: string, entries: string[]) {
-  if (!entries.length) return false;
-  if (entries.length !== 1 || entries[0] !== npxProjectFile)
-    throw unsafeNpxDirectory();
-  const path = join(cwd, npxProjectFile);
-  const stat = await lstat(path);
-  if (
-    !stat.isFile() ||
-    stat.nlink !== 1 ||
-    stat.size !== npxProject.length ||
-    (await readFile(path, "utf8")) !== npxProject
-  )
-    throw unsafeNpxDirectory();
-  return true;
-}
-
-async function prepareNpxWorkingDirectory(cwd: string) {
-  try {
-    await mkdir(cwd, { mode: 0o700 });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-  }
-  if (await verifyNpxProject(cwd, await npxDirectoryEntries(cwd))) return;
-  // Keep npm's project discovery inside the dedicated launch directory.
-  await writeFile(join(cwd, npxProjectFile), npxProject, {
-    flag: "wx",
-    mode: 0o600,
-  });
-}
-
-async function npxProjectStatus(cwd: string) {
-  try {
-    return (await verifyNpxProject(cwd, await npxDirectoryEntries(cwd)))
-      ? "present"
-      : "missing";
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ENOENT"
-      ? "missing"
-      : "unsafe";
-  }
-}
 function providerKeyVars(value: unknown): boolean {
   return (
     value === undefined ||
@@ -469,19 +372,22 @@ async function update(
         await prepareNpxWorkingDirectory(cwd);
         return { configPath, changed: false };
       }
-      if (
-        !isNpmLauncher(existing) ||
-        (existing.cwd !== undefined && existing.cwd !== cwd)
-      )
+      if (!isNpmLauncher(existing, "codex"))
         throw new CodexSetupError(
           "UNSUPPORTED_NPX_MIGRATION",
-          "Migration requires an existing Codex Rebut npm registration with the standard working directory.",
+          "Migration requires an existing Codex Rebut npm registration.",
+        );
+      if (existing.cwd !== undefined && existing.cwd !== cwd)
+        throw new CodexSetupError(
+          "UNSAFE_NPX_MIGRATION",
+          "Keep the direct launcher or remove its custom cwd before migrating.",
         );
       if (existing.cwd === undefined && usesWorkingDirectory(existing))
         throw new CodexSetupError(
-          "UNSUPPORTED_NPX_MIGRATION",
+          "UNSAFE_NPX_MIGRATION",
           "Before migrating, put absolute REBUT_CONFIG_DIR and REBUT_BW_GET paths in the Rebut env table and remove those path names from env_vars.",
         );
+      await checkNpxPath(existing);
       replacement = {
         startup_timeout_sec: STARTUP_TIMEOUT_SECONDS,
         ...existing,
@@ -535,7 +441,8 @@ async function update(
     temporary = undefined;
     return { configPath, changed: true };
   } catch (error) {
-    if (error instanceof CodexSetupError) throw error;
+    if (error instanceof CodexSetupError || error instanceof NpxLauncherError)
+      throw error;
     throw new CodexSetupError(
       "CONFIG_IO",
       "Unable to update Codex config. Check the config directory and file permissions.",

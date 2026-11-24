@@ -95,17 +95,19 @@ rebut doctor --connect
 
 `rebut remove --client codex` は登録だけを外し、設定・キー・台帳は削除しません。バックアップとダウングレードは[運用](operations.md)を参照してください。
 
-### Codex で npx を使う
+## MCP 登録を npx に切り替える
 
-まず、移行機能がある Rebut CLI に更新してください。旧バージョンに `rebut update` がある場合は、そのコマンドで更新できます。次に、以下のコマンドで npm 版 Rebut の既存の Codex 登録を切り替えます。別の Codex 設定フォルダを使う場合は `--codex-home PATH` を追加してください。
+`rebut update` が成功すると、Codex と Claude Code の対応する既存の npm 登録を npx に切り替えます。グローバルの CLI がすでに最新の場合も登録を確認します。Rebut 0.5.0 など移行機能がない版から更新する場合は、先に `rebut update` で新しい CLI を入れ、同じコマンドをもう一度実行してください。
 
-```sh
-rebut update --migrate-npx --client codex
-```
+別のプロファイルを使う場合は、ホストの設定ファイルがあるフォルダの絶対パスを `CODEX_HOME` または `CLAUDE_CONFIG_DIR` に指定してから更新します。
 
-Codex を再起動し、Rebut のツールが表示されることを確認してください。既存の設定とツールの承認設定は引き継がれます。Codex の設定フォルダ内に作成した `rebut-npx` から `npx -y --ignore-scripts rebut-mcp@latest mcp --client codex` を実行します。このフォルダには自動生成された `package.json` だけを置いてください。npm のレジストリとキャッシュの設定は引き続き使われます。
+既存の設定とツールの承認設定は引き継がれます。どちらのホストもインストールスクリプトを無効にし、npx で `rebut-mcp@latest` を起動します。Codex は設定フォルダ内の `rebut-npx` から起動します。Claude Code は npx の `--prefix` で `.claude.json` の隣にある `.rebut-claude-npx` を指定します。この npm フォルダには自動生成された `package.json` だけを置いてください。ユーザーの npm レジストリとキャッシュの設定は引き続き使われます。
 
-Codex の `PATH` から Node.js 24 以降と `npx` が見つかる必要があります。キャッシュが空の場合はレジストリへの接続が必要です。`@latest` タグを使うため、キャッシュがあっても npm がレジストリを参照することがあります。再起動時に Rebut のバージョンが変わることがあります。起動タイムアウトを変更する場合は、パッケージのダウンロードにかかる時間も考慮してください。`rebut setup --check --client codex` では移行した登録を `npx_launcher` と表示し、作業フォルダを確認します。通常の `rebut update` は npm のグローバルインストールを更新します。元の起動方法に戻すには `config.toml` をバックアップし、npm でグローバルにインストールした Rebut から `rebut setup --client codex --replace` を実行してください。個別に設定した環境変数、ツールの承認、タイムアウトは、バックアップを参照して設定し直してください。
+ホストを再起動し、Rebut のツールが表示されることを確認してください。ホストの `PATH` から Node.js 24 以降と `npx` が見つかる必要があります。デスクトップアプリの `PATH` は更新に使ったターミナルと異なることがあります。ホストの `PATH` が参照するものと同じ Node を使って更新してください。バージョン管理ツールの shim で実際の Node を確認できない場合は、直接起動の登録を維持します。移行するには、ホストの `PATH` で実際の Node の `bin` を shim より前に置いてください。対応する登録で移行に失敗した場合、元の登録を残し、両方のホストを確認してからエラーを返します。
+
+キャッシュが空の場合はレジストリへの接続が必要です。キャッシュがあっても npm がレジストリを参照することがあり、再起動時に Rebut のバージョンが変わることがあります。起動タイムアウトを変更する場合はダウンロード時間も考慮してください。`rebut setup --check --client codex` または `rebut setup --check --client claude` で登録と npm フォルダを確認できます。`CLAUDE_CONFIG_DIR` を使う場合、確認コマンドの `--claude-config PATH` に `.claude.json` のフルパスを指定してください。
+
+元の起動方法に戻すにはホストの設定ファイルをバックアップし、グローバルにインストールした Rebut から `rebut setup --client codex --replace` または `rebut setup --client claude --replace` を実行してください。環境変数、ツールの承認、タイムアウトの個別設定はバックアップを参照して設定し直してください。次回の `rebut update` が成功すると、直接起動の登録が再び切り替わることがあります。
 
 ## レビュー実行
 

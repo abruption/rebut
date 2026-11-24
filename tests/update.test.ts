@@ -68,7 +68,7 @@ function fixture(context: TestContext) {
     root: modules,
     dryRun: "false",
     offline: "false",
-    latest: "0.4.1",
+    latest: "0.4.1" as string | string[],
     installedVersion: "0.4.1",
     installError: false,
   };
@@ -121,7 +121,11 @@ function fixture(context: TestContext) {
 it("updates the verified package in its one-time prefix and checks the installed version", (context) => {
   const { prefix, update, run } = fixture(context);
   const global = ["--global", "--prefix", prefix];
-  expect(update()).toEqual({ previousVersion: "0.4.0", version: "0.4.1" });
+  expect(update()).toEqual({
+    previousVersion: "0.4.0",
+    version: "0.4.1",
+    latestVersion: "0.4.1",
+  });
   expect(run.mock.calls.map(([, args]) => args.slice(1))).toEqual([
     ["--version", "--no-json"],
     ["root", ...global, "--no-json"],
@@ -152,9 +156,13 @@ it("updates the verified package in its one-time prefix and checks the installed
 
 it("avoids rewriting or downgrading the installation when latest is current or older", (context) => {
   const { options, run, update } = fixture(context);
-  for (const latest of ["0.4.0", "0.3.9"]) {
+  for (const latest of ["0.4.0", "0.3.9", ["0.4.0"]]) {
     options.latest = latest;
-    expect(update()).toEqual({ previousVersion: "0.4.0", version: "0.4.0" });
+    expect(update()).toEqual({
+      previousVersion: "0.4.0",
+      version: "0.4.0",
+      latestVersion: typeof latest === "string" ? latest : latest[0],
+    });
   }
   expect(run.mock.calls.some(([, args]) => args[1] === "install")).toBe(false);
 });
@@ -197,6 +205,8 @@ it("refuses npm root mismatches, dry-run and offline mode without installing", (
 it("refuses a prerelease latest tag and a competing update lock", (context) => {
   const { prefix, options, run, update } = fixture(context);
   options.latest = "0.5.0-rc.1";
+  expect(() => update()).toThrow("Unable to verify a stable Rebut version");
+  options.latest = ["0.4.1", "0.4.2"];
   expect(() => update()).toThrow("Unable to verify a stable Rebut version");
   options.latest = "0.4.1";
   const lock = join(prefix, ".rebut-update.lock");

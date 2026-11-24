@@ -144,17 +144,17 @@ describe("Codex npx migration", () => {
   });
 
   it.each([
-    { command: "custom", args: ["mcp"] },
-    { ...legacy, url: "https://example.invalid/mcp" },
-    { ...legacy, cwd: resolve("another-directory") },
-    { ...legacy, env: { REBUT_CONFIG_DIR: "relative-settings" } },
-    { ...legacy, env_vars: ["REBUT_CONFIG_DIR"] },
-    { ...legacy, env: { REBUT_BW_GET: "../bw-get" } },
-  ])("preserves unfamiliar registrations", async (rebut) => {
+    ["UNSUPPORTED_NPX_MIGRATION", { command: "custom", args: ["mcp"] }],
+    ["UNSUPPORTED_NPX_MIGRATION", { ...legacy, url: "https://example.invalid/mcp" }],
+    ["UNSAFE_NPX_MIGRATION", { ...legacy, cwd: resolve("another-directory") }],
+    ["UNSAFE_NPX_MIGRATION", { ...legacy, env: { REBUT_CONFIG_DIR: "relative-settings" } }],
+    ["UNSAFE_NPX_MIGRATION", { ...legacy, env_vars: ["REBUT_CONFIG_DIR"] }],
+    ["UNSAFE_NPX_MIGRATION", { ...legacy, env: { REBUT_BW_GET: "../bw-get" } }],
+  ])("preserves registrations that cannot migrate (%s)", async (code, rebut) => {
     const source = stringify({ mcp_servers: { rebut } });
     const { configPath, options } = await fixture(source);
     await expect(migrateCodexToNpx(options)).rejects.toMatchObject({
-      code: "UNSUPPORTED_NPX_MIGRATION",
+      code,
     });
     expect(await readFile(configPath, "utf8")).toBe(source);
   });
