@@ -95,6 +95,18 @@ rebut doctor --connect
 
 `rebut remove --client codex` 仅删除注册，不删除设置、凭据或账本。备份与降级见[运维](operations.md)。
 
+### 在 Codex 中使用 npx 启动
+
+请先升级到支持迁移的 Rebut CLI。如果旧版提供 `rebut update`，可先用它升级。接着运行以下命令，切换 Codex 中已有的 npm 版 Rebut 注册。如果使用其他 Codex 配置目录，请加上 `--codex-home PATH`。
+
+```sh
+rebut update --migrate-npx --client codex
+```
+
+重启 Codex，确认 Rebut 工具已出现在列表中。迁移会保留现有设置和工具审批设置，并从 Codex 配置目录下的 `rebut-npx` 运行 `npx -y --ignore-scripts rebut-mcp@latest mcp --client codex`。该目录中只需保留自动生成的 `package.json`。npm 的注册表和缓存设置继续生效。
+
+Codex 必须能从 `PATH` 找到 Node.js 24 或更新版本以及 `npx`。缓存为空时需要连接 npm 注册表。使用 `@latest` 标签时，即使已有缓存，npm 也可能查询注册表。重启后运行的 Rebut 版本可能会改变。自定义启动超时时间时，请留出下载软件包所需的时间。`rebut setup --check --client codex` 会将已迁移的注册显示为 `npx_launcher`，并检查工作目录。不带选项的 `rebut update` 用于升级 npm 全局安装。如需切回直接启动，请备份 `config.toml`，然后使用 npm 全局安装的 Rebut 运行 `rebut setup --client codex --replace`。如果曾自定义环境变量、工具审批或超时时间，请参照备份重新设置。
+
 ## 执行审查
 
 ```sh

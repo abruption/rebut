@@ -97,6 +97,18 @@ rebut doctor --connect
 
 등록 제거는 `rebut remove --client codex`입니다. 설정, 키, 요청·사용량 기록은 남습니다. 백업·다운그레이드는 [운영](operations.md)을 따르세요.
 
+### Codex에서 npx로 실행하기
+
+먼저 마이그레이션을 지원하는 Rebut CLI로 올리세요. 기존 버전에 `rebut update`가 있다면 이 명령으로 먼저 업데이트할 수 있습니다. 그런 다음 아래 명령으로 npm 기반 Codex 등록을 전환하세요. 별도 Codex 설정 폴더를 사용한다면 `--codex-home PATH`를 추가하세요.
+
+```sh
+rebut update --migrate-npx --client codex
+```
+
+Codex를 다시 시작해 Rebut 도구가 나타나는지 확인하세요. 기존 설정과 도구 승인 정보는 보존합니다. 실행 명령은 `npx -y --ignore-scripts rebut-mcp@latest mcp --client codex`로 바뀌고, Codex 설정 폴더 아래의 `rebut-npx`에서 npm을 실행합니다. 이 폴더에는 자동으로 생성된 `package.json`만 두세요. 기존 npm 레지스트리와 캐시 설정은 계속 적용됩니다.
+
+Codex의 `PATH`에서 Node.js 24 이상과 `npx`를 찾을 수 있어야 합니다. 캐시가 비어 있으면 레지스트리에 연결해야 합니다. `@latest` 태그를 사용하므로 캐시가 있어도 npm이 레지스트리를 조회할 수 있고, 재시작할 때 실행 버전이 달라질 수 있습니다. 시작 제한을 직접 지정한다면 패키지를 내려받는 시간도 고려하세요. `rebut setup --check --client codex`는 전환한 등록을 `npx_launcher`로 표시하고 작업 폴더를 점검합니다. 옵션 없는 `rebut update`는 npm 전역 설치본을 업데이트합니다. 이전 실행 방식으로 돌아가려면 `config.toml`을 백업한 뒤 npm 전역 설치본으로 `rebut setup --client codex --replace`를 실행하세요. 직접 지정한 환경 변수, 도구 승인, 시간 제한은 백업을 보고 다시 적용하세요.
+
 ## 검토 실행
 
 ```sh

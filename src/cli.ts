@@ -30,6 +30,7 @@ import { UpdateError, updateGlobalInstallation } from "./client/update.js";
 import { profileProvider } from "./contracts.js";
 import {
   checkCodexSetup,
+  migrateCodexToNpx,
   setupCodex,
   removeCodex,
   CodexSetupError,
@@ -83,6 +84,7 @@ rebut setup --client codex|claude [--codex-home PATH | --claude-config PATH] [--
 rebut setup --check --client codex|claude [--codex-home PATH | --claude-config PATH]  Inspect the registered launcher
 rebut remove --client codex|claude [--codex-home PATH | --claude-config PATH] [--replace]
 rebut update                   Update the active global npm installation
+rebut update --migrate-npx --client codex [--codex-home PATH]  Switch an existing Codex registration to npx
 rebut mcp [--client codex|claude] Start the local server or Worker bridge
 rebut doctor [--connect] [--provider] [--client codex|claude]         Check selected backend; --connect lists tools, never calls a model
 rebut status --pending           Reserved/unknown metadata for the selected backend
@@ -135,6 +137,14 @@ function selectedClient(value: unknown): McpClient | undefined {
   throw new CliError("Specify --client codex or claude.");
 }
 
+function updateOptions(args: string[]) {
+  return options(args, {
+    "migrate-npx": { type: "boolean" },
+    client: { type: "string" },
+    "codex-home": { type: "string" },
+  }).values;
+}
+
 function commandHelp(command: string | undefined, rest: string[]) {
   if (!command || command === "--help" || command === "-h") return HELP;
   if (command === "--version" || command === "-v") return;
@@ -163,8 +173,11 @@ function commandHelp(command: string | undefined, rest: string[]) {
   if (!usage.length)
     throw new CliError("Unknown help topic. Run rebut --help.");
   if (topic[0] === "update") {
-    if (!namedHelp) options(rest.slice(0, -1), {});
-    return "rebut update\nStop Rebut MCP hosts before updating. Restart the hosts after the package is updated. If the release requires re-registration, run rebut setup --client codex --replace or rebut setup --client claude --replace.\n";
+    if (!namedHelp) updateOptions(rest.slice(0, -1));
+    return (
+      usage.join("\n") +
+      "\nStop Rebut MCP hosts before updating. Restart the hosts after the package is updated or the launcher is migrated. For direct re-registration, run rebut setup --client codex --replace or rebut setup --client claude --replace. The migration option only changes the selected Codex registration and requires node and npx on Codex's PATH.\n"
+    );
   }
   return usage.join("\n") + "\n";
 }
@@ -283,7 +296,21 @@ export async function runCli(args: string[]): Promise<void> {
     return;
   }
   if (command === "update") {
-    options(rest, {});
+    const update = updateOptions(rest);
+    if (update["migrate-npx"]) {
+      if (update.client !== "codex")
+        throw new CliError("Use --migrate-npx with --client codex.");
+      const result = await migrateCodexToNpx({
+        codexHome: update["codex-home"] as string | undefined,
+        entrypoint: process.argv[1]!,
+      });
+      output({ ...result, launcher: "npx" });
+      return;
+    }
+    if (rest.length)
+      throw new CliError(
+        "Host options require --migrate-npx. Run rebut update --help.",
+      );
     const { previousVersion, version } = updateGlobalInstallation(
       fileURLToPath(import.meta.url),
     );

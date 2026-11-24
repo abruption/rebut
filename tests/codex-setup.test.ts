@@ -12,7 +12,12 @@ import {
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parse, stringify } from "smol-toml";
-import { removeCodex, setupCodex } from "../src/client/codex.js";
+import {
+  checkCodexSetup,
+  migrateCodexToNpx,
+  removeCodex,
+  setupCodex,
+} from "../src/client/codex.js";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -50,6 +55,121 @@ afterEach(async () => {
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
+});
+
+describe("Codex npx migration", () => {
+  const legacy = {
+    command: resolve("removed-node", "bin", "node"),
+    args: [
+      resolve("removed-node", "node_modules", "rebut-mcp", "bin", "rebut.mjs"),
+      "mcp",
+    ],
+  };
+
+  it("switches an old registration even after its npm prefix disappears", async () => {
+    const rebut = {
+      ...legacy,
+      startup_timeout_sec: 95,
+      tool_timeout_sec: 1860,
+      env_vars: ["REBUT_TOKEN"],
+      env: { REBUT_CONFIG_DIR: resolve("rebut-settings") },
+      tools: { review: { approval_mode: "prompt" } },
+    };
+    const other = { command: "another-server" };
+    const { configPath, options } = await fixture(
+      stringify({ mcp_servers: { rebut, other } }),
+    );
+    const cwd = join(options.codexHome, "rebut-npx");
+    expect(await migrateCodexToNpx(options)).toEqual({
+      configPath,
+      changed: true,
+    });
+    const updated = await readFile(configPath, "utf8");
+    expect(parse(updated)).toEqual({
+      mcp_servers: {
+        rebut: {
+          ...rebut,
+          command: "npx",
+          args: [
+            "-y",
+            "--ignore-scripts",
+            "rebut-mcp@latest",
+            "mcp",
+            "--client",
+            "codex",
+          ],
+          cwd,
+        },
+        other,
+      },
+    });
+    expect(await readdir(cwd)).toEqual(["package.json"]);
+    expect(JSON.parse(await readFile(join(cwd, "package.json"), "utf8"))).toEqual({
+      private: true,
+    });
+    expect(await checkCodexSetup(options)).toEqual({
+      configPath,
+      status: "npx_launcher",
+      launcher: { cwd: "present" },
+    });
+    expect(await migrateCodexToNpx(options)).toEqual({
+      configPath,
+      changed: false,
+    });
+    expect(await readFile(configPath, "utf8")).toBe(updated);
+    expect(await removeCodex(options)).toEqual({ configPath, changed: true });
+    expect(parse(await readFile(configPath, "utf8"))).toEqual({
+      mcp_servers: { other },
+    });
+  });
+
+  it("uses the normal startup timeout and reports a missing launch directory", async () => {
+    const rebut = { ...legacy, args: [...legacy.args, "--client", "codex"] };
+    const { configPath, options } = await fixture(
+      stringify({ mcp_servers: { rebut } }),
+    );
+    const cwd = join(options.codexHome, "rebut-npx");
+    await migrateCodexToNpx(options);
+    expect(parse(await readFile(configPath, "utf8"))).toMatchObject({
+      mcp_servers: { rebut: { startup_timeout_sec: 60 } },
+    });
+    await rm(join(cwd, "package.json"));
+    expect(await checkCodexSetup(options)).toMatchObject({
+      status: "npx_launcher",
+      launcher: { cwd: "missing" },
+    });
+    expect(await readdir(cwd)).toEqual([]);
+    expect((await migrateCodexToNpx(options)).changed).toBe(false);
+    expect(await readdir(cwd)).toEqual(["package.json"]);
+  });
+
+  it.each([
+    { command: "custom", args: ["mcp"] },
+    { ...legacy, url: "https://example.invalid/mcp" },
+    { ...legacy, cwd: resolve("another-directory") },
+    { ...legacy, env: { REBUT_CONFIG_DIR: "relative-settings" } },
+    { ...legacy, env_vars: ["REBUT_CONFIG_DIR"] },
+    { ...legacy, env: { REBUT_BW_GET: "../bw-get" } },
+  ])("preserves unfamiliar registrations", async (rebut) => {
+    const source = stringify({ mcp_servers: { rebut } });
+    const { configPath, options } = await fixture(source);
+    await expect(migrateCodexToNpx(options)).rejects.toMatchObject({
+      code: "UNSUPPORTED_NPX_MIGRATION",
+    });
+    expect(await readFile(configPath, "utf8")).toBe(source);
+  });
+
+  it("preserves the existing launcher when the npm directory is occupied", async () => {
+    const source = stringify({ mcp_servers: { rebut: legacy } });
+    const { configPath, options } = await fixture(source);
+    const cwd = join(options.codexHome, "rebut-npx");
+    await mkdir(cwd, { mode: 0o700 });
+    await writeFile(join(cwd, ".npmrc"), "offline=true\n");
+    await expect(migrateCodexToNpx(options)).rejects.toMatchObject({
+      code: "UNSAFE_NPX_CWD",
+    });
+    expect(await readFile(configPath, "utf8")).toBe(source);
+  });
 });
 
 describe("portable Codex setup", () => {

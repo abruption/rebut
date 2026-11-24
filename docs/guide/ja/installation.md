@@ -95,6 +95,18 @@ rebut doctor --connect
 
 `rebut remove --client codex` は登録だけを外し、設定・キー・台帳は削除しません。バックアップとダウングレードは[運用](operations.md)を参照してください。
 
+### Codex で npx を使う
+
+まず、移行機能がある Rebut CLI に更新してください。旧バージョンに `rebut update` がある場合は、そのコマンドで更新できます。次に、以下のコマンドで npm 版 Rebut の既存の Codex 登録を切り替えます。別の Codex 設定フォルダを使う場合は `--codex-home PATH` を追加してください。
+
+```sh
+rebut update --migrate-npx --client codex
+```
+
+Codex を再起動し、Rebut のツールが表示されることを確認してください。既存の設定とツールの承認設定は引き継がれます。Codex の設定フォルダ内に作成した `rebut-npx` から `npx -y --ignore-scripts rebut-mcp@latest mcp --client codex` を実行します。このフォルダには自動生成された `package.json` だけを置いてください。npm のレジストリとキャッシュの設定は引き続き使われます。
+
+Codex の `PATH` から Node.js 24 以降と `npx` が見つかる必要があります。キャッシュが空の場合はレジストリへの接続が必要です。`@latest` タグを使うため、キャッシュがあっても npm がレジストリを参照することがあります。再起動時に Rebut のバージョンが変わることがあります。起動タイムアウトを変更する場合は、パッケージのダウンロードにかかる時間も考慮してください。`rebut setup --check --client codex` では移行した登録を `npx_launcher` と表示し、作業フォルダを確認します。通常の `rebut update` は npm のグローバルインストールを更新します。元の起動方法に戻すには `config.toml` をバックアップし、npm でグローバルにインストールした Rebut から `rebut setup --client codex --replace` を実行してください。個別に設定した環境変数、ツールの承認、タイムアウトは、バックアップを参照して設定し直してください。
+
 ## レビュー実行
 
 ```sh

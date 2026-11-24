@@ -77,6 +77,39 @@ it("update rejects invalid arguments and source installs before reading settings
     expect(source.status).toBe(1);
     expect(source.stderr).toContain("global npm installation");
   }));
+it("migrates an existing Codex registration without reading Rebut settings", async () =>
+  fixture(async (dir) => {
+    const settings = join(dir, "settings");
+    const codexHome = join(dir, "codex home");
+    await mkdir(settings);
+    await writeFile(join(settings, "config.json"), "{malformed");
+    await mkdir(codexHome);
+    await writeFile(
+      join(codexHome, "config.toml"),
+      stringify({
+        mcp_servers: {
+          rebut: {
+            command: join(dir, "old", "node"),
+            args: [
+              join(dir, "old", "node_modules", "rebut-mcp", "bin", "rebut.mjs"),
+              "mcp",
+            ],
+          },
+        },
+      }),
+    );
+    const argumentsFor = ["update", "--migrate-npx", "--codex-home", codexHome];
+    expect(cli(dir, [...argumentsFor, "--client", "claude"]).status).toBe(1);
+    const result = cli(dir, [...argumentsFor, "--client", "codex"]);
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      changed: true,
+      launcher: "npx",
+    });
+    expect(await readFile(join(settings, "config.json"), "utf8")).toBe(
+      "{malformed",
+    );
+  }));
 it("writes private nonsecret config, rejects credential URLs and reports only availability", async () =>
   fixture(async (dir) => {
     expect(

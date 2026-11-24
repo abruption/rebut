@@ -95,6 +95,18 @@ For 0.2.x → 0.3.0, use **Worker code with existing OpenAI configuration → CL
 
 `rebut remove --client codex` removes registration, not settings, credentials, or the ledger. Follow [operations](operations.md) for backups and downgrades.
 
+### Optional npx launcher for Codex
+
+Upgrade to a Rebut CLI that supports migration first. If your installed version has `rebut update`, run it once to upgrade. Then switch your existing npm-based Codex registration with this command. Add `--codex-home PATH` if you use another Codex home.
+
+```sh
+rebut update --migrate-npx --client codex
+```
+
+Restart Codex and look for the Rebut tools. Migration preserves existing settings and tool approvals, and uses `npx -y --ignore-scripts rebut-mcp@latest mcp --client codex` from the `rebut-npx` directory in the Codex home. Keep the generated `package.json` there and leave other project files out of that directory. Your npm registry and cache settings still apply.
+
+Codex needs Node.js 24 or newer and `npx` on its `PATH`. An empty cache requires registry access. npm can also check the registry with a populated cache because `@latest` follows a tag. The running Rebut version can change on restart. Allow time for npm to download the package when setting a custom startup timeout. `rebut setup --check --client codex` reports `npx_launcher` and checks the working directory of the migrated entry. Plain `rebut update` updates the global npm installation. To switch back to the direct launcher, back up `config.toml` and run `rebut setup --client codex --replace` from a global Rebut installation. Reapply any custom registration values, such as environment overrides, tool approvals, and timeouts, from your backup.
+
 ## Run a review
 
 ```sh
