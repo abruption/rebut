@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { tsImport } from "tsx/esm/api";
+
+const { npxLauncherArgs } = await tsImport(
+  "../src/client/npx-launcher.ts",
+  import.meta.url,
+);
 
 export async function verifyNpxRuntime({ archive, directory, npm, env }) {
   const workspace = join(directory, "npx workspace");
@@ -21,21 +26,7 @@ export async function verifyNpxRuntime({ archive, directory, npm, env }) {
     { mode: 0o700 },
   );
 
-  const source = new URL("../src/client/npx-launcher.ts", import.meta.url);
-  const args = JSON.parse(
-    execFileSync(
-      process.execPath,
-      [
-        "--experimental-transform-types",
-        "--input-type=module",
-        "-e",
-        `import { npxLauncherArgs } from ${JSON.stringify(source.href)};
-         console.log(JSON.stringify(npxLauncherArgs("claude", process.argv[1])));`,
-        prefix,
-      ],
-      { env, encoding: "utf8", timeout: 10_000 },
-    ),
-  );
+  const args = npxLauncherArgs("claude", prefix);
   const packageArg = args.indexOf("--package=rebut-mcp@latest");
   assert(packageArg >= 0, "The migration must use npm's Rebut release tag.");
   args[packageArg] = "--package=" + archive;
