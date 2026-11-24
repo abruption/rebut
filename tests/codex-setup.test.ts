@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parse, stringify } from "smol-toml";
+import { npxLauncherArgs } from "../src/client/npx-launcher.js";
 import {
   checkCodexSetup,
   migrateCodexToNpx,
@@ -90,14 +91,7 @@ describe("Codex npx migration", () => {
         rebut: {
           ...rebut,
           command: "npx",
-          args: [
-            "-y",
-            "--ignore-scripts",
-            "rebut-mcp@latest",
-            "mcp",
-            "--client",
-            "codex",
-          ],
+          args: npxLauncherArgs("codex", cwd),
           cwd,
         },
         other,

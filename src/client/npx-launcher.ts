@@ -26,15 +26,73 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-export function npxLauncherArgs(client: McpClient, prefix?: string) {
+// npm exec prepends workspace bins to PATH and exports the absolute Node
+// executable that started npm. Bypass the package's PATH-based node shim.
+// This program is stored in the MCP registration. Keep recognizing previously
+// generated arguments when changing the program.
+const npxBootstrap = `
+  const { dirname, delimiter, isAbsolute, join, relative, sep } = require('node:path');
+  const { realpathSync } = require('node:fs');
+  const { homedir } = require('node:os');
+  const { pathToFileURL } = require('node:url');
+  const env = (name) => Object.entries(process.env)
+    .find(([key]) => key.toLowerCase() === name)?.[1];
+  const fail = (message) => {
+    process.stderr.write(message + '\\n');
+    process.exitCode = 1;
+  };
+  const locateRebut = () => {
+    const cache = env('npm_config_cache') || (process.platform === 'win32'
+      ? join(env('localappdata') || homedir(), 'npm-cache')
+      : join(homedir(), '.npm'));
+    const bin = env('path')?.split(delimiter)[0];
+    if (!bin || !isAbsolute(bin))
+      throw Error('Could not locate the npx-installed Rebut.');
+    const resolvedBin = realpathSync(bin);
+    const npxRoot = realpathSync(join(cache, '_npx'));
+    const location = relative(npxRoot, resolvedBin);
+    const parts = location.split(sep);
+    if (isAbsolute(location) || parts.length !== 3 || parts[0] === '..' ||
+        parts[1] !== 'node_modules' || parts[2] !== '.bin')
+      throw Error('Could not locate the npx-installed Rebut.');
+    return join(dirname(resolvedBin), 'rebut-mcp', 'bin', 'rebut.mjs');
+  };
+  const run = async () => {
+    if (Number(process.versions.node.split('.')[0]) < 24)
+      return fail('Rebut requires Node.js 24 or later.');
+    let entry;
+    try {
+      entry = locateRebut();
+    } catch {
+      return fail('Could not locate Rebut in the npm exec cache.');
+    }
+    process.argv.splice(1, 0, entry);
+    await import(pathToFileURL(entry).href);
+  };
+  run().catch(() => fail('Could not load the npx-installed Rebut entry point.'));
+`;
+
+export function npxLauncherArgs(client: McpClient, prefix: string) {
+  const windows = process.platform === "win32";
+  const shell = windows
+    ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "cmd.exe")
+    : "/bin/sh";
+  // Encode the fixed program so its syntax survives both shell parsers.
+  const code = Buffer.from(npxBootstrap).toString("base64");
+  const cli = `--input-type=commonjs --eval "eval(Buffer.from('${code}','base64').toString())" -- mcp --client ${client}`;
+  const call = windows
+    ? `""%npm_node_execpath%" ${cli}"`
+    : `exec "$npm_node_execpath" ${cli}`;
   return [
-    ...(prefix === undefined ? [] : ["--prefix", prefix]),
+    "--prefix",
+    prefix,
     "-y",
     "--ignore-scripts",
-    "rebut-mcp@latest",
-    "mcp",
-    "--client",
-    client,
+    "--package=rebut-mcp@latest",
+    "--script-shell",
+    shell,
+    "--call",
+    call,
   ];
 }
 

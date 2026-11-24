@@ -93,14 +93,13 @@ function desired(options: CodexSetupOptions): Table {
   };
 }
 
-const npxArgs = npxLauncherArgs("codex");
-
 function npxWorkingDirectory(configPath: string) {
   return join(dirname(configPath), "rebut-npx");
 }
 
 function isManagedNpx(entry: unknown, cwd: string) {
-  return table(entry) && entry.cwd === cwd && matchesNpxLauncher(entry, npxArgs);
+  return table(entry) && entry.cwd === cwd &&
+    matchesNpxLauncher(entry, npxLauncherArgs("codex", cwd));
 }
 
 function usesWorkingDirectory(entry: Table) {
@@ -392,7 +391,7 @@ async function update(
         startup_timeout_sec: STARTUP_TIMEOUT_SECONDS,
         ...existing,
         command: "npx",
-        args: npxArgs,
+        args: npxLauncherArgs("codex", cwd),
         cwd,
       };
     }

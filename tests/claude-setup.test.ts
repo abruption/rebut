@@ -14,6 +14,7 @@ import {
 } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
+import { npxLauncherArgs } from "../src/client/npx-launcher.js";
 import {
   checkClaudeSetup,
   migrateClaudeToNpx,
@@ -84,10 +85,7 @@ it("migrates an existing npm launcher to Claude npx without rewriting other fiel
   expect(JSON.parse(output).mcpServers.rebut).toMatchObject({
     ...legacy,
     command: "npx",
-    args: [
-      "--prefix", join(root, ".rebut-claude-npx"), "-y", "--ignore-scripts",
-      "rebut-mcp@latest", "mcp", "--client", "claude",
-    ],
+    args: npxLauncherArgs("claude", join(root, ".rebut-claude-npx")),
   });
   expect(await checkClaudeSetup(options)).toMatchObject({
     status: "npx_launcher",

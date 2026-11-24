@@ -16,6 +16,7 @@ import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { parse } from "smol-toml";
+import { verifyNpxRuntime } from "./npx-runtime-smoke.mjs";
 
 const npm = process.env.npm_execpath;
 assert(npm, "Run through npm run test:windows-poc.");
@@ -229,6 +230,7 @@ try {
     "install packed archive",
   );
   const entry = join(prefix, "node_modules", "rebut-mcp", "bin", "rebut.mjs");
+  await verifyNpxRuntime({ archive, directory: fixture, npm, env });
   const cli = (...args) => success(node([entry, ...args]), args[0]);
   assert.equal(cli("--version"), artifact.version);
   if (windows) {
