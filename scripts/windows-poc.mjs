@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   access,
+  copyFile,
+  mkdir,
   mkdtemp,
   readFile,
   realpath,
@@ -9,7 +11,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
@@ -112,6 +114,75 @@ async function call(name, args) {
 try {
   await writeFile(npmrc, "");
   await writeFile(env.NPM_CONFIG_GLOBALCONFIG, "");
+  if (windows) {
+    const runtimeDir = join(fixture, "runtime on PATH");
+    const shimDir = join(fixture, "npx on PATH");
+    await Promise.all([mkdir(runtimeDir), mkdir(shimDir)]);
+    const runtime = join(runtimeDir, "node.exe");
+    await copyFile(process.execPath, runtime);
+    await writeFile(join(shimDir, "npx.cmd"), "@echo off\r\n");
+    const launcher = pathToFileURL(
+      join(repository, "src", "client", "npx-launcher.ts"),
+    ).href;
+    const probe = `
+      import { checkNpxPath, NpxLauncherError } from ${JSON.stringify(launcher)};
+      try {
+        await checkNpxPath({});
+        console.log("verified");
+      } catch (error) {
+        if (!(error instanceof NpxLauncherError)) throw error;
+        console.log(error.code);
+      }
+    `;
+    const probeEnv = Object.fromEntries(
+      Object.entries(env).filter(([key]) => key.toUpperCase() !== "PATH"),
+    );
+    const check = (directories = [runtimeDir, shimDir]) =>
+      success(
+        spawnSync(
+          runtime,
+          [
+            "--experimental-transform-types",
+            "--input-type=module",
+            "-e",
+            probe,
+          ],
+          {
+            cwd: fixture,
+            env: { ...probeEnv, PATH: directories.join(delimiter) },
+            encoding: "utf8",
+            timeout: 15_000,
+          },
+        ),
+        "Windows npx runtime check",
+      );
+    assert.equal(check(), "verified", "npx.cmd falls back to the PATH Node");
+    const ordinaryShim = join(runtimeDir, "npx.cmd");
+    await writeFile(ordinaryShim, "@echo off\r\n");
+    assert.equal(check(), "verified", "npx.cmd selects the verified sibling Node");
+    await rm(ordinaryShim);
+    const sibling = join(shimDir, "node.exe");
+    await writeFile(sibling, "unverified neighboring runtime");
+    assert.equal(
+      check(),
+      "NPX_RUNTIME_UNVERIFIED",
+      "npx.cmd selects its neighboring Node ahead of the verified PATH Node",
+    );
+    await rm(sibling);
+    await mkdir(sibling);
+    assert.equal(check(), "NPX_RUNTIME_UNVERIFIED", "the sibling must be a file");
+    await rm(sibling, { recursive: true });
+    const competingNode = join(shimDir, "node.cmd");
+    await writeFile(competingNode, "@echo off\r\n");
+    assert.equal(
+      check([shimDir, runtimeDir]),
+      "NPX_RUNTIME_UNVERIFIED",
+      "the fallback node command is ambiguous",
+    );
+    await rm(competingNode);
+    await writeFile(join(shimDir, "npx.exe"), "unverified competing launcher");
+    assert.equal(check(), "NPX_RUNTIME_UNVERIFIED", "the npx command is ambiguous");
+  }
   const packed = success(
     node(
       [

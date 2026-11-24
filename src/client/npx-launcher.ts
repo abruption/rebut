@@ -9,7 +9,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { basename, delimiter, isAbsolute, join } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join } from "node:path";
 import type { McpClient } from "./settings.js";
 
 export class NpxLauncherError extends Error {
@@ -87,6 +87,13 @@ export function fullyQualifiedPath(value: string) {
   );
 }
 
+function unverifiedNpxRuntime() {
+  return new NpxLauncherError(
+    "Could not verify the Node.js executable on the host's PATH. Use the same Node.js 24+ executable for the host and the update to migrate.",
+    "NPX_RUNTIME_UNVERIFIED",
+  );
+}
+
 export async function checkNpxPath(entry: Record<string, unknown>) {
   const env = record(entry.env) ? entry.env : {};
   const windows = process.platform === "win32";
@@ -116,28 +123,49 @@ export async function checkNpxPath(entry: Record<string, unknown>) {
     }
   }
   const node = await executableOnPath(windows ? ["node.exe"] : ["node"]);
+  const npx = await executableOnPath(windows ? ["npx.cmd"] : ["npx"]);
+  // The host resolves npx, and the batch fallback resolves node. Both
+  // names can select another file through Windows executable extensions.
   if (
-    !node ||
-    !(await executableOnPath(windows ? ["npx.cmd", "npx.exe"] : ["npx"]))
+    windows &&
+    (await executableOnPath([
+      "npx.exe", "npx.bat", "npx.com",
+      "node.bat", "node.cmd", "node.com",
+    ]))
   )
+    throw unverifiedNpxRuntime();
+  if (!node || !npx)
     throw new NpxLauncherError(
       "Node and npx must be on this launcher's PATH before it can be migrated.",
       "NPX_UNAVAILABLE",
     );
-  const [selected, current] = await Promise.all([
-    realpath(node),
-    realpath(process.execPath),
-  ]);
+  const selected = [await realpath(node)];
+  if (windows) {
+    // npm's batch launcher uses %~dp0\node.exe before falling back to PATH.
+    const sibling = join(dirname(npx), "node.exe");
+    const siblingInfo = await lstat(sibling).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw unverifiedNpxRuntime();
+    });
+    if (siblingInfo) {
+      if (!siblingInfo.isFile() && !siblingInfo.isSymbolicLink())
+        throw unverifiedNpxRuntime();
+      selected.push(
+        await realpath(sibling).catch(() => {
+          throw unverifiedNpxRuntime();
+        }),
+      );
+    }
+  }
+  const current = await realpath(process.execPath);
   // The updater knows its own Node version. Leave the existing registration
   // in place when the host would resolve a different, unverified executable.
   if (
     Number(process.versions.node.split(".")[0]) < 24 ||
-    (windows ? selected.toLowerCase() !== current.toLowerCase() : selected !== current)
+    selected.some((path) =>
+      windows ? path.toLowerCase() !== current.toLowerCase() : path !== current,
+    )
   )
-    throw new NpxLauncherError(
-      "Could not verify the Node.js executable on the host's PATH. Use the same Node.js 24+ executable for the host and the update to migrate.",
-      "NPX_RUNTIME_UNVERIFIED",
-    );
+    throw unverifiedNpxRuntime();
 }
 
 const npxProjectFile = "package.json";
