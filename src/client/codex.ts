@@ -15,6 +15,16 @@ import {
 import { parse, stringify } from "smol-toml";
 import { CODEX_TOOL_TIMEOUT_SECONDS } from "../timeouts.js";
 import { inspectLauncher } from "./setup-check.js";
+import {
+  checkNpxPath,
+  fullyQualifiedPath,
+  isNpmLauncher,
+  matchesNpxLauncher,
+  NpxLauncherError,
+  npxLauncherArgs,
+  npxProjectStatus,
+  prepareNpxWorkingDirectory,
+} from "./npx-launcher.js";
 
 export interface CodexSetupOptions {
   codexHome?: string;
@@ -39,6 +49,7 @@ export class CodexSetupError extends Error {
 }
 
 type Table = Record<string, unknown>;
+const STARTUP_TIMEOUT_SECONDS = 60;
 function table(value: unknown): value is Table {
   return (
     value !== null &&
@@ -68,7 +79,7 @@ function desired(options: CodexSetupOptions): Table {
   return {
     command: options.nodePath ?? process.execPath,
     args: [resolve(options.entrypoint), "mcp", "--client", "codex"],
-    startup_timeout_sec: 60,
+    startup_timeout_sec: STARTUP_TIMEOUT_SECONDS,
     tool_timeout_sec: CODEX_TOOL_TIMEOUT_SECONDS,
     enabled_tools: ["review", "review_status", "review_pair"],
     ...(options.forwardApiKeyEnv
@@ -81,6 +92,33 @@ function desired(options: CodexSetupOptions): Table {
       : {}),
   };
 }
+
+function npxWorkingDirectory(configPath: string) {
+  return join(dirname(configPath), "rebut-npx");
+}
+
+function isManagedNpx(entry: unknown, cwd: string) {
+  return table(entry) && entry.cwd === cwd &&
+    matchesNpxLauncher(entry, npxLauncherArgs("codex", cwd));
+}
+
+function usesWorkingDirectory(entry: Table) {
+  const env = table(entry.env) ? entry.env : {};
+  const configDir = env.REBUT_CONFIG_DIR;
+  const bwGet = env.REBUT_BW_GET;
+  return (
+    (typeof configDir === "string" &&
+      configDir !== "" &&
+      !fullyQualifiedPath(configDir)) ||
+    (typeof bwGet === "string" &&
+      /[\\/]|^[A-Za-z]:/.test(bwGet) &&
+      !fullyQualifiedPath(bwGet)) ||
+    (Array.isArray(entry.env_vars) &&
+      (entry.env_vars.includes("REBUT_CONFIG_DIR") ||
+        entry.env_vars.includes("REBUT_BW_GET")))
+  );
+}
+
 function providerKeyVars(value: unknown): boolean {
   return (
     value === undefined ||
@@ -286,6 +324,17 @@ export async function checkCodexSetup(
   try {
     const document = parseConfig(await readConfig(configPath, true));
     const entry = (document.mcp_servers as Table | undefined)?.rebut;
+    const cwd = npxWorkingDirectory(configPath);
+    if (
+      table(entry) &&
+      entry.enabled !== false &&
+      isManagedNpx(entry, cwd)
+    )
+      return {
+        configPath,
+        status: "npx_launcher",
+        launcher: { cwd: await npxProjectStatus(cwd) },
+      };
     return {
       configPath,
       ...(await inspectLauncher(entry, {
@@ -304,7 +353,7 @@ export async function checkCodexSetup(
 
 async function update(
   options: CodexSetupOptions,
-  remove: boolean,
+  operation: "setup" | "remove" | "migrate-npx",
 ): Promise<{ configPath: string; changed: boolean }> {
   const configPath = configurationPath(options);
   let temporary: string | undefined;
@@ -313,7 +362,39 @@ async function update(
     const document = parseConfig(original);
     const servers = (document.mcp_servers ?? {}) as Table;
     const existing = servers.rebut;
-    const replacement = desired(options);
+    const remove = operation === "remove";
+    const migrate = operation === "migrate-npx";
+    let replacement = desired(options);
+    if (migrate) {
+      const cwd = npxWorkingDirectory(configPath);
+      if (isManagedNpx(existing, cwd)) {
+        await prepareNpxWorkingDirectory(cwd);
+        return { configPath, changed: false };
+      }
+      if (!isNpmLauncher(existing, "codex"))
+        throw new CodexSetupError(
+          "UNSUPPORTED_NPX_MIGRATION",
+          "Migration requires an existing Codex Rebut npm registration.",
+        );
+      if (existing.cwd !== undefined && existing.cwd !== cwd)
+        throw new CodexSetupError(
+          "UNSAFE_NPX_MIGRATION",
+          "Keep the direct launcher or remove its custom cwd before migrating.",
+        );
+      if (existing.cwd === undefined && usesWorkingDirectory(existing))
+        throw new CodexSetupError(
+          "UNSAFE_NPX_MIGRATION",
+          "Before migrating, put absolute REBUT_CONFIG_DIR and REBUT_BW_GET paths in the Rebut env table and remove those path names from env_vars.",
+        );
+      await checkNpxPath(existing);
+      replacement = {
+        startup_timeout_sec: STARTUP_TIMEOUT_SECONDS,
+        ...existing,
+        command: "npx",
+        args: npxLauncherArgs("codex", cwd),
+        cwd,
+      };
+    }
     if (
       (!remove && equivalent(existing, replacement)) ||
       (remove && existing === undefined)
@@ -321,9 +402,14 @@ async function update(
       return { configPath, changed: false };
     }
     if (
+      !migrate &&
       existing !== undefined &&
       !equivalent(existing, replacement) &&
-      !(remove && matchesRemoval(existing, replacement, options.entrypoint)) &&
+      !(
+        remove &&
+        (isManagedNpx(existing, npxWorkingDirectory(configPath)) ||
+          matchesRemoval(existing, replacement, options.entrypoint))
+      ) &&
       !options.replace
     ) {
       throw new CodexSetupError(
@@ -339,6 +425,7 @@ async function update(
       document,
       remove ? undefined : replacement,
     );
+    if (migrate) await prepareNpxWorkingDirectory(npxWorkingDirectory(configPath));
     await mkdir(dirname(configPath), { recursive: true, mode: 0o700 });
     await chmod(dirname(configPath), 0o700);
     temporary = join(dirname(configPath), `.rebut-config-${randomUUID()}.tmp`);
@@ -353,7 +440,8 @@ async function update(
     temporary = undefined;
     return { configPath, changed: true };
   } catch (error) {
-    if (error instanceof CodexSetupError) throw error;
+    if (error instanceof CodexSetupError || error instanceof NpxLauncherError)
+      throw error;
     throw new CodexSetupError(
       "CONFIG_IO",
       "Unable to update Codex config. Check the config directory and file permissions.",
@@ -366,11 +454,17 @@ async function update(
 export function setupCodex(
   options: CodexSetupOptions,
 ): Promise<{ configPath: string; changed: boolean }> {
-  return update(options, false);
+  return update(options, "setup");
 }
 
 export function removeCodex(
   options: CodexSetupOptions,
 ): Promise<{ configPath: string; changed: boolean }> {
-  return update(options, true);
+  return update(options, "remove");
+}
+
+export function migrateCodexToNpx(
+  options: Pick<CodexSetupOptions, "codexHome" | "entrypoint">,
+) {
+  return update(options, "migrate-npx");
 }

@@ -142,7 +142,7 @@ export function updateGlobalInstallation(
     node = process.execPath,
     run = runNpm,
   }: { node?: string; run?: RunNpm } = {},
-): { previousVersion: string; version: string } {
+): { previousVersion: string; version: string; latestVersion: string } {
   const windows = process.platform === "win32";
   let stage: keyof typeof messages = "installation";
   try {
@@ -201,7 +201,7 @@ export function updateGlobalInstallation(
       throw new UpdateError(stage);
 
     stage = "latest";
-    const latest: unknown = JSON.parse(
+    const result: unknown = JSON.parse(
       invoke(
         [
           "view",
@@ -215,6 +215,9 @@ export function updateGlobalInstallation(
         30_000,
       ),
     );
+    const latest: unknown =
+      Array.isArray(result) && result.length === 1 ? result[0] : result;
+    if (typeof latest !== "string") throw new UpdateError(stage);
     const previous = versionParts(previousVersion);
     const next = versionParts(latest);
     const firstDifference = next.findIndex(
@@ -224,14 +227,14 @@ export function updateGlobalInstallation(
       firstDifference === -1 ||
       next[firstDifference] < previous[firstDifference]
     )
-      return { previousVersion, version: previousVersion };
+      return { previousVersion, version: previousVersion, latestVersion: latest };
 
     const unlock = acquireLock(prefix);
     try {
       stage = "changed";
       const active = verifyInstall(prefix, directory, windows);
       if (active === latest)
-        return { previousVersion: active, version: active };
+        return { previousVersion: active, version: active, latestVersion: latest };
       if (active !== previousVersion) throw new UpdateError(stage);
 
       stage = "install";
@@ -257,7 +260,7 @@ export function updateGlobalInstallation(
       stage = "result";
       const version = verifyInstall(prefix, directory, windows);
       if (version !== latest) throw new UpdateError(stage);
-      return { previousVersion, version };
+      return { previousVersion, version, latestVersion: latest };
     } finally {
       unlock();
     }

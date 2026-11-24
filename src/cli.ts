@@ -21,15 +21,18 @@ import {
 import { serveStdio } from "./client/stdio.js";
 import {
   checkClaudeSetup,
+  migrateClaudeToNpx,
   setupClaude,
   removeClaude,
   ClaudeSetupError,
 } from "./client/claude.js";
 import { providerDiagnostic } from "./client/provider.js";
 import { UpdateError, updateGlobalInstallation } from "./client/update.js";
+import { fullyQualifiedPath, NpxLauncherError } from "./client/npx-launcher.js";
 import { profileProvider } from "./contracts.js";
 import {
   checkCodexSetup,
+  migrateCodexToNpx,
   setupCodex,
   removeCodex,
   CodexSetupError,
@@ -135,6 +138,54 @@ function selectedClient(value: unknown): McpClient | undefined {
   throw new CliError("Specify --client codex or claude.");
 }
 
+async function migrateUpdatedRegistrations() {
+  const entrypoint = process.argv[1]!;
+  const claudeDir = process.env.CLAUDE_CONFIG_DIR;
+  const targets = [
+    {
+      name: "Codex",
+      override: "CODEX_HOME",
+      migrate: () => migrateCodexToNpx({ entrypoint }),
+    },
+    {
+      name: "Claude Code",
+      override: "CLAUDE_CONFIG_DIR",
+      migrate: () =>
+        migrateClaudeToNpx({
+          entrypoint,
+          claudeConfig: claudeDir ? resolve(claudeDir, ".claude.json") : undefined,
+        }),
+    },
+  ];
+  for (const target of targets) {
+    const override = process.env[target.override];
+    if (override && !fullyQualifiedPath(override)) {
+      process.stderr.write(
+        `Skipped ${target.name} MCP migration because ${target.override} is relative. Use an absolute path to migrate.\n`,
+      );
+      continue;
+    }
+    try {
+      const result = await target.migrate();
+      if (result.changed)
+        process.stdout.write(`Migrated ${target.name} Rebut MCP to npx. Restart ${target.name}.\n`);
+    } catch (error) {
+      if (
+        (error instanceof CodexSetupError || error instanceof ClaudeSetupError) &&
+        error.code === "UNSUPPORTED_NPX_MIGRATION"
+      )
+        continue;
+      const skipped =
+        (error instanceof CodexSetupError && error.code === "UNSAFE_NPX_MIGRATION") ||
+        (error instanceof NpxLauncherError && error.code === "NPX_RUNTIME_UNVERIFIED");
+      if (!skipped) process.exitCode = 1;
+      process.stderr.write(
+        `${skipped ? "Skipped migration of" : "Could not migrate"} the ${target.name} Rebut MCP registration: ${safeError(error)}\n`,
+      );
+    }
+  }
+}
+
 function commandHelp(command: string | undefined, rest: string[]) {
   if (!command || command === "--help" || command === "-h") return HELP;
   if (command === "--version" || command === "-v") return;
@@ -164,7 +215,10 @@ function commandHelp(command: string | undefined, rest: string[]) {
     throw new CliError("Unknown help topic. Run rebut --help.");
   if (topic[0] === "update") {
     if (!namedHelp) options(rest.slice(0, -1), {});
-    return "rebut update\nStop Rebut MCP hosts before updating. Restart the hosts after the package is updated. If the release requires re-registration, run rebut setup --client codex --replace or rebut setup --client claude --replace.\n";
+    return (
+      usage.join("\n") +
+      "\nStop Rebut MCP hosts before updating. After a successful update, supported Codex and Claude Code registrations are migrated to npx when Node and npx are available on PATH. Restart the hosts afterward. For direct re-registration, run rebut setup --client codex --replace or rebut setup --client claude --replace.\n"
+    );
   }
   return usage.join("\n") + "\n";
 }
@@ -284,7 +338,7 @@ export async function runCli(args: string[]): Promise<void> {
   }
   if (command === "update") {
     options(rest, {});
-    const { previousVersion, version } = updateGlobalInstallation(
+    const { previousVersion, version, latestVersion } = updateGlobalInstallation(
       fileURLToPath(import.meta.url),
     );
     process.stdout.write(
@@ -292,6 +346,7 @@ export async function runCli(args: string[]): Promise<void> {
         ? `Rebut ${version} is already up to date.\n`
         : `Updated Rebut from ${previousVersion} to ${version}. Restart your MCP hosts.\n`,
     );
+    if (version === latestVersion) await migrateUpdatedRegistrations();
     return;
   }
   const settings = await readSettings();
@@ -957,7 +1012,11 @@ export async function runCli(args: string[]): Promise<void> {
 export function safeError(error: unknown): string {
   if (error instanceof CliError || error instanceof UpdateError)
     return error.message;
-  if (error instanceof CodexSetupError || error instanceof ClaudeSetupError)
+  if (
+    error instanceof CodexSetupError ||
+    error instanceof ClaudeSetupError ||
+    error instanceof NpxLauncherError
+  )
     return error.message;
   const profileError = safeProfileError(error);
   if (profileError) return profileError;

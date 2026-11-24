@@ -1,8 +1,8 @@
 import { constants } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
-import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { lstat, mkdir, open, rename, stat, unlink } from "node:fs/promises";
 import {
   parseTree,
   findNodeAtLocation,
@@ -14,6 +14,16 @@ import {
 } from "jsonc-parser";
 import { CODEX_TOOL_TIMEOUT_SECONDS } from "../timeouts.js";
 import { inspectLauncher } from "./setup-check.js";
+import {
+  checkNpxPath,
+  fullyQualifiedPath,
+  isNpmLauncher,
+  matchesNpxLauncher,
+  NpxLauncherError,
+  npxLauncherArgs,
+  npxProjectStatus,
+  prepareNpxWorkingDirectory,
+} from "./npx-launcher.js";
 export interface ClaudeSetupOptions {
   claudeConfig?: string;
   entrypoint: string;
@@ -219,6 +229,62 @@ function configurationPath(options: Pick<ClaudeSetupOptions, "claudeConfig">) {
   return safePath(options.claudeConfig ?? join(homedir(), ".claude.json"));
 }
 
+function npxPrefix(configPath: string) {
+  return join(dirname(configPath), ".rebut-claude-npx");
+}
+
+function windowsNpxScript(node: string) {
+  return join(dirname(node), "node_modules", "npm", "bin", "npx-cli.js");
+}
+
+function isWindowsNodePath(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    fullyQualifiedPath(value) &&
+    basename(value).toLowerCase() === "node.exe"
+  );
+}
+
+function isManagedClaudeNpx(entry: unknown, args: string[]) {
+  if (matchesNpxLauncher(entry, args)) return true;
+  const command = (entry as { command?: unknown } | undefined)?.command;
+  return (
+    process.platform === "win32" &&
+    isWindowsNodePath(command) &&
+    matchesNpxLauncher(entry, [windowsNpxScript(command), ...args], command)
+  );
+}
+
+async function windowsNpxStatus(command: string) {
+  try {
+    const [node, npx] = await Promise.all([
+      stat(command),
+      lstat(windowsNpxScript(command)),
+    ]);
+    return node.isFile() && npx.isFile() ? "present" : "unverified";
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT"
+      ? "missing"
+      : "unverified";
+  }
+}
+
+async function prepareConfigParent(configPath: string) {
+  const path = dirname(configPath);
+  await mkdir(path, { recursive: true, mode: 0o700 });
+  const parent = await lstat(path);
+  if (
+    !parent.isDirectory() ||
+    parent.isSymbolicLink() ||
+    (process.platform !== "win32" &&
+      (parent.uid !== process.getuid?.() || (parent.mode & 0o022) !== 0))
+  )
+    fail(
+      "UNSAFE_CONFIG",
+      "Claude config parent must be owned and writable only by the current user.",
+    );
+}
+
 export async function checkClaudeSetup(
   options: Pick<ClaudeSetupOptions, "claudeConfig" | "entrypoint">,
 ) {
@@ -227,6 +293,25 @@ export async function checkClaudeSetup(
     const tree = parse((await readConfig(configPath)) ?? "{}");
     const node = findNodeAtLocation(tree, ["mcpServers", "rebut"]);
     const entry = node ? getNodeValue(node) : undefined;
+    const prefix = npxPrefix(configPath);
+    const args = npxLauncherArgs("claude", prefix);
+    if (isManagedClaudeNpx(entry, args)) {
+      let status = "npx_launcher";
+      if (process.platform === "win32") {
+        if (matchesNpxLauncher(entry, args)) {
+          status = "legacy_npx_launcher";
+        } else {
+          const runtime = await windowsNpxStatus(entry.command);
+          if (runtime === "missing") status = "missing_launcher";
+          if (runtime === "unverified") status = "unverified_launcher";
+        }
+      }
+      return {
+        configPath,
+        status,
+        launcher: { prefix: await npxProjectStatus(prefix) },
+      };
+    }
     return {
       configPath,
       ...(await inspectLauncher(entry, {
@@ -245,9 +330,11 @@ export async function checkClaudeSetup(
 
 async function update(
   options: ClaudeSetupOptions,
-  remove: boolean,
+  operation: "setup" | "remove" | "migrate-npx",
 ): Promise<{ configPath: string; changed: boolean }> {
   const configPath = configurationPath(options);
+  const remove = operation === "remove";
+  const migrate = operation === "migrate-npx";
   let temporary: string | undefined;
   try {
     const original = await readConfig(configPath);
@@ -256,36 +343,73 @@ async function update(
     const tree = parse(source);
     const node = findNodeAtLocation(tree, ["mcpServers", "rebut"]);
     const existing = node ? getNodeValue(node) : undefined;
-    const replacement = remove ? undefined : desired(options);
-    if ((remove && !node) || (!remove && equivalent(existing, replacement)))
-      return { configPath, changed: false };
-    if (node && !options.replace && (!remove || !recognized(existing)))
-      fail(
-        "SERVER_CONFLICT",
-        "Claude has a different rebut entry. Use --replace to explicitly replace or remove it.",
+    const prefix = npxPrefix(configPath);
+    const args = npxLauncherArgs("claude", prefix);
+    const managedNpx = isManagedClaudeNpx(existing, args);
+    let output: string;
+    if (migrate) {
+      if (!managedNpx && !isNpmLauncher(existing, "claude"))
+        fail(
+          "UNSUPPORTED_NPX_MIGRATION",
+          "Migration requires an existing Claude Code Rebut npm registration.",
+        );
+      const windows = process.platform === "win32";
+      const command = windows ? safePath(process.execPath) : "npx";
+      const launchArgs = windows ? [windowsNpxScript(command), ...args] : args;
+      if (
+        windows &&
+        (!isWindowsNodePath(command) ||
+          Number(process.versions.node.split(".")[0]) < 24 ||
+          (await windowsNpxStatus(command)) !== "present")
+      )
+        throw new NpxLauncherError(
+          "Could not verify the npx CLI paired with the Node.js 24+ installation running rebut update.",
+          "NPX_RUNTIME_UNVERIFIED",
+        );
+      if (matchesNpxLauncher(existing, launchArgs, command)) {
+        await prepareConfigParent(configPath);
+        await prepareNpxWorkingDirectory(prefix);
+        return { configPath, changed: false };
+      }
+      if (!windows) await checkNpxPath(existing);
+      // Claude Code's stdio launcher does not use a cwd field. npm's
+      // explicit prefix controls package resolution without changing the
+      // child working directory. On Windows, absolute paths prevent the
+      // project directory from supplying the executable.
+      const withCommand = applyEdits(
+        source,
+        modify(source, ["mcpServers", "rebut", "command"], command, {}),
       );
-    const output = applyEdits(
-      source,
-      modify(source, ["mcpServers", "rebut"], replacement, {}),
-    );
+      output = applyEdits(
+        withCommand,
+        modify(withCommand, ["mcpServers", "rebut", "args"], launchArgs, {}),
+      );
+    } else {
+      const replacement = remove ? undefined : desired(options);
+      if ((remove && !node) || (!remove && equivalent(existing, replacement)))
+        return { configPath, changed: false };
+      if (
+        node &&
+        !options.replace &&
+        (!remove || (!recognized(existing) && !managedNpx))
+      )
+        fail(
+          "SERVER_CONFLICT",
+          "Claude has a different rebut entry. Use --replace to explicitly replace or remove it.",
+        );
+      output = applyEdits(
+        source,
+        modify(source, ["mcpServers", "rebut"], replacement, {}),
+      );
+    }
     if (Buffer.byteLength(output, "utf8") > MAX_BYTES)
       fail(
         "CONFIG_TOO_LARGE",
         "Claude config update would exceed 8 MiB; no changes were made.",
       );
     parse(output);
-    await mkdir(dirname(configPath), { recursive: true, mode: 0o700 });
-    const parent = await lstat(dirname(configPath));
-    if (
-      !parent.isDirectory() ||
-      parent.isSymbolicLink() ||
-      (process.platform !== "win32" &&
-        (parent.uid !== process.getuid?.() || (parent.mode & 0o022) !== 0))
-    )
-      fail(
-        "UNSAFE_CONFIG",
-        "Claude config parent must be owned and writable only by the current user.",
-      );
+    await prepareConfigParent(configPath);
+    if (migrate) await prepareNpxWorkingDirectory(prefix);
     temporary = join(dirname(configPath), `.rebut-claude-${randomUUID()}.tmp`);
     const file = await open(temporary, "wx", 0o600);
     try {
@@ -303,7 +427,8 @@ async function update(
     temporary = undefined;
     return { configPath, changed: true };
   } catch (error) {
-    if (error instanceof ClaudeSetupError) throw error;
+    if (error instanceof ClaudeSetupError || error instanceof NpxLauncherError)
+      throw error;
     throw new ClaudeSetupError(
       "CONFIG_IO",
       "Unable to update Claude config safely. Check its path and permissions.",
@@ -313,6 +438,9 @@ async function update(
   }
 }
 export const setupClaude = (options: ClaudeSetupOptions) =>
-  update(options, false);
+  update(options, "setup");
 export const removeClaude = (options: ClaudeSetupOptions) =>
-  update(options, true);
+  update(options, "remove");
+export const migrateClaudeToNpx = (
+  options: Pick<ClaudeSetupOptions, "claudeConfig" | "entrypoint">,
+) => update(options, "migrate-npx");

@@ -20,6 +20,7 @@ import {
   createMcpHandler,
   fromJsonSchema,
 } from "@modelcontextprotocol/server";
+import { verifyNpxRuntime } from "./npx-runtime-smoke.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // The fixture includes credential-routing settings, so use the system temp
@@ -140,6 +141,7 @@ try {
   );
   assert.equal(bin.status, 0, "Installed bin link failed.");
   assert.equal(bin.stdout.trim(), pkg.version);
+  await verifyNpxRuntime({ archive: tarball, directory, npm, env });
 
   const calls = [];
   let authenticatedRequests = 0;

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   access,
+  copyFile,
+  mkdir,
   mkdtemp,
   readFile,
   realpath,
@@ -9,11 +11,13 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { parse } from "smol-toml";
+import { tsImport } from "tsx/esm/api";
+import { verifyNpxRuntime } from "./npx-runtime-smoke.mjs";
 
 const npm = process.env.npm_execpath;
 assert(npm, "Run through npm run test:windows-poc.");
@@ -112,6 +116,82 @@ async function call(name, args) {
 try {
   await writeFile(npmrc, "");
   await writeFile(env.NPM_CONFIG_GLOBALCONFIG, "");
+  if (windows) {
+    const runtimeDir = join(fixture, "runtime on PATH");
+    const shimDir = join(fixture, "npx on PATH");
+    await Promise.all([mkdir(runtimeDir), mkdir(shimDir)]);
+    const runtime = join(runtimeDir, "node.exe");
+    await copyFile(process.execPath, runtime);
+    await writeFile(join(shimDir, "npx.cmd"), "@echo off\r\n");
+    const launcher = pathToFileURL(
+      join(repository, "src", "client", "npx-launcher.ts"),
+    ).href;
+    const probe = `
+      import { checkNpxPath, NpxLauncherError } from ${JSON.stringify(launcher)};
+      try {
+        await checkNpxPath({});
+        console.log("verified");
+      } catch (error) {
+        if (!(error instanceof NpxLauncherError)) throw error;
+        console.log(error.code);
+      }
+    `;
+    const probeEnv = Object.fromEntries(
+      Object.entries(env).filter(([key]) => key.toUpperCase() !== "PATH"),
+    );
+    const check = (directories = [runtimeDir, shimDir]) =>
+      success(
+        spawnSync(
+          runtime,
+          [
+            "--experimental-transform-types",
+            "--input-type=module",
+            "-e",
+            probe,
+          ],
+          {
+            cwd: fixture,
+            env: { ...probeEnv, PATH: directories.join(delimiter) },
+            encoding: "utf8",
+            timeout: 15_000,
+          },
+        ),
+        "Windows npx runtime check",
+      );
+    assert.equal(check(), "verified", "npx.cmd falls back to the PATH Node");
+    for (const component of [".", "\\bin", '""']) {
+      assert.equal(
+        check([component, runtimeDir, shimDir]),
+        "NPX_RUNTIME_UNVERIFIED",
+        "ambiguous PATH components prevent migration",
+      );
+    }
+    const ordinaryShim = join(runtimeDir, "npx.cmd");
+    await writeFile(ordinaryShim, "@echo off\r\n");
+    assert.equal(check(), "verified", "npx.cmd selects the verified sibling Node");
+    await rm(ordinaryShim);
+    const sibling = join(shimDir, "node.exe");
+    await writeFile(sibling, "unverified neighboring runtime");
+    assert.equal(
+      check(),
+      "NPX_RUNTIME_UNVERIFIED",
+      "npx.cmd selects its neighboring Node ahead of the verified PATH Node",
+    );
+    await rm(sibling);
+    await mkdir(sibling);
+    assert.equal(check(), "NPX_RUNTIME_UNVERIFIED", "the sibling must be a file");
+    await rm(sibling, { recursive: true });
+    const competingNode = join(shimDir, "node.cmd");
+    await writeFile(competingNode, "@echo off\r\n");
+    assert.equal(
+      check([shimDir, runtimeDir]),
+      "NPX_RUNTIME_UNVERIFIED",
+      "the fallback node command is ambiguous",
+    );
+    await rm(competingNode);
+    await writeFile(join(shimDir, "npx.exe"), "unverified competing launcher");
+    assert.equal(check(), "NPX_RUNTIME_UNVERIFIED", "the npx command is ambiguous");
+  }
   const packed = success(
     node(
       [
@@ -151,6 +231,7 @@ try {
     "install packed archive",
   );
   const entry = join(prefix, "node_modules", "rebut-mcp", "bin", "rebut.mjs");
+  await verifyNpxRuntime({ archive, directory: fixture, npm, env });
   const cli = (...args) => success(node([entry, ...args]), args[0]);
   assert.equal(cli("--version"), artifact.version);
   if (windows) {
@@ -204,6 +285,48 @@ try {
   assert(registrations.codex.enabled_tools.includes("review_pair"));
   assert.equal(registrations.codex.env.REBUT_CONFIG_DIR, configDir);
   assert.equal(registrations.claude.env.REBUT_CONFIG_DIR, configDir);
+  if (windows) {
+    const { checkClaudeSetup, migrateClaudeToNpx } = await tsImport(
+      "../src/client/claude.ts",
+      import.meta.url,
+    );
+    const npxConfig = join(dirname(claudeConfig), "npx settings.json");
+    const options = { claudeConfig: npxConfig, entrypoint: entry };
+    const original = { ...registrations.claude, env: { PATH: fixture } };
+    const save = (registration) =>
+      writeFile(npxConfig, JSON.stringify({ mcpServers: { rebut: registration } }));
+    await save(original);
+    assert.equal((await migrateClaudeToNpx(options)).changed, true);
+    const migrated = JSON.parse(await readFile(npxConfig, "utf8")).mcpServers.rebut;
+    const npx = (node) =>
+      join(dirname(node), "node_modules", "npm", "bin", "npx-cli.js");
+    assert.equal(migrated.command, process.execPath);
+    assert.equal(migrated.args[0], npx(process.execPath));
+    assert.deepEqual(migrated.env, original.env);
+    assert.equal((await checkClaudeSetup(options)).status, "npx_launcher");
+    assert.equal((await migrateClaudeToNpx(options)).changed, false);
+
+    const oldNode = join(fixture, "previous Node", "node.exe");
+    const npxArgs = migrated.args.slice(1);
+    for (const [launcher, status] of [
+      [{ command: "npx", args: npxArgs }, "legacy_npx_launcher"],
+      [{ command: oldNode, args: [npx(oldNode), ...npxArgs] }, "missing_launcher"],
+    ]) {
+      await save({ ...migrated, ...launcher });
+      assert.equal((await checkClaudeSetup(options)).status, status);
+      assert.equal((await migrateClaudeToNpx(options)).changed, true);
+      assert.deepEqual(
+        JSON.parse(await readFile(npxConfig, "utf8")).mcpServers.rebut,
+        migrated,
+      );
+    }
+    await save({ ...migrated, args: [join(fixture, "npx-cli.js"), ...npxArgs] });
+    const unfamiliar = await readFile(npxConfig, "utf8");
+    await assert.rejects(migrateClaudeToNpx(options), {
+      code: "UNSUPPORTED_NPX_MIGRATION",
+    });
+    assert.equal(await readFile(npxConfig, "utf8"), unfamiliar);
+  }
 
   await writeFile(join(fixture, "sample.ts"), "export const fixture = 1;\n");
   const requestId = "windows-poc-001";
