@@ -2,6 +2,11 @@ import { z } from "zod";
 import type { Profile } from "./contracts.js";
 import type { Limits } from "./ledger.js";
 const SafeInt = z.number().int().positive().max(1_000_000_000_000);
+const DailySpend = z.number().int().nonnegative().max(1_000_000_000_000);
+const extendedOutputModel = {
+  openai: "gpt-6.2-astra",
+  anthropic: "claude-fable-5-2",
+};
 export const ProfileSchema = z
   .object({
     provider: z.enum(["openai", "anthropic"]).optional(),
@@ -10,7 +15,7 @@ export const ProfileSchema = z
       .string()
       .regex(/^[a-z][a-z0-9_-]{0,31}$/)
       .optional(),
-    maxOutputTokens: SafeInt.max(16384),
+    maxOutputTokens: SafeInt.max(50_000),
     inputMicrousdPerMillion: SafeInt,
     outputMicrousdPerMillion: SafeInt,
     priceVersion: z.string().min(1).max(100),
@@ -22,6 +27,15 @@ export const ProfileSchema = z
       p.reasoning === undefined ||
       ["low", "medium", "high", "xhigh", "max"].includes(p.reasoning),
     "Unsupported Anthropic effort",
+  )
+  .refine(
+    (p) =>
+      p.maxOutputTokens <= 16_384 ||
+      p.model === extendedOutputModel[p.provider ?? "openai"],
+    {
+      path: ["maxOutputTokens"],
+      message: "This model supports up to 16,384 output tokens in Rebut.",
+    },
   );
 export const LimitsSchema = z
   .object({
@@ -32,13 +46,20 @@ export const LimitsSchema = z
     dailyRequests: SafeInt.max(10000),
   })
   .strict();
+const WorkerLimitsSchema = LimitsSchema.extend({ dailyMicrousd: DailySpend });
+const WorkerSpendOverridesSchema = WorkerLimitsSchema.pick({
+  dailyMicrousd: true,
+  monthlyMicrousd: true,
+})
+  .partial()
+  .strict();
 const ConfigSchema = z
   .object({
     profiles: z.record(
       z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
       ProfileSchema,
     ),
-    limits: LimitsSchema,
+    limits: WorkerLimitsSchema,
     hostname: z.string().min(1).max(253),
   })
   .strict();
@@ -47,6 +68,15 @@ export interface Config {
   limits: Limits;
   hostname: string;
 }
-export function parseConfig(value: string): Config {
-  return ConfigSchema.parse(JSON.parse(value));
+export function parseConfig(value: string, spendOverrides?: string): Config {
+  const config = ConfigSchema.parse(JSON.parse(value));
+  if (spendOverrides !== undefined) {
+    const overrides = WorkerSpendOverridesSchema.parse(JSON.parse(spendOverrides));
+    config.limits = {
+      ...config.limits,
+      dailyMicrousd: overrides.dailyMicrousd ?? config.limits.dailyMicrousd,
+      monthlyMicrousd: overrides.monthlyMicrousd ?? config.limits.monthlyMicrousd,
+    };
+  }
+  return config;
 }
