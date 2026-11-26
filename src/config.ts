@@ -3,6 +3,7 @@ import type { Profile } from "./contracts.js";
 import type { Limits } from "./ledger.js";
 const SafeInt = z.number().int().positive().max(1_000_000_000_000);
 const DailySpend = z.number().int().nonnegative().max(1_000_000_000_000);
+export const LOCAL_BUDGET_ENV = "REBUT_LOCAL_BUDGET_LIMITS";
 const extendedOutputModel = {
   openai: "gpt-6.2-astra",
   anthropic: "claude-fable-5-2",
@@ -39,15 +40,14 @@ export const ProfileSchema = z
   );
 export const LimitsSchema = z
   .object({
-    dailyMicrousd: SafeInt,
+    dailyMicrousd: DailySpend,
     monthlyMicrousd: SafeInt,
     requestMicrousd: SafeInt,
     maxConcurrent: SafeInt.max(10),
     dailyRequests: SafeInt.max(10000),
   })
   .strict();
-const WorkerLimitsSchema = LimitsSchema.extend({ dailyMicrousd: DailySpend });
-const WorkerSpendOverridesSchema = WorkerLimitsSchema.pick({
+const SpendOverridesSchema = LimitsSchema.pick({
   dailyMicrousd: true,
   monthlyMicrousd: true,
 })
@@ -59,7 +59,7 @@ const ConfigSchema = z
       z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
       ProfileSchema,
     ),
-    limits: WorkerLimitsSchema,
+    limits: LimitsSchema,
     hostname: z.string().min(1).max(253),
   })
   .strict();
@@ -70,13 +70,12 @@ export interface Config {
 }
 export function parseConfig(value: string, spendOverrides?: string): Config {
   const config = ConfigSchema.parse(JSON.parse(value));
-  if (spendOverrides !== undefined) {
-    const overrides = WorkerSpendOverridesSchema.parse(JSON.parse(spendOverrides));
-    config.limits = {
-      ...config.limits,
-      dailyMicrousd: overrides.dailyMicrousd ?? config.limits.dailyMicrousd,
-      monthlyMicrousd: overrides.monthlyMicrousd ?? config.limits.monthlyMicrousd,
-    };
-  }
+  if (spendOverrides !== undefined)
+    config.limits = applySpendOverrides(config.limits, spendOverrides);
   return config;
+}
+
+export function applySpendOverrides(limits: Limits, value: string): Limits {
+  const overrides = SpendOverridesSchema.parse(JSON.parse(value));
+  return { ...limits, ...overrides };
 }

@@ -13,6 +13,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { parse, stringify } from "smol-toml";
+import { LOCAL_BUDGET_ENV } from "../config.js";
 import { CODEX_TOOL_TIMEOUT_SECONDS } from "../timeouts.js";
 import { inspectLauncher } from "./setup-check.js";
 import {
@@ -33,6 +34,7 @@ export interface CodexSetupOptions {
   replace?: boolean;
   forwardTokenEnv?: boolean;
   forwardApiKeyEnv?: boolean;
+  forwardLocalBudgetEnv?: boolean;
   apiKeyEnv?:
     "REBUT_OPENAI_API_KEY" | "OPENAI_API_KEY" | "REBUT_ANTHROPIC_API_KEY";
   configDir?: string;
@@ -76,17 +78,18 @@ function equivalent(a: unknown, b: unknown): boolean {
   return false;
 }
 function desired(options: CodexSetupOptions): Table {
+  const envVars: string[] = [];
+  if (options.forwardApiKeyEnv)
+    envVars.push(options.apiKeyEnv ?? "REBUT_OPENAI_API_KEY");
+  else if (options.forwardTokenEnv) envVars.push("REBUT_TOKEN");
+  if (options.forwardLocalBudgetEnv) envVars.push(LOCAL_BUDGET_ENV);
   return {
     command: options.nodePath ?? process.execPath,
     args: [resolve(options.entrypoint), "mcp", "--client", "codex"],
     startup_timeout_sec: STARTUP_TIMEOUT_SECONDS,
     tool_timeout_sec: CODEX_TOOL_TIMEOUT_SECONDS,
     enabled_tools: ["review", "review_status", "review_pair"],
-    ...(options.forwardApiKeyEnv
-      ? { env_vars: [options.apiKeyEnv ?? "REBUT_OPENAI_API_KEY"] }
-      : options.forwardTokenEnv
-        ? { env_vars: ["REBUT_TOKEN"] }
-        : {}),
+    ...(envVars.length > 0 ? { env_vars: envVars } : {}),
     ...(options.configDir !== undefined
       ? { env: { REBUT_CONFIG_DIR: resolve(options.configDir) } }
       : {}),
@@ -119,14 +122,19 @@ function usesWorkingDirectory(entry: Table) {
   );
 }
 
-function providerKeyVars(value: unknown): boolean {
+function localEnvVars(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  const budgetIndex = value.indexOf(LOCAL_BUDGET_ENV);
+  const names = budgetIndex === -1
+    ? value
+    : value.filter((_, index) => index !== budgetIndex);
   return (
-    value === undefined ||
-    (Array.isArray(value) &&
-      value.length === 1 &&
-      (value[0] === "REBUT_OPENAI_API_KEY" ||
-        value[0] === "OPENAI_API_KEY" ||
-        value[0] === "REBUT_ANTHROPIC_API_KEY"))
+    names.length === 0 ||
+    (names.length === 1 &&
+      (names[0] === "REBUT_OPENAI_API_KEY" ||
+        names[0] === "OPENAI_API_KEY" ||
+        names[0] === "REBUT_ANTHROPIC_API_KEY"))
   );
 }
 
@@ -134,11 +142,11 @@ function matchesRemoval(existing: unknown, desired: Table, entrypoint: string) {
   if (!table(existing)) return false;
   const { env_vars: existingVars, ...registered } = existing;
   const { env_vars: desiredVars, ...expected } = desired;
-  // A provider preference can change after setup. Keep all other ownership
-  // checks, including Worker token forwarding and the literal env table.
+  // Accept earlier local forwarding settings. Worker tokens, unknown names,
+  // and the literal env table still need to match.
   if (
     !equivalent(existingVars, desiredVars) &&
-    !(providerKeyVars(existingVars) && providerKeyVars(desiredVars))
+    !(localEnvVars(existingVars) && localEnvVars(desiredVars))
   )
     return false;
   return (

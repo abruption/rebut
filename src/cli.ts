@@ -67,9 +67,9 @@ rebut set endpoint URL          Select optional Worker mode
 rebut set secret-store keychain|vaultwarden|env
 rebut set vaultwarden-item NAME
 rebut set vaultwarden-api-key-item NAME
-rebut set daily-budget USD
+rebut set daily-budget USD       Local daily spend cap; 0 disables it
 rebut set monthly-budget USD
-rebut budget                    Show budget and unresolved concurrency (Worker admin)
+rebut budget                    Show spend caps and unresolved requests (Worker mode requires an admin token)
 rebut budget set-start-day DAY  Set a monthly UTC start day once per ledger (1–28)
 rebut set request-budget USD
 rebut set vaultwarden-admin-item NAME
@@ -513,7 +513,10 @@ export async function runCli(args: string[]): Promise<void> {
           : key === "monthly-budget"
             ? "monthlyMicrousd"
             : "requestMicrousd";
-      settings.localLimits = { ...config.limits, [field]: price(value) };
+      settings.localLimits = {
+        ...config.limits,
+        [field]: price(value, field === "dailyMicrousd"),
+      };
     } else if (key === "endpoint") {
       try {
         validateEndpoint(value);
@@ -574,6 +577,7 @@ export async function runCli(args: string[]): Promise<void> {
       ...registrationOptions,
       forwardTokenEnv: mode === "worker" && settings.secretStore === "env",
       forwardApiKeyEnv,
+      forwardLocalBudgetEnv: mode === "local",
       apiKeyEnv: providerEnvName(settings, keyProvider),
       configDir: process.env.REBUT_CONFIG_DIR,
     };
@@ -1024,6 +1028,8 @@ export function safeError(error: unknown): string {
   const known: Record<string, string> = {
     LOCAL_STORAGE_UNSAFE:
       "Local ledger path must be private, owned by you, and free of links.",
+    LOCAL_BUDGET_OVERRIDE_INVALID:
+      "Invalid REBUT_LOCAL_BUDGET_LIMITS. Use JSON with dailyMicrousd or monthlyMicrousd as whole amounts in millionths of a dollar.",
     LOCAL_SCHEMA_UNSUPPORTED:
       "Local ledger schema is newer than this CLI; preserve it and update the CLI.",
     LOCAL_RUNTIME_CLOSED:

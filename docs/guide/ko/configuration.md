@@ -65,6 +65,8 @@ rebut profile remove PROFILE_ID --if-revision N
 
 수정은 이후 요청에만 적용합니다. 제거는 이력을 지우지 않는 비활성화(tombstone)이며 초기 프로필을 되살리지 않습니다. 기존 ID의 모델·리비전·예약은 유지합니다. 동적 프로필 변경에는 Worker 재배포가 필요 없습니다.
 
+로컬과 Worker 모두 GPT-6.2 Astra와 Claude Fable 5.2 프로필의 출력 상한을 최대 50,000토큰까지 설정할 수 있습니다. CLI에서는 `--max-output-tokens 50000`을 사용하고, Fable에는 `--provider anthropic`을 함께 지정하세요. Worker 프로필의 출력 상한을 16,384토큰보다 높이기 전에 해당 Worker를 쓰는 CLI를 갱신하세요.
+
 ## 예산
 
 | 항목             | 기본값 | 로컬 변경 명령                      |
@@ -77,7 +79,17 @@ rebut profile remove PROFILE_ID --if-revision N
 
 로컬은 디렉터리 단위, Worker는 배포 전체의 한도입니다. 다른 기기·Worker·API 사용이나 OpenAI 계정 잔액을 합산하지 않습니다. Worker 한도는 `REBUT_CONFIG`에서 관리합니다. 일·월·요청 한도는 독립적이며 하나를 바꿔도 다른 한도가 늘지 않습니다. 설정 변경 후 호스트를 재시작하세요.
 
-Worker 바인딩 `REBUT_BUDGET_LIMITS`에는 `dailyMicrousd`와 `monthlyMicrousd` 중 바꿀 항목을 JSON으로 지정할 수 있습니다. 값의 단위는 백만분의 1달러입니다. 일일 금액으로 `0`을 지정하면 일일 지출 한도를 해제합니다. 월간·요청별 지출 한도, 일일 요청 수, 동시 실행 한도는 계속 적용합니다. 관리자는 `rebut budget`의 JSON에서 일·월 한도를 확인할 수 있습니다. `daily_limit_microusd`가 `0`이면 일일 지출 한도가 해제된 상태입니다. 바인딩 값이 잘못되면 Worker는 503을 반환합니다. GPT-6.2 Astra와 Claude Fable 5.2 프로필의 `maxOutputTokens`는 최대 50,000까지 지정할 수 있습니다. 운영 프로필을 16,384보다 높이기 전에 해당 Worker를 쓰는 CLI를 먼저 갱신하세요.
+macOS와 Linux의 로컬 모드에서는 `rebut set daily-budget 0`으로 일일 지출 한도를 해제하고 `rebut set monthly-budget USD`로 월간 한도를 지정할 수 있습니다.
+
+Windows를 포함한 모든 플랫폼의 로컬 모드에서 `REBUT_LOCAL_BUDGET_LIMITS` 환경변수로 일일·월간 금액을 바꿀 수 있습니다. 아래 JSON을 환경변수 값으로 지정하면 일일 한도를 해제하고 월간 한도를 $150으로 설정합니다. 지정한 항목은 로컬 설정 파일이나 기본값보다 우선합니다. 기존 실행 방식을 유지하려면 Codex 등록의 `env_vars`에 환경변수 이름을 추가하거나, Claude Code 등록의 `env`에서 같은 이름의 값을 `${REBUT_LOCAL_BUDGET_LIMITS:-}`로 지정하세요. 새 로컬 MCP 등록에서는 이 환경변수가 자동으로 전달됩니다. CLI와 MCP 호스트 모두에 해당 환경변수가 전달되는지 확인한 뒤 호스트를 다시 시작하세요.
+
+```json
+{"dailyMicrousd":0,"monthlyMicrousd":150000000}
+```
+
+Worker의 선택적 바인딩 `REBUT_BUDGET_LIMITS`에는 같은 JSON 형식으로 `dailyMicrousd`, `monthlyMicrousd` 또는 둘 다를 지정할 수 있습니다. 로컬과 Worker 모두 금액 단위는 백만분의 1달러입니다. 일일 금액을 `0`으로 지정해도 월간·요청별 지출 한도, 일일 요청 수, 동시 실행 한도는 계속 적용됩니다. 바인딩 값이 잘못되면 Worker는 HTTP 503을 반환합니다.
+
+로컬과 Worker 모두 `rebut budget`에서 일일·월간 지출 한도를 확인할 수 있습니다. `daily_limit_microusd`가 `0`이면 일일 지출 한도가 해제된 상태입니다.
 
 호출 전 입력과 최대 출력을 보수적으로 예약하고 확인된 사용량으로 정산합니다. 예상 비용은 청구서가 아닙니다. unknown은 전액 예약과 동시성 슬롯을 유지하며, 날짜가 바뀌어도 슬롯은 해제되지 않습니다. 기간별 비용은 원래 제출한 UTC 날짜·월에 귀속됩니다.
 

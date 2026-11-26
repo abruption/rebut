@@ -27,6 +27,8 @@ const configDir = join(fixture, "Rebut settings");
 const prefix = join(fixture, "npm install");
 const npmrc = join(fixture, "npmrc");
 const apiKey = "synthetic-rebut-poc-credential-not-real-123456789";
+const budgetEnv = "REBUT_LOCAL_BUDGET_LIMITS";
+const spendOverride = '{"dailyMicrousd":0,"monthlyMicrousd":150000000}';
 const windows = process.platform === "win32";
 const env = {
   PATH: process.env.PATH,
@@ -73,7 +75,7 @@ function success(result, operation) {
   return result.stdout.trim();
 }
 
-async function connect(registration, preload, key) {
+async function connect(registration, preload, key, budgetOverride = spendOverride) {
   client = new Client({ name: "rebut-windows-poc-fixture", version: "1" });
   const transport = new StdioClientTransport({
     command: registration.command,
@@ -82,6 +84,7 @@ async function connect(registration, preload, key) {
     env: {
       ...env,
       REBUT_OPENAI_API_KEY: key,
+      [budgetEnv]: budgetOverride,
     },
     stderr: "pipe",
   });
@@ -249,13 +252,20 @@ try {
     );
     assert.equal(success(shim, "installed Windows npm shim"), artifact.version);
   }
-  // Local development can check the harness using POSIX settings. The Windows
-  // run tests the built-in defaults without a Rebut config file.
+  // The Windows run checks the defaults and environment override without a
+  // Rebut config file. POSIX uses a fixture config to select the key store.
   if (!windows) cli("set", "secret-store", "env");
   const fresh = JSON.parse(cli("doctor"));
   assert.equal(fresh.mode, "local");
   assert.equal(fresh.secretStore, "env");
   assert.equal(fresh.credentialAvailable, false);
+  const budget = (extraEnv) =>
+    JSON.parse(success(node([entry, "budget"], { extraEnv }), "inspect budget"));
+  assert.equal(budget().daily_limit_microusd, 6_660_000);
+  const overridden = budget({ [budgetEnv]: spendOverride });
+  assert.equal(overridden.daily_limit_microusd, 0);
+  assert.equal(overridden.monthly_limit_microusd, 150_000_000);
+  assert.equal(overridden.max_concurrent, 1);
   if (windows)
     await assert.rejects(access(join(configDir, "config.json")), {
       code: "ENOENT",
@@ -277,11 +287,12 @@ try {
     assert.equal(await realpath(reg.args[0]), await realpath(entry));
     assert.deepEqual(reg.args.slice(1), ["mcp", "--client", host]);
   }
-  assert.deepEqual(registrations.codex.env_vars, ["REBUT_OPENAI_API_KEY"]);
+  assert.deepEqual(registrations.codex.env_vars, ["REBUT_OPENAI_API_KEY", budgetEnv]);
   assert.equal(
     registrations.claude.env.REBUT_OPENAI_API_KEY,
     "${REBUT_OPENAI_API_KEY:-}",
   );
+  assert.equal(registrations.claude.env[budgetEnv], "${REBUT_LOCAL_BUDGET_LIMITS:-}");
   assert(registrations.codex.enabled_tools.includes("review_pair"));
   assert.equal(registrations.codex.env.REBUT_CONFIG_DIR, configDir);
   assert.equal(registrations.claude.env.REBUT_CONFIG_DIR, configDir);
@@ -292,7 +303,10 @@ try {
     );
     const npxConfig = join(dirname(claudeConfig), "npx settings.json");
     const options = { claudeConfig: npxConfig, entrypoint: entry };
-    const original = { ...registrations.claude, env: { PATH: fixture } };
+    const original = {
+      ...registrations.claude,
+      env: { ...registrations.claude.env, PATH: fixture },
+    };
     const save = (registration) =>
       writeFile(npxConfig, JSON.stringify({ mcpServers: { rebut: registration } }));
     await save(original);
@@ -371,6 +385,12 @@ try {
     };
   `,
   );
+  await connect(registrations.codex, preload, apiKey, '{"monthlyMicrousd":1}');
+  const blocked = await call("review", bundle);
+  assert.equal(blocked.status, "limit_exceeded");
+  await assert.rejects(access(marker), { code: "ENOENT" });
+  await client.close();
+
   await connect(registrations.codex, preload, apiKey);
   const tools = await client.listTools({}, callOptions);
   assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [

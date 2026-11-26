@@ -65,6 +65,8 @@ rebut profile remove PROFILE_ID --if-revision N
 
 変更は後続リクエストに適用します。削除は無効化 tombstone を残し、履歴を消したり初期プロファイルを復活させたりしません。既存 ID のモデル・リビジョン・予約は維持します。動的変更に Worker 再デプロイは不要です。
 
+ローカルと Worker のどちらでも、GPT-6.2 Astra と Claude Fable 5.2 のプロファイルで出力上限を最大 50,000 トークンに設定できます。CLI では `--max-output-tokens 50000` を使用し、Fable では `--provider anthropic` も指定します。Worker のプロファイルで出力上限を 16,384 トークンを超える値に引き上げる前に、その Worker を使う CLI を更新してください。
+
 ## 予算
 
 | 項目                 | 既定  | ローカルコマンド                     |
@@ -77,7 +79,17 @@ rebut profile remove PROFILE_ID --if-revision N
 
 ローカルはディレクトリ単位、Worker はデプロイ全体の制限です。他端末・Worker・API 使用や OpenAI 残高は合算しません。Worker は `REBUT_CONFIG` で管理します。日・月・単位上限は独立し、1 つの変更で他が増えることはありません。変更後はホストを再起動します。
 
-Worker の任意バインディング `REBUT_BUDGET_LIMITS` に、変更する `dailyMicrousd` または `monthlyMicrousd` を JSON で指定できます。単位は 100 万分の 1 ドルです。日額に `0` を指定すると、日ごとの支出上限を解除します。月額、リクエスト単位の支出上限、日ごとのリクエスト数、同時実行数の上限は引き続き適用されます。管理者は `rebut budget` の JSON で日額と月額の上限を確認できます。`daily_limit_microusd` が `0` の場合は日ごとの支出上限が解除されています。バインディングが無効な場合、Worker は 503 を返します。GPT-6.2 Astra と Claude Fable 5.2 のプロファイルは `maxOutputTokens` を最大 50,000 に設定できます。有効なプロファイルを 16,384 より上げる前に、その Worker を使う CLI を更新してください。
+macOS と Linux のローカルモードでは、`rebut set daily-budget 0` で日ごとの支出上限を解除し、`rebut set monthly-budget USD` で月間の支出上限を設定できます。
+
+Windows を含むすべての環境のローカルモードでは、環境変数 `REBUT_LOCAL_BUDGET_LIMITS` で日ごと・月ごとの支出上限を変更できます。以下の JSON を設定すると、日ごとの支出上限を解除し、月間の上限を 150 ドルに設定します。指定した項目は保存済みの設定や既定値より優先されます。既存の起動コマンドを使い続けるには、Codex の登録にある `env_vars` に変数名を追加するか、Claude Code の `env` で同じ名前の値を `${REBUT_LOCAL_BUDGET_LIMITS:-}` に設定してください。新規登録では変数が自動で渡されます。CLI と MCP ホストの両方に環境変数を渡し、ホストを再起動してください。
+
+```json
+{"dailyMicrousd":0,"monthlyMicrousd":150000000}
+```
+
+Worker の任意バインディング `REBUT_BUDGET_LIMITS` には同じ JSON 形式で `dailyMicrousd`、`monthlyMicrousd`、またはその両方を指定できます。どちらのモードでも金額の単位は 100 万分の 1 ドルです。日額が `0` でも、月間とリクエストごとの支出上限、1 日のリクエスト数、同時実行数の上限は引き続き適用されます。無効なバインディングには Worker が HTTP 503 を返します。
+
+どちらのモードでも `rebut budget` で日ごと・月ごとの支出上限を確認できます。`daily_limit_microusd` が `0` なら、日ごとの支出上限は解除されています。
 
 呼び出し前に入力と最大出力を保守的に予約し、確認した使用量で計上します。見積もりは請求書ではありません。unknown は全額予約と同時実行枠を保持し、日付変更でも枠は解放しません。期間計上は最初の UTC 提出日・月に属します。
 
