@@ -133,6 +133,143 @@ function respond(
   );
 }
 
+it.each(["openai", "anthropic"] as const)(
+  "%s receives physical citation ranges and rejects embedded coordinates in both formats",
+  async (provider) => {
+    const file = {
+      path: "packet.md",
+      start_line: 10,
+      content: "### src/example.ts\n42 | return 0;\n\n",
+    };
+    const active = profile(provider);
+    for (const extended of [false, true]) {
+      const selected = { ...(await input(provider, extended)), files: [file] };
+      selected.input_sha256 = await inputHash(selected);
+      const body = buildReviewBody(selected, active);
+      const material = JSON.parse(
+        "input" in body ? body.input : body.messages[0]!.content,
+      );
+      expect(material.citation_ranges).toEqual([
+        { path: "packet.md", ranges: [[10, 12]] },
+      ]);
+      expect(material.files).toEqual([file]);
+      const base = extended ? extendedReview : oldReview;
+      const submit = async (path: string, line: number) => {
+        const coordinates = { path, line, end_line: line };
+        return runReview(
+          selected,
+          active,
+          "synthetic",
+          respond(provider, {
+            ...base,
+            findings: [{ ...base.findings[0], ...coordinates }],
+            ...(extended
+              ? {
+                  requirement_coverage: [
+                    {
+                      ...extendedReview.requirement_coverage[0],
+                      evidence: [coordinates],
+                    },
+                  ],
+                }
+              : {}),
+          }),
+        );
+      };
+      for (const [path, line] of [
+        ["src/example.ts", 42],
+        ["packet.md", 42],
+      ] as const) {
+        expect(await submit(path, line)).toMatchObject({
+          status: "invalid_output",
+          invalid_output_reason: "ungrounded_finding",
+        });
+      }
+      expect(await submit("packet.md", 11)).toMatchObject({
+        status: "completed",
+      });
+    }
+  },
+);
+
+it("unions overlapping file and diff spans and keeps gaps and unsupplied lines out", async () => {
+  const selected = {
+    ...(await input("openai", false)),
+    files: [
+      { path: "src/changed.ts", start_line: 22, content: " tail\nnext\n" },
+    ],
+    diff: [
+      "diff --git a/src/changed.ts b/src/changed.ts",
+      "--- a/src/changed.ts",
+      "+++ b/src/changed.ts",
+      "@@ -50 +51,2 @@",
+      "-old",
+      "+new",
+      "+new",
+      "@@ -10,3 +20,3 @@",
+      " context",
+      "-old",
+      "+new",
+      " tail",
+      "@@ -70 +80,4 @@",
+      "-old",
+      "+new",
+      "",
+    ].join("\n"),
+  };
+  selected.input_sha256 = await inputHash(selected);
+  const active = profile("openai");
+  const body = buildReviewBody(selected, active);
+  if (!("input" in body)) throw Error("OpenAI body expected");
+  expect(JSON.parse(body.input).citation_ranges).toEqual([
+    { path: "src/changed.ts", ranges: [[20, 23], [51, 52], [80, 80]] },
+  ]);
+  const submit = (line: number, end_line: number) =>
+    runReview(
+      selected,
+      active,
+      "synthetic",
+      respond("openai", {
+        ...oldReview,
+        findings: [{ ...finding, path: "src/changed.ts", line, end_line }],
+      }),
+    );
+  expect(await submit(20, 23)).toMatchObject({ status: "completed" });
+  expect(await submit(23, 51)).toMatchObject({
+    status: "invalid_output",
+    invalid_output_reason: "ungrounded_finding",
+  });
+  expect(await submit(80, 81)).toMatchObject({
+    status: "invalid_output",
+    invalid_output_reason: "ungrounded_finding",
+  });
+});
+
+it.each(["openai", "anthropic"] as const)(
+  "%s omits an oversized citation hint without changing the evidence or instructions",
+  async (provider) => {
+    const selected = {
+      ...(await input(provider, false)),
+      files: Array.from({ length: 20 }, (_, i) => ({
+        path: `src/${"a".repeat(470)}/${i}.ts`,
+        start_line: 10,
+        content: "line one\nline two",
+      })),
+    };
+    selected.input_sha256 = await inputHash(selected);
+    expect(ReviewInputSchema.safeParse(selected).success).toBe(true);
+    const body = buildReviewBody(selected, profile(provider));
+    const material = JSON.parse(
+      "input" in body ? body.input : body.messages[0]!.content,
+    );
+    expect(material).toMatchObject({ files: selected.files });
+    expect(material).not.toHaveProperty("citation_ranges");
+    expect("input" in body ? body.instructions : body.system).toContain(
+      "count physical lines",
+    );
+  },
+);
+
 it("preserves v0.5.0 hashes for unselected output and pins the ordered opt-in criteria", async () => {
   const legacy = await input("openai", false);
   expect(legacy.input_sha256).toBe(

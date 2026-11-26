@@ -116,6 +116,8 @@ umask 077
 rebut collect --root /path/to/project --request-id review-001 --requirements 'AC-1: 保持排序顺序。AC-2: 保留空结果。' --profile astra-medium -- src/example.ts > /protected/path/review-001.bundle.json
 ```
 
+如需在引用中保留原路径和行号，请以原有相对路径提交源文件。直接构建 MCP 输入包时，将原有相对路径填入 `files[].path`，将摘录的首行行号填入 `start_line`，并使用未附加行号的摘录文本。提交 Markdown 文档时，审查发现会引用该文档自身的路径和实际行号。正文里写到的源文件路径不会自动成为可引用的依据。
+
 使用问题单或规范中由人工批准的验收标准。尽可能在开始实现前固定该版本，并将它与补丁分开。选择评估补丁所需的文件，默认将作者摘要排除在 `requirements` 之外。
 
 提交前，确认固定的版本仍适用于本次审查，并将包中脱敏后的实际 `requirements` 与批准版本逐项核对。Rebut 检查提交的内容与随请求提供的哈希是否一致。它无法确认谁批准了标准或是否遗漏了条目。如果修订改变了范围，或脱敏改变了某条标准的含义，请在提交前向标准批准人确认。

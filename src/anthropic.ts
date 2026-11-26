@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  reviewMaterial,
   reviewResponseSchema,
   type Profile,
   type ReviewInput,
@@ -70,6 +69,7 @@ export function buildAnthropicBody(
   input: ReviewInput,
   profile: Profile,
   instructions: string,
+  material: string,
 ) {
   if (
     profile.reasoning !== undefined &&
@@ -87,7 +87,7 @@ export function buildAnthropicBody(
     messages: [
       {
         role: "user",
-        content: JSON.stringify(reviewMaterial(input)),
+        content: material,
       },
     ],
     output_config: {
