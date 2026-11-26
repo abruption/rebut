@@ -116,6 +116,8 @@ umask 077
 rebut collect --root /path/to/project --request-id review-001 --requirements 'AC-1: Preserve sort order. AC-2: Retain empty results.' --profile astra-medium -- src/example.ts > /protected/path/review-001.bundle.json
 ```
 
+Submit source files under their original relative paths to preserve citation coordinates. For a direct MCP bundle, use `files[].path`, a `start_line` that matches the excerpt’s first line, and the excerpt text without added line numbers. If you submit a Markdown packet, findings cite the packet’s own path and physical lines. A source path printed inside the packet does not add that source to the bundle.
+
 Use the acceptance criteria a human approved in the issue or spec. Pin that version separately from the patch, ideally before implementation. Select the files needed to evaluate the patch and leave their summary out of `requirements` by default.
 
 Before submitting, confirm the pinned version still applies and compare the actual masked `requirements` in the bundle with the approved criteria. Rebut checks that the submitted content matches its supplied hash. It cannot establish who approved the criteria or whether anything was omitted. If a correction changes the scope or masking changes a criterion’s meaning, check with the person who approved the criteria before submitting.
