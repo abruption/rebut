@@ -873,6 +873,61 @@ it("pins the independent local default ceilings", () => {
   });
 });
 
+it("keeps local monthly and per-request caps active with daily spend uncapped", async () =>
+  fixture(async (directory) => {
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(Error("synthetic"));
+    const runtime = await openLocalRuntime({
+      ...settings(),
+      localLimits: {
+        ...DEFAULT_LOCAL_LIMITS,
+        dailyMicrousd: 0,
+        monthlyMicrousd: 9_000_000,
+        requestMicrousd: 3_000_000,
+        maxConcurrent: 5,
+      },
+    }, { directory, fetcher, loadApiKey: async () => key });
+    try {
+      const profile = {
+        ...runtime.config.profiles["astra-medium"]!,
+        maxOutputTokens: 50_000,
+      };
+      expect(await runtime.profiles.set("extended", profile, 0))
+        .toMatchObject({ status: "updated" });
+      await runtime.profiles.set("expensive", {
+        ...profile,
+        outputMicrousdPerMillion: 70_000_000,
+      }, 0);
+      const submit = async (id: string, profileId = "extended") => {
+        const bundle = { ...(await input(id)), profile: profileId };
+        bundle.input_sha256 = await inputHash(bundle);
+        return runtime.review(bundle);
+      };
+      expect(await submit("over-request", "expensive")).toEqual({
+        status: "limit_exceeded",
+      });
+      expect(fetcher).not.toHaveBeenCalled();
+      for (const id of ["first", "second", "third", "fourth"])
+        expect(await submit(id)).toMatchObject({ status: "unknown" });
+      expect(await submit("over-month")).toEqual({ status: "limit_exceeded" });
+      const budget = await runtime.budget();
+      expect(budget).toMatchObject({
+        daily_limit_microusd: 0,
+        monthly_limit_microusd: 9_000_000,
+        unresolved_slots: 4,
+      });
+      expect(budget.monthly_accounted_microusd).toBeGreaterThan(
+        DEFAULT_LOCAL_LIMITS.dailyMicrousd,
+      );
+      expect(fetcher).toHaveBeenCalledTimes(4);
+      expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toMatchObject({
+        model: "gpt-6.2-astra",
+        max_output_tokens: 50_000,
+      });
+    } finally {
+      await runtime.close();
+    }
+  }));
+
 it("uses authoritative ledger state and identity after an operator settlement", async () =>
   fixture(async (directory) => {
     const runtime = await openLocalRuntime(settings(), {

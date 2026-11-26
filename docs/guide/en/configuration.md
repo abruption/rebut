@@ -65,6 +65,8 @@ Replace placeholders such as `PROFILE_ID` and `MODEL_ID` with the values you int
 
 Changes affect future requests. Removal leaves an inactive tombstone without deleting history or reviving seeded profiles. Existing IDs retain their model, revision, and reservation. Dynamic profile edits do not require Worker redeployment.
 
+In local and Worker modes, GPT-6.2 Astra and Claude Fable 5.2 profiles support up to 50,000 output tokens. Use `--max-output-tokens 50000` and include `--provider anthropic` for Fable. Upgrade the CLIs that use a Worker before raising one of its profiles above 16,384 tokens.
+
 ## Budgets
 
 | Setting                        | Default | Local command                       |
@@ -77,7 +79,17 @@ Changes affect future requests. Removal leaves an inactive tombstone without del
 
 Local limits apply to one data directory; Worker limits apply across its deployment. They do not aggregate other devices, Workers, API usage, or OpenAI account balance. Manage Worker limits in `REBUT_CONFIG`. Daily, monthly, and request ceilings are independent; changing one does not increase the others. Restart hosts after settings changes.
 
-The optional Worker binding `REBUT_BUDGET_LIMITS` accepts a JSON object with `dailyMicrousd`, `monthlyMicrousd`, or both. Values use millionths of a dollar. A daily amount of `0` removes the daily spend cap. The monthly cap, per-request cap, daily request count and concurrency limits still apply. An administrator can inspect both limits in the `rebut budget` JSON. A `daily_limit_microusd` of `0` means the daily spend cap is off. The Worker returns 503 for an invalid binding. Profiles using GPT-6.2 Astra or Claude Fable 5.2 can set `maxOutputTokens` up to 50,000. Upgrade the CLIs that use the Worker before raising an active profile above 16,384.
+In local mode on macOS and Linux, use `rebut set daily-budget 0` to disable the daily spend cap and `rebut set monthly-budget USD` to set the monthly cap.
+
+On all platforms, including Windows, local mode accepts daily and monthly overrides through the `REBUT_LOCAL_BUDGET_LIMITS` environment variable. The JSON below disables the daily cap and sets the monthly cap to $150. The supplied fields take precedence over saved settings and defaults. To keep an existing launcher, add the name to the Codex registration’s `env_vars`, or set the matching Claude Code `env` entry to `${REBUT_LOCAL_BUDGET_LIMITS:-}`. New registrations forward the variable automatically. Make sure both your CLI and MCP host receive the variable, then restart the host.
+
+```json
+{"dailyMicrousd":0,"monthlyMicrousd":150000000}
+```
+
+The optional Worker binding `REBUT_BUDGET_LIMITS` accepts `dailyMicrousd`, `monthlyMicrousd`, or both in the same JSON format. Amounts in both modes are in millionths of a dollar. When the daily amount is `0`, the monthly cap, per-request cap, daily request count, and concurrency limits still apply. The Worker returns HTTP 503 if its binding is invalid.
+
+Run `rebut budget` in either mode to see the daily and monthly spend caps. A `daily_limit_microusd` of `0` means the daily spend cap is off.
 
 The service reserves conservatively for input and maximum output, then accounts for verified usage. Estimates are not invoices. Requests in the `unknown` state keep their full reservation and concurrency slot across UTC date changes. Period accounting remains attached to the original UTC submission day/month.
 

@@ -113,6 +113,7 @@ export class Ledger {
       period_start: period.start,
       next_reset_at: period.end,
       monthly_accounted_microusd: totals.accounted,
+      daily_limit_microusd: limits.dailyMicrousd,
       monthly_limit_microusd: limits.monthlyMicrousd,
       unresolved_slots: totals.unresolved,
       max_concurrent: limits.maxConcurrent,

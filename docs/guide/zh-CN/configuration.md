@@ -65,6 +65,8 @@ rebut profile remove PROFILE_ID --if-revision N
 
 更改只影响后续请求。删除留下停用 tombstone，不删除历史或恢复初始配置档。已有 ID 保留模型、修订和预留。动态修改配置档不需重新部署 Worker。
 
+在本地模式和 Worker 模式下，GPT-6.2 Astra 和 Claude Fable 5.2 的输出上限最高可设为 50,000 个 token。CLI 可使用 `--max-output-tokens 50000`。配置 Fable 时请同时指定 `--provider anthropic`。将 Worker 配置档的输出上限提高到超过 16,384 个 token 前，请先更新使用该 Worker 的 CLI。
+
 ## 预算
 
 | 项目           | 默认值 | 本地命令                             |
@@ -77,7 +79,17 @@ rebut profile remove PROFILE_ID --if-revision N
 
 本地限制按数据目录，Worker 限制按整个部署。不合计其他设备、Worker、API 使用或 OpenAI 账户余额。Worker 限制由 `REBUT_CONFIG` 管理。日、月和单次上限相互独立，更改一个不会扩大其他上限。设置更改后重启宿主。
 
-可选的 Worker 绑定 `REBUT_BUDGET_LIMITS` 接受 JSON 对象，其中可指定 `dailyMicrousd`、`monthlyMicrousd` 或两者。数值的单位为百万分之一美元。每日金额设为 `0` 时取消每日支出上限。月度支出、单次支出、每日请求数和并发上限继续生效。管理员可在 `rebut budget` 的 JSON 输出中查看日度和月度支出上限。`daily_limit_microusd` 为 `0` 表示每日支出上限已取消。绑定值无效时，Worker 返回 503。GPT-6.2 Astra 和 Claude Fable 5.2 的配置档可将 `maxOutputTokens` 设置为最高 50,000。将启用的配置档提高到 16,384 以上前，请先更新使用该 Worker 的 CLI。
+在 macOS 和 Linux 的本地模式下，运行 `rebut set daily-budget 0` 可取消每日支出上限，运行 `rebut set monthly-budget USD` 可设置月度上限。
+
+所有平台（包括 Windows）的本地模式均可通过环境变量 `REBUT_LOCAL_BUDGET_LIMITS` 设置每日和月度支出上限。将该变量设为以下 JSON，可取消每日上限并将月度上限设为 150 美元。所指定的字段优先于已保存的设置和默认值。要保留现有启动方式，可在 Codex 注册的 `env_vars` 中添加变量名，或将 Claude Code 注册中 `env` 的同名项设为 `${REBUT_LOCAL_BUDGET_LIMITS:-}`。新注册会自动传递该变量。确保 CLI 和 MCP 宿主均收到该变量，然后重启宿主。
+
+```json
+{"dailyMicrousd":0,"monthlyMicrousd":150000000}
+```
+
+可选的 Worker 绑定 `REBUT_BUDGET_LIMITS` 使用相同的 JSON 格式，可指定 `dailyMicrousd`、`monthlyMicrousd` 或两者。两种模式的金额均以百万分之一美元为单位。每日金额设为 `0` 时，月度支出、单次支出、每日请求数和并发上限仍然生效。如果绑定值无效，Worker 会返回 HTTP 503。
+
+两种模式都可通过 `rebut budget` 查看每日和每月支出上限。`daily_limit_microusd` 为 `0` 表示每日支出上限已取消。
 
 调用前保守预留输入及最大输出费用，再按已验证用量记账。估算不是账单。unknown 保留全额预留与并发槽位，日期切换也不释放槽位。费用归属于最初提交的 UTC 日期和月份。
 
