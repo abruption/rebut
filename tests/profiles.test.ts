@@ -35,13 +35,6 @@ it("overrides only Worker spend limits and preserves zero as an explicit value",
   expect(() => parseConfig(source, '{"dailyMicrousd":-1}')).toThrow();
   expect(() => parseConfig(source, '{"monthlyMicrousd":0}')).toThrow();
   expect(() => parseConfig(source, '{"dailyRequests":0}')).toThrow();
-  expect(SettingsSchema.safeParse({
-    schemaVersion: 1,
-    mode: "local",
-    secretStore: "env",
-    vaultwardenItem: "unused",
-    localLimits: { ...original.limits, dailyMicrousd: 0 },
-  }).success).toBe(false);
 });
 
 it("allows 50,000 output tokens only for the supported provider and model pairs", () => {
@@ -57,6 +50,29 @@ it("allows 50,000 output tokens only for the supported provider and model pairs"
   expect(ProfileSchema.safeParse(extended).success).toBe(false);
   expect(ProfileSchema.safeParse({ ...extended, model: "claude-fable-5-2" }).success)
     .toBe(false);
+});
+
+it("accepts zero only for saved local daily spend", () => {
+  const { limits } = parseConfig(readFileSync("config.example.json", "utf8"));
+  const settings = {
+    schemaVersion: 1,
+    mode: "local",
+    secretStore: "env",
+    vaultwardenItem: "unused",
+    localLimits: { ...limits, dailyMicrousd: 0 },
+  };
+  expect(SettingsSchema.safeParse(settings).success).toBe(true);
+  for (const [field, value] of [
+    ["dailyMicrousd", -1],
+    ["monthlyMicrousd", 0],
+    ["requestMicrousd", 0],
+    ["dailyRequests", 0],
+  ] as const) {
+    expect(SettingsSchema.safeParse({
+      ...settings,
+      localLimits: { ...settings.localLimits, [field]: value },
+    }).success).toBe(false);
+  }
 });
 const databases: DatabaseSync[] = [];
 function setup(

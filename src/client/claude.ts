@@ -12,6 +12,7 @@ import {
   type Node,
   type ParseError,
 } from "jsonc-parser";
+import { LOCAL_BUDGET_ENV } from "../config.js";
 import { CODEX_TOOL_TIMEOUT_SECONDS } from "../timeouts.js";
 import { inspectLauncher } from "./setup-check.js";
 import {
@@ -31,6 +32,7 @@ export interface ClaudeSetupOptions {
   replace?: boolean;
   forwardTokenEnv?: boolean;
   forwardApiKeyEnv?: boolean;
+  forwardLocalBudgetEnv?: boolean;
   apiKeyEnv?: string;
   configDir?: string;
 }
@@ -156,6 +158,8 @@ function desired(options: ClaudeSetupOptions) {
   const env: Record<string, string> = {};
   if (options.configDir !== undefined)
     env.REBUT_CONFIG_DIR = safePath(options.configDir);
+  if (options.forwardLocalBudgetEnv)
+    env[LOCAL_BUDGET_ENV] = `\${${LOCAL_BUDGET_ENV}:-}`;
   if (options.forwardApiKeyEnv) {
     const name = options.apiKeyEnv ?? "REBUT_OPENAI_API_KEY";
     if (

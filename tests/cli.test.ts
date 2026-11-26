@@ -40,6 +40,7 @@ function cli(
       ...process.env,
       REBUT_CONFIG_DIR: join(dir, "settings"),
       REBUT_TOKEN: fixtureToken,
+      REBUT_LOCAL_BUDGET_LIMITS: "",
       ...extraEnv,
     },
   });
@@ -202,7 +203,7 @@ it("stores model and reasoning preferences without embedding an admin secret or 
     expect(cli(dir, ["set", "reasoning", "bad effort"]).status).toBe(1);
   }));
 
-it("sets up local mode without an endpoint and forwards only the API-key variable name", async () =>
+it("sets up local mode with credential and budget variable names", async () =>
   fixture(async (dir) => {
     expect(cli(dir, ["set", "secret-store", "env"]).status).toBe(0);
     const home = join(dir, "local-codex");
@@ -212,7 +213,10 @@ it("sets up local mode without an endpoint and forwards only the API-key variabl
     const config = parse(
       await readFile(join(home, "config.toml"), "utf8"),
     ) as any;
-    expect(config.mcp_servers.rebut.env_vars).toEqual(["REBUT_OPENAI_API_KEY"]);
+    expect(config.mcp_servers.rebut.env_vars).toEqual([
+      "REBUT_OPENAI_API_KEY",
+      "REBUT_LOCAL_BUDGET_LIMITS",
+    ]);
     const doctor = cli(dir, ["doctor"], undefined, {
       OPENAI_API_KEY: "",
       REBUT_OPENAI_API_KEY: "",
@@ -243,6 +247,15 @@ it("sets up local mode without an endpoint and forwards only the API-key variabl
     const rejected = cli(dir, ["set", "api-key", fixtureToken]);
     expect(rejected.status).toBe(1);
     expect(rejected.stdout + rejected.stderr).not.toContain(fixtureToken);
+    const configPath = join(home, "config.toml");
+    const forwarded = config.mcp_servers.rebut.env_vars;
+    config.mcp_servers.rebut.env_vars = [...forwarded, "REBUT_LOCAL_BUDGET_LIMITS"];
+    await writeFile(configPath, stringify(config), { mode: 0o600 });
+    const remove = ["remove", "--client", "codex", "--codex-home", home];
+    expect(cli(dir, remove).status).toBe(1);
+    config.mcp_servers.rebut.env_vars = [...forwarded].reverse();
+    await writeFile(configPath, stringify(config), { mode: 0o600 });
+    expect(cli(dir, remove).status).toBe(0);
   }));
 it("keeps mode selection explicit and local budgets separate from Worker settings", async () =>
   fixture(async (dir) => {
@@ -286,6 +299,81 @@ it("lets an operator add bounded local capacity without changing recorded reques
     const result = cli(dir, ["set", "api-key-env", "OPENAI_API_KEY"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("setup --client codex --replace");
+  }));
+it("configures local spend caps and extended provider profiles through the packaged CLI", async () =>
+  fixture(async (dir) => {
+    expect(cli(dir, ["set", "daily-budget", "0"]).status).toBe(0);
+    expect(cli(dir, ["set", "monthly-budget", "150"]).status).toBe(0);
+    for (const [field, value] of [
+      ["daily-budget", "-1"],
+      ["monthly-budget", "0"],
+      ["request-budget", "0"],
+    ] as const)
+      expect(cli(dir, ["set", field, value]).status).toBe(1);
+    const budget = cli(dir, ["budget"]);
+    expect(budget.status).toBe(0);
+    expect(JSON.parse(budget.stdout)).toMatchObject({
+      daily_limit_microusd: 0,
+      monthly_limit_microusd: 150_000_000,
+      max_concurrent: 1,
+    });
+    const override = {
+      REBUT_LOCAL_BUDGET_LIMITS: JSON.stringify({ monthlyMicrousd: 125_000_000 }),
+    };
+    expect(cli(dir, ["set", "max-concurrent", "2"], undefined, override).status)
+      .toBe(0);
+    const overridden = cli(dir, ["budget"], undefined, override);
+    expect(overridden.status).toBe(0);
+    expect(JSON.parse(overridden.stdout)).toMatchObject({
+      daily_limit_microusd: 0,
+      monthly_limit_microusd: 125_000_000,
+      max_concurrent: 2,
+    });
+    expect(JSON.parse(cli(dir, ["budget"]).stdout).monthly_limit_microusd)
+      .toBe(150_000_000);
+    const targets = [
+      ["local-astra", "openai", "gpt-6.2-astra"],
+      ["local-fable", "anthropic", "claude-fable-5-2"],
+    ] as const;
+    for (const [id, provider, model] of targets) {
+      const set = cli(dir, [
+        "profile", "set", id, "--provider", provider, "--model", model,
+        "--reasoning", "medium", "--max-output-tokens", "50000",
+        "--input-usd-per-million", "1", "--output-usd-per-million", "2",
+        "--price-version", "fixture",
+      ]);
+      expect(set.status).toBe(0);
+    }
+    const profiles = cli(dir, ["profile", "list"]);
+    expect(profiles.status).toBe(0);
+    expect(JSON.parse(profiles.stdout).profiles).toEqual(
+      expect.arrayContaining(
+        targets.map(([id, provider, model]) =>
+          expect.objectContaining({
+            id,
+            profile: expect.objectContaining({
+              ...(provider === "anthropic" ? { provider } : {}),
+              model,
+              maxOutputTokens: 50_000,
+            }),
+          }),
+        ),
+      ),
+    );
+  }));
+it("rejects an invalid local budget override before opening SQLite", async () =>
+  fixture(async (dir) => {
+    for (const invalid of ["bad-json", '{"monthlyMicrousd":0}', '{"maxConcurrent":10}']) {
+      const result = cli(dir, ["budget"], undefined, {
+        REBUT_LOCAL_BUDGET_LIMITS: invalid,
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("Invalid REBUT_LOCAL_BUDGET_LIMITS.");
+      expect(result.stderr).not.toContain(invalid);
+    }
+    await expect(stat(join(dir, "settings/local/ledger.sqlite"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   }));
 it("does not add new-only settings when updating a legacy Worker configuration", async () =>
   fixture(async (dir) => {
@@ -355,6 +443,7 @@ it("configures the Claude provider and host independently without embedding keys
     expect(entry.env).toMatchObject({
       REBUT_ANTHROPIC_API_KEY: "${REBUT_ANTHROPIC_API_KEY:-}",
       REBUT_CONFIG_DIR: join(dir, "settings"),
+      REBUT_LOCAL_BUDGET_LIMITS: "${REBUT_LOCAL_BUDGET_LIMITS:-}",
     });
     expect(JSON.stringify(entry)).not.toContain(fixtureToken);
     expect(entry.env.ANTHROPIC_API_KEY).toBeUndefined();
@@ -425,6 +514,7 @@ it(
       ) as any;
       expect(host.mcp_servers.rebut.env_vars).toEqual([
         "REBUT_ANTHROPIC_API_KEY",
+        "REBUT_LOCAL_BUDGET_LIMITS",
       ]);
       const code = bundle("--client", "codex");
       expect(code).toMatchObject({
@@ -600,7 +690,7 @@ it("applies reasoning overrides after selecting a provider and forwards the effe
     expect(
       (parse(await readFile(join(codexHome, "config.toml"), "utf8")) as any)
         .mcp_servers.rebut.env_vars,
-    ).toEqual(["REBUT_ANTHROPIC_API_KEY"]);
+    ).toEqual(["REBUT_ANTHROPIC_API_KEY", "REBUT_LOCAL_BUDGET_LIMITS"]);
     expect(cli(dir, ["set", "profile", "astra-medium"]).status).toBe(0);
     const health = cli(dir, ["doctor", "--connect"], undefined, {
       REBUT_OPENAI_API_KEY: "synthetic-openai-actual-key-not-real-123456789",
@@ -622,6 +712,10 @@ it("applies reasoning overrides after selecting a provider and forwards the effe
       JSON.parse(await readFile(config, "utf8")).mcpServers.rebut.env
         .REBUT_OPENAI_API_KEY,
     ).toBe("${REBUT_OPENAI_API_KEY:-}");
+    expect(
+      JSON.parse(await readFile(config, "utf8")).mcpServers.rebut.env
+        .REBUT_LOCAL_BUDGET_LIMITS,
+    ).toBe("${REBUT_LOCAL_BUDGET_LIMITS:-}");
   }));
 
 it("plain doctor does not initialize SQLite and collection binds an explicit profile supplier", async () =>

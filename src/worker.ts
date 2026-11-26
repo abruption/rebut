@@ -118,10 +118,7 @@ export default {
           const ledger = new Ledger(env.DB);
           try {
             if (request.method === "GET" && !budgetStartDay)
-              return reply({
-                ...(await ledger.budget(config.limits)),
-                daily_limit_microusd: config.limits.dailyMicrousd,
-              });
+              return reply(await ledger.budget(config.limits));
             if (request.method !== "PUT" || !budgetStartDay)
               return reply({ status: "method_not_allowed" }, 405);
             const day = Number(budgetStartDay[1]);

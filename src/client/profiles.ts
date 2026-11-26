@@ -42,7 +42,7 @@ const SAFE_ERRORS = new Set([
   "Default claude-medium profile is unavailable; select a profile.",
   "Expected a whole number.",
   "Expected a bounded whole number.",
-  "Price requires positive decimal USD with at most six fractional digits.",
+  "Price requires decimal USD with at most six fractional digits.",
   "Price exceeds the supported range.",
   "Expected profiles list, set ID, or remove ID.",
   "Invalid profile command flags.",
@@ -225,15 +225,15 @@ function integer(value: string, allowZero = false): number {
   return parsed;
 }
 
-export function price(value: string): number {
+export function price(value: string, allowZero = false): number {
   const match = /^(\d+)(?:\.(\d{1,6}))?$/.exec(value);
   if (!match || match[1]!.length > 13)
     throw new Error(
-      "Price requires positive decimal USD with at most six fractional digits.",
+      "Price requires decimal USD with at most six fractional digits.",
     );
   const micro =
     BigInt(match[1]!) * 1_000_000n + BigInt((match[2] ?? "").padEnd(6, "0"));
-  if (micro <= 0n || micro > 1_000_000_000_000n)
+  if ((!allowZero && micro === 0n) || micro > 1_000_000_000_000n)
     throw new Error("Price exceeds the supported range.");
   return Number(micro);
 }

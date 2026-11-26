@@ -13,7 +13,7 @@ import {
   type ReviewInput,
 } from "./contracts.js";
 import { registerReviewPair } from "./client/review-pair.js";
-import { parseConfig } from "./config.js";
+import { applySpendOverrides, LOCAL_BUDGET_ENV, parseConfig } from "./config.js";
 import {
   handleReview,
   pendingMetadata,
@@ -105,6 +105,15 @@ export async function openLocalRuntime(
   } = {},
 ) {
   const config = await localConfig(settings);
+  const spendOverrides = process.env[LOCAL_BUDGET_ENV];
+  // Claude Code expands an unset forwarded variable to an empty string.
+  if (spendOverrides) {
+    try {
+      config.limits = applySpendOverrides(config.limits, spendOverrides);
+    } catch {
+      throw Error("LOCAL_BUDGET_OVERRIDE_INVALID");
+    }
+  }
   // Read package assets before taking SQLite's write lock: no async I/O while
   // another process could block the event loop waiting for that lock.
   const migrations = await Promise.all(
