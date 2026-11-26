@@ -2,6 +2,8 @@ import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Profile } from "../src/contracts.js";
+import { parseConfig, ProfileSchema } from "../src/config.js";
+import { SettingsSchema } from "../src/client/settings.js";
 import { ProfileRegistry } from "../src/profiles.js";
 
 const profile: Profile = {
@@ -12,6 +14,50 @@ const profile: Profile = {
   outputMicrousdPerMillion: 200,
   priceVersion: "test-prices",
 };
+
+it("overrides only Worker spend limits and preserves zero as an explicit value", () => {
+  const source = readFileSync("config.example.json", "utf8");
+  const original = parseConfig(source);
+  const overrides = JSON.stringify({
+    dailyMicrousd: 0,
+    monthlyMicrousd: 125_000_000,
+  });
+  expect(parseConfig(source, overrides)).toEqual({
+    ...original,
+    limits: {
+      ...original.limits,
+      dailyMicrousd: 0,
+      monthlyMicrousd: 125_000_000,
+    },
+  });
+  expect(parseConfig(source, '{"monthlyMicrousd":125000000}').limits.dailyMicrousd)
+    .toBe(original.limits.dailyMicrousd);
+  expect(() => parseConfig(source, '{"dailyMicrousd":-1}')).toThrow();
+  expect(() => parseConfig(source, '{"monthlyMicrousd":0}')).toThrow();
+  expect(() => parseConfig(source, '{"dailyRequests":0}')).toThrow();
+  expect(SettingsSchema.safeParse({
+    schemaVersion: 1,
+    mode: "local",
+    secretStore: "env",
+    vaultwardenItem: "unused",
+    localLimits: { ...original.limits, dailyMicrousd: 0 },
+  }).success).toBe(false);
+});
+
+it("allows 50,000 output tokens only for the supported provider and model pairs", () => {
+  const extended = { ...profile, maxOutputTokens: 50_000 };
+  for (const pair of [
+    { model: "gpt-6.2-astra" },
+    { provider: "anthropic", model: "claude-fable-5-2" },
+  ]) {
+    expect(ProfileSchema.safeParse({ ...extended, ...pair }).success).toBe(true);
+    expect(ProfileSchema.safeParse({ ...extended, ...pair, maxOutputTokens: 50_001 }).success)
+      .toBe(false);
+  }
+  expect(ProfileSchema.safeParse(extended).success).toBe(false);
+  expect(ProfileSchema.safeParse({ ...extended, model: "claude-fable-5-2" }).success)
+    .toBe(false);
+});
 const databases: DatabaseSync[] = [];
 function setup(
   seeds: Record<string, Profile> = { default: profile },

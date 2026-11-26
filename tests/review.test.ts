@@ -31,6 +31,24 @@ const input: ReviewInput = {
   ],
   diff: "",
 };
+
+it("sends the 50,000-token cap and reserves its full output cost", () => {
+  const extended = {
+    ...profile,
+    model: "gpt-6.2-astra",
+    maxOutputTokens: 50_000,
+    outputMicrousdPerMillion: 40_000_000,
+  };
+  const openai = buildReviewBody(input, extended);
+  expect(openai).toHaveProperty("max_output_tokens", 50_000);
+  const anthropic = buildReviewBody(
+    { ...input, schema_version: 2, provider: "anthropic" },
+    { ...extended, provider: "anthropic", model: "claude-fable-5-2" },
+  );
+  expect(anthropic).toHaveProperty("max_tokens", 50_000);
+  expect(estimateReservation(input, extended, ""))
+    .toBe(2_000_000 + 4096 * 2);
+});
 const review = {
   summary: "Input is lost.",
   additional_evidence: [],

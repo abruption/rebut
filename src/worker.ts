@@ -4,6 +4,7 @@ import {
   statusMetadata,
   sha256,
   ProviderKeyUnavailable,
+  type ReviewEnvironment,
 } from "./service.js";
 export { handleReview, sha256 } from "./service.js";
 import { McpServer } from "@modelcontextprotocol/server";
@@ -14,12 +15,8 @@ import { Ledger } from "./ledger.js";
 import { validMonthlyStartDay } from "./budget-cycle.js";
 import { parseConfig } from "./config.js";
 import { profileApi } from "./profile-api.js";
-export interface Env {
-  DB: D1Database;
-  REBUT_CONFIG: string;
+export interface Env extends ReviewEnvironment {
   AUTH_TOKENS: string;
-  OPENAI_API_KEY?: string;
-  ANTHROPIC_API_KEY?: string;
   ADMIN_TOKEN_SHA256?: string;
 }
 const DigestSchema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -88,13 +85,13 @@ export default {
     try {
       if (!env.DB || !env.REBUT_CONFIG || !env.AUTH_TOKENS)
         return new Response("Service not configured", { status: 503 });
-      let authConfig: AuthConfig;
+      let authConfig: AuthConfig, config: ReturnType<typeof parseConfig>;
       try {
         authConfig = parseAuthConfig(env);
+        config = parseConfig(env.REBUT_CONFIG, env.REBUT_BUDGET_LIMITS);
       } catch {
         return new Response("Service not configured", { status: 503 });
       }
-      const config = parseConfig(env.REBUT_CONFIG);
       if (url.hostname !== config.hostname)
         return new Response("Forbidden", { status: 403 });
       if (
@@ -121,7 +118,10 @@ export default {
           const ledger = new Ledger(env.DB);
           try {
             if (request.method === "GET" && !budgetStartDay)
-              return reply(await ledger.budget(config.limits));
+              return reply({
+                ...(await ledger.budget(config.limits)),
+                daily_limit_microusd: config.limits.dailyMicrousd,
+              });
             if (request.method !== "PUT" || !budgetStartDay)
               return reply({ status: "method_not_allowed" }, 405);
             const day = Number(budgetStartDay[1]);

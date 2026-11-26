@@ -146,7 +146,7 @@ export class Ledger {
    (principal,request_id,fingerprint,input_sha256,profile,claim,created_at,day,month,state,reserved_microusd,charged_microusd,metadata${cycleColumn})
    SELECT ?,?,?,?,?,?,?,?,?,'reserved',?,?,?${cycleValue}
    WHERE ? <= ?
-   AND COALESCE((SELECT SUM(charged_microusd) FROM requests WHERE day=?),0)+? <= ?
+   AND (? = 0 OR COALESCE((SELECT SUM(charged_microusd) FROM requests WHERE day=?),0)+? <= ?)
    AND COALESCE((SELECT SUM(charged_microusd) FROM requests WHERE month=?),0)+? <= ?
    AND (SELECT COUNT(*) FROM requests WHERE state IN ('reserved','unknown')) < ?
    AND (SELECT COUNT(*) FROM requests WHERE day=?) < ?
@@ -168,6 +168,7 @@ export class Ledger {
           ...(cycle ? [cycle.start_day] : []),
           amount,
           limits.requestMicrousd,
+          limits.dailyMicrousd,
           day,
           amount,
           limits.dailyMicrousd,

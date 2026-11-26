@@ -77,6 +77,8 @@ rebut profile remove PROFILE_ID --if-revision N
 
 本地限制按数据目录，Worker 限制按整个部署。不合计其他设备、Worker、API 使用或 OpenAI 账户余额。Worker 限制由 `REBUT_CONFIG` 管理。日、月和单次上限相互独立，更改一个不会扩大其他上限。设置更改后重启宿主。
 
+可选的 Worker 绑定 `REBUT_BUDGET_LIMITS` 接受 JSON 对象，其中可指定 `dailyMicrousd`、`monthlyMicrousd` 或两者。数值的单位为百万分之一美元。每日金额设为 `0` 时取消每日支出上限。月度支出、单次支出、每日请求数和并发上限继续生效。管理员可在 `rebut budget` 的 JSON 输出中查看日度和月度支出上限。`daily_limit_microusd` 为 `0` 表示每日支出上限已取消。绑定值无效时，Worker 返回 503。GPT-6.2 Astra 和 Claude Fable 5.2 的配置档可将 `maxOutputTokens` 设置为最高 50,000。将启用的配置档提高到 16,384 以上前，请先更新使用该 Worker 的 CLI。
+
 调用前保守预留输入及最大输出费用，再按已验证用量记账。估算不是账单。unknown 保留全额预留与并发槽位，日期切换也不释放槽位。费用归属于最初提交的 UTC 日期和月份。
 
 运行 `rebut budget` 查看月度已计入金额、下次 UTC 重置时间和未解决请求占用的并发槽位。台账金额与供应商的额度余额无关。Worker 模式下使用 Worker 管理员令牌。可分别比较月度已计入金额与月度上限、占用槽位与并发上限。每日及单次请求上限也适用。

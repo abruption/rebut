@@ -17,6 +17,7 @@ export class ProviderKeyUnavailable extends Error {
 export interface ReviewEnvironment {
   DB: D1Database;
   REBUT_CONFIG: string;
+  REBUT_BUDGET_LIMITS?: string;
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
 }
@@ -74,7 +75,7 @@ export async function handleReview(
   options: ReviewExecutionOptions = {},
 ) {
   const input = ReviewInputSchema.parse(raw),
-    config = parseConfig(env.REBUT_CONFIG);
+    config = parseConfig(env.REBUT_CONFIG, env.REBUT_BUDGET_LIMITS);
   if ((await inputHash(input)) !== input.input_sha256)
     return { status: "input_hash_mismatch" };
   const ledger = new Ledger(env.DB);

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { inputHash } from "../src/contracts.js";
+import { Ledger } from "../src/ledger.js";
 let mf: Miniflare,
   calls = 0;
 let malformedProviderBody = false;
@@ -12,6 +13,18 @@ const recoveryToken = "synthetic-recovery-token-not-a-secret";
 const otherToken = "synthetic-other-token-not-a-secret";
 const cfg = JSON.parse(readFileSync("config.example.json", "utf8"));
 cfg.hostname = "127.0.0.1";
+
+async function migrateLedgerAndProfiles(db: D1Database) {
+  for (const statement of (
+    readFileSync("migrations/0001_ledger.sql", "utf8") +
+    readFileSync("migrations/0002_profiles.sql", "utf8")
+  )
+    .split(";")
+    .map((s) => s.trim())
+    .filter(Boolean))
+    await db.prepare(statement).run();
+}
+
 beforeAll(async () => {
   mf = new Miniflare(
     convertV4MiniflareOptions({
@@ -115,14 +128,7 @@ beforeAll(async () => {
     }),
   );
   const db = await mf.getD1Database("DB");
-  for (const statement of (
-    readFileSync("migrations/0001_ledger.sql", "utf8") +
-    readFileSync("migrations/0002_profiles.sql", "utf8")
-  )
-    .split(";")
-    .map((s) => s.trim())
-    .filter(Boolean))
-    await db.prepare(statement).run();
+  await migrateLedgerAndProfiles(db);
 }, 20000);
 afterAll(async () => {
   await mf?.dispose();
@@ -845,6 +851,23 @@ it("lists only the caller's pending rows, formats authoritative amounts, and tru
   }
 }, 20000);
 
+async function migrateMonthlyCycle(db: D1Database) {
+  // The trigger body contains a semicolon and must be applied as one statement.
+  const migration = readFileSync("migrations/0003_budget_cycle.sql", "utf8");
+  const trigger = migration.indexOf("CREATE TRIGGER");
+  for (const statement of migration
+    .slice(0, trigger)
+    .split(";")
+    .map((s) => s.trim())) {
+    if (
+      statement &&
+      !statement.split("\n").every((line) => line.startsWith("--"))
+    )
+      await db.prepare(statement).run();
+  }
+  await db.prepare(migration.slice(trigger)).run();
+}
+
 it("keeps budget aggregates and the one-time schedule behind Worker admin auth", async () => {
   const request = (path: string, method: string, bearer: string) =>
     mf.dispatchFetch("http://127.0.0.1" + path, {
@@ -867,20 +890,7 @@ it("keeps budget aggregates and the one-time schedule behind Worker admin auth",
     503,
   );
   const db = await mf.getD1Database("DB");
-  // Prepare complete statements so the semicolon inside the trigger stays intact.
-  const migration = readFileSync("migrations/0003_budget_cycle.sql", "utf8");
-  const trigger = migration.indexOf("CREATE TRIGGER");
-  for (const statement of migration
-    .slice(0, trigger)
-    .split(";")
-    .map((s) => s.trim())) {
-    if (
-      statement &&
-      !statement.split("\n").every((line) => line.startsWith("--"))
-    )
-      await db.prepare(statement).run();
-  }
-  await db.prepare(migration.slice(trigger)).run();
+  await migrateMonthlyCycle(db);
   const update = await request(path + "/start-day/15", "PUT", admin);
   expect(update.status).toBe(200);
   expect(await update.json()).toMatchObject({
@@ -905,4 +915,118 @@ it("keeps budget aggregates and the one-time schedule behind Worker admin auth",
       .run(),
   ).rejects.toThrow(/budget_schedule_changed/);
   expect(calls + anthropicCalls).toBe(before);
+}, 20000);
+
+it("reports Worker spend overrides and retains the other atomic reservation limits", async () => {
+  const admin = "synthetic-budget-override-admin-not-a-secret";
+  let providerCalls = 0;
+  const options = (spendLimits: string) => convertV4MiniflareOptions({
+      workers: [{
+        name: "budget-override",
+        modules: [{ type: "ESModule", path: "dist/worker.js" }],
+        compatibilityDate: "2026-11-12",
+        compatibilityFlags: ["nodejs_compat"],
+        d1Databases: ["DB"],
+        bindings: {
+          REBUT_CONFIG: JSON.stringify({
+            ...cfg,
+            limits: { ...cfg.limits, dailyMicrousd: 1 },
+          }),
+          REBUT_BUDGET_LIMITS: spendLimits,
+          AUTH_TOKENS: JSON.stringify({
+            test: createHash("sha256").update(token).digest("hex"),
+          }),
+          ADMIN_TOKEN_SHA256: createHash("sha256").update(admin).digest("hex"),
+          OPENAI_API_KEY: "synthetic",
+        },
+        outboundService() {
+          providerCalls++;
+          return new Response("{}", { status: 429 });
+        },
+      }],
+    });
+  const overrideWorker = new Miniflare(
+    options('{"dailyMicrousd":0,"monthlyMicrousd":125000000}'),
+  );
+  try {
+    const db = await overrideWorker.getD1Database("DB");
+    await migrateLedgerAndProfiles(db);
+    await migrateMonthlyCycle(db);
+    const ledger = new Ledger(db);
+    const now = new Date("2026-11-09T12:00:00Z");
+    expect(await ledger.scheduleMonthlyCycle(15, now)).toMatchObject({ status: "configured" });
+    const budget = () => overrideWorker.dispatchFetch("http://127.0.0.1/admin/budget", {
+      headers: { Authorization: `Bearer ${admin}` },
+    });
+    const response = await budget();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      daily_limit_microusd: 0,
+      monthly_limit_microusd: 125_000_000,
+      monthly_start_day: 15,
+      max_concurrent: cfg.limits.maxConcurrent,
+    });
+
+    const limits = {
+      dailyMicrousd: 0,
+      monthlyMicrousd: 10,
+      requestMicrousd: 6,
+      maxConcurrent: 10,
+      dailyRequests: 10,
+    };
+    const reserve = (id: string, amount: number, overrides: Partial<typeof limits> = {}) =>
+      ledger.reserve("test", id, id, "hash", "profile", amount, { ...limits, ...overrides }, now);
+    expect(await reserve("over-request", 7)).toMatchObject({ status: "limit_exceeded" });
+    expect(await reserve("at-month", 6)).toMatchObject({ status: "acquired" });
+    expect(await reserve("remainder", 4)).toMatchObject({ status: "acquired" });
+    expect(await reserve("over-month", 1)).toMatchObject({ status: "limit_exceeded" });
+    expect(await reserve("over-count", 1, { monthlyMicrousd: 100, dailyRequests: 2 }))
+      .toMatchObject({ status: "limit_exceeded" });
+    expect(await reserve("over-slots", 1, { monthlyMicrousd: 100, maxConcurrent: 2 }))
+      .toMatchObject({ status: "limit_exceeded" });
+    expect(await reserve("over-positive-daily", 1, { monthlyMicrousd: 100, dailyMicrousd: 10 }))
+      .toMatchObject({ status: "limit_exceeded" });
+    expect(await reserve("at-month", 6)).toMatchObject({ status: "existing" });
+    for (const id of ["at-month", "remainder"]) {
+      const reservation = await ledger.get("test", id);
+      expect(reservation?.state).toBe("reserved");
+      await ledger.finish("test", id, reservation!.claim, "completed", undefined, {});
+    }
+
+    const input = {
+      schema_version: 1 as const,
+      request_id: "worker-spend-override",
+      profile: "luna-test",
+      task_kind: "code" as const,
+      requirements: "Synthetic only",
+      files: [{ path: "sample.ts", start_line: 1, content: "export const value = 1;" }],
+      diff: "",
+      input_sha256: "",
+    };
+    input.input_sha256 = await inputHash(input);
+    const review = await overrideWorker.dispatchFetch("http://127.0.0.1/mcp", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        "MCP-Protocol-Version": "2025-03-26",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1, method: "tools/call",
+        params: { name: "review", arguments: input },
+      }),
+    });
+    expect(review.status).toBe(200);
+    const result = await decode(review);
+    expect(providerCalls, JSON.stringify(result)).toBe(1);
+    expect(await ledger.get("test", input.request_id)).not.toBeNull();
+
+    await overrideWorker.setOptions(options(""));
+    const invalid = await budget();
+    expect(invalid.status).toBe(503);
+    expect(await invalid.text()).toBe("Service not configured");
+  } finally {
+    await overrideWorker.dispose();
+  }
 }, 20000);

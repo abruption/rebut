@@ -903,6 +903,35 @@ it("selects v2 from criterion IDs and preserves the legacy bundle by default", a
     }
   }));
 
+it("prints zero and the monthly amount from the Worker budget response", async () =>
+  fixture(async (dir) => {
+    const settings = join(dir, "settings");
+    await mkdir(settings, { mode: 0o700 });
+    await writeFile(join(settings, "config.json"), JSON.stringify({
+      schemaVersion: 1,
+      mode: "worker",
+      endpoint: "http://127.0.0.1/mcp",
+      secretStore: "env",
+      vaultwardenItem: "unused",
+    }), { mode: 0o600 });
+    const preload = join(dir, "budget-transport.mjs");
+    await writeFile(preload, `
+globalThis.fetch = async (input) => {
+  if (String(input) !== "http://127.0.0.1/admin/budget") throw Error("Unexpected endpoint");
+  return Response.json({ daily_limit_microusd: 0, monthly_limit_microusd: 125000000 });
+};
+`);
+    const result = cli(dir, ["budget"], undefined, {
+      NODE_OPTIONS: "--import=" + pathToFileURL(preload).href,
+      REBUT_ADMIN_TOKEN: "synthetic-admin-budget-token-not-a-secret",
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      daily_limit_microusd: 0,
+      monthly_limit_microusd: 125_000_000,
+    });
+  }));
+
 async function mockReviewTransport(dir: string) {
   const preload = join(dir, "review-transport.mjs");
   const callsFile = join(dir, "mock-calls");
