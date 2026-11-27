@@ -288,7 +288,7 @@ export async function localMcpServer(
   } catch {
     unavailable = hasPreference;
   }
-  const server = new McpServer({ name: "rebut-mcp", version: "0.6.1" });
+  const server = new McpServer({ name: "rebut-mcp", version: "0.6.2" });
   const review = async (input: ReviewInput, signal: AbortSignal) => {
     // Preferences are collection/description hints. The explicit frozen
     // request profile and existing-ID metadata remain authoritative.
